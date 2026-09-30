@@ -1,0 +1,71 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devops-prep-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_URL=mongodb://mongo:27017/devops-prep
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=debug
+    depends_on:
+      - mongo
+      - redis
+      - postgres
+    networks:
+      - devops-network
+    volumes:
+      - ./src:/app/src
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7.0-alpine
+    container_name: devops-prep-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - devops-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: devops-prep-postgres
+    environment:
+      POSTGRES_USER: devops
+      POSTGRES_PASSWORD: devops123
+      POSTGRES_DB: devops_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - devops-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: devops-prep-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - devops-network
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  postgres-data:
+  redis-data:
+
+networks:
+  devops-network:
+    driver: bridge
