@@ -9,8 +9,7 @@ on:
 
 jobs:
  build_and_package: 
-   name: BUILD-JOB 
-   if: github.ref == 'refs/heads/master' && github.event_name == 'push' 
+   name: BUILD-JOB  
    runs-on: ubuntu-slim
 
    steps: 
