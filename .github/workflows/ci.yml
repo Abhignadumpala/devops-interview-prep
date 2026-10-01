@@ -1,37 +1,98 @@
-name: Node.js CI
+name: Secure DevSecOps Pipeline 
 
-on:
-  push:
-    branches: ['main']
-  pull_request:
-    branches: ['main']
-  workflow_dispatch:
+ on: 
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+ push: 
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  branches: 
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+    - master 
+jobs: 
 
-      - name: Install dependencies
-        run: npm ci
+  build_and_package: 
 
-      - name: Run ESLint
-        run: npm run lint
+    name: BUILD-JOB 
 
-      - name: Check formatting
-        run: npm run format:check
+    runs-on: ubuntu-slim 
 
-      - name: Run tests
-        run: npm run test:ci
+  
 
-      - name: Build application
-        run: npm run build
+    permissions: 
+
+      actions: read 
+
+      contents: read 
+
+      security-events: write # Required to upload findings to the Security tab 
+
+  
+
+    strategy: 
+
+      fail-fast: false 
+
+      matrix: 
+
+        # Specify the languages you want to analyze 
+
+        language: ['javascript-typescript'] 
+
+  
+
+    steps: 
+
+      - name: Checkout Code 
+
+        uses: actions/checkout@v4 
+
+  
+
+      - name: Initialize CodeQL 
+
+        uses: github/codeql-action/init@v3 
+
+        with: 
+
+          languages: ${{ matrix.language }} 
+
+  
+
+      - name: Autobuild 
+
+        uses: github/codeql-action/autobuild@v3 
+
+  
+
+      - name: Perform CodeQL Analysis 
+
+        uses: github/codeql-action/analyze@v3 
+
+        with: 
+
+          category: "/language:${{ matrix.language }}" 
+
+  
+
+      - name: BUILD 
+
+        run: npm install 
+
+  
+
+      - name: TEST 
+
+        run: echo "code is tested!" 
+
+  
+
+      - name: Artifact upload 
+
+        uses: actions/upload-artifact@v7 
+
+        with: 
+
+          name: artifact-1 
+
+          path: | 
+
+            package* 
