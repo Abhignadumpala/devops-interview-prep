@@ -136,10 +136,10 @@ runs-on: [self-hosted, linux] # self-hosted with labels
 
 ---
 
-## 3. Worked Example — This Repo's CI
+## 3. Worked Example — Node.js CI Workflow
 
-This repository's own pipeline, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), maps
-directly onto the components above:
+A typical Node.js CI pipeline saved as `.github/workflows/ci.yml` maps directly onto the components
+above:
 
 ```yaml
 name: Node.js CI # Workflow name shown in the Actions tab
