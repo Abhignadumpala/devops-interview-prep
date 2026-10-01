@@ -4,67 +4,25 @@ on:
  push: 
   branches:  
     - master 
-    - main workflow_dispatch: 
+    - main 
+ workflow_dispatch: 
 
 jobs:
  build_and_package: 
    name: BUILD-JOB 
+   if: github.ref == 'refs/heads/master' && github.event_name == 'push' 
+   runs-on: ubuntu-slim
 
-if: github.ref == 'refs/heads/master' && github.event_name == 'push' 
- 
-runs-on: ${{ matrix.os }} 
- 
-strategy: 
-  matrix: 
+   steps: 
+   - name: Checkout Code 
+     uses: actions/checkout@v4 
 
-  os: 
-      - ubuntu-latest 
-      - windows-latest 
-  node-version: 
-      - 18 
-      - 20 
-      - 22 
-  language: 
-      - javascript-typescript 
+   - name: Install Dependencies 
+     run: npm install 
  
-permissions: 
-  actions: read 
-  contents: read 
-  security-events: write 
+   - name: Test 
+     run: echo "code is tested!" 
+
+   - name: Deploy 
+     run: echo "my code is deployed" 
  
-steps: 
-  - name: Checkout Code 
-    uses: actions/checkout@v4 
- 
-  - name: Setup Node.js 
-    uses: actions/setup-node@v4 
-    with: 
-      node-version: ${{ matrix.node-version }} 
- 
-  - name: Cache Dependencies 
-    uses: actions/cache@v5 
-    with: 
-      path: ~/.npm 
-      key: ${{ runner.os }}-node-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }} 
-      restore-keys: | 
-        ${{ runner.os }}-node-${{ matrix.node-version }}- 
- 
-  - name: Install Dependencies 
-    run: npm install 
- 
-  - name: Test 
-    run: echo "code is tested!" 
- 
-  - name: Artifact Upload 
-    uses: actions/upload-artifact@v7 
-    with: 
-      name: artifact-${{ runner.os }}-node-${{ matrix.node-version }} 
-      path: | 
-        package* 
- 
-  - name: Deploy 
-    run: echo "my code is deployed" 
- 
-  - name: Rollback 
-    if: failure() 
-    run: echo "rollback is done" 
