@@ -101,7 +101,7 @@ Three build jobs (or one matrix job) with no dependencies run **in parallel**; a
 
 Trigger on `push`/`pull_request` to `main` → job on `ubuntu-latest` → `actions/checkout` →
 `actions/setup-node` with npm cache → `npm ci` → lint → format check → test → build. See the worked
-example in [README.md](./README.md#jobs--steps).
+example in [README.md](./README.md#8-example--nodejs-ci-workflow).
 
 ### 18. What is `npm ci` and why use it in CI instead of `npm install`?
 
