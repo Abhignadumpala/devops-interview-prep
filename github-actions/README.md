@@ -264,55 +264,69 @@ it to Git**, so every developer and every CI run installs the **exact same versi
 > `package-lock.json` locks the exact versions. In CI we use `npm ci`, which installs exactly what's
 > in the lock file, so the build is the same every time."
 
-### 8.1 Dependencies vs node_modules vs Cache vs Artifacts — NOT the same!
+### 8.1 Dependencies vs node_modules vs Cache vs Artifact — NOT the same!
 
-These are **6 different things**. Think of **cooking a meal**:
+These words are easy to mix up. They are **all different**.
 
-| Thing                   | What it is                                                                                      | Cooking analogy                        | Where it lives                      | In Git? |
-| ----------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------- | ----------------------------------- | ------- |
-| **`package.json`**      | The **list** of libraries you need (with version ranges)                                        | Shopping list                          | Your repo                           | ✅ Yes  |
-| **`package-lock.json`** | The **exact** versions that were installed                                                      | Receipt with exact brands              | Your repo                           | ✅ Yes  |
-| **Dependencies**        | The **libraries themselves** (express, eslint…), downloaded from the npm registry               | The groceries                          | Inside `node_modules/`              | —       |
-| **`node_modules/`**     | The **folder** where `npm install` / `npm ci` puts the dependencies                             | Your kitchen fridge                    | On the machine (laptop/runner)      | ❌ No   |
-| **npm cache `~/.npm`**  | npm's **saved downloads**, so it doesn't download them again                                    | Leftovers saved for next time          | Runner → saved by **actions/cache** | ❌ No   |
-| **Artifact**            | Files **you choose to upload** after a job — usually **your build output** (`dist/`) or reports | The **cooked meal**, packed to deliver | **GitHub** (the workflow run page)  | ❌ No   |
+**The story, step by step:**
+
+1. **`package.json`** says **what libraries you need**, like a **shopping list** (e.g. "express,
+   version 4 or newer").
+2. **`package-lock.json`** says **the exact version** of each one, like a **receipt** (e.g.
+   "express 4.18.2").
+3. **`npm ci`** (or `npm install`) **downloads** those libraries and puts them in the
+   **`node_modules/`** folder. It **does not compile** anything. It only downloads and unzips.
+4. The libraries inside `node_modules/` are called **dependencies**. They are **other people's
+   code** that your app uses.
+5. **`npm run build`** takes **your own code** and makes the **build output**, usually a **`dist/`**
+   folder. This is your app, ready to run.
+6. **`actions/upload-artifact`** uploads `dist/` to **GitHub**. Now it is an **artifact**.
 
 ```text
-package.json + package-lock.json        (what to install)
-        │  npm ci  — downloads, does NOT compile
+package.json + package-lock.json     →  "what to download"
+        │ npm ci (download only)
         ▼
-node_modules/  ◄── fast restore from ── npm cache (~/.npm)  ← actions/cache
-(dependencies = other people's code)
-        │  npm run build  — uses YOUR code (+ dependencies as tools)
+node_modules/                         →  dependencies (other people's code), stays on the machine
+        │ npm run build (uses YOUR code)
         ▼
-dist/            (build output = YOUR app, ready to run)
-        │  actions/upload-artifact
+dist/                                 →  build output (YOUR app)
+        │ actions/upload-artifact
         ▼
-Artifact stored on GitHub → downloaded by the deploy job or by a person
+Artifact on GitHub                    →  deploy job or a person downloads it
 ```
 
-**Clearing up the confusion:**
+| Word                 | Simple meaning                                       | Where is it?                       |
+| -------------------- | ---------------------------------------------------- | ---------------------------------- |
+| `package.json`       | List of libraries you need                           | In your repo (Git)                 |
+| `package-lock.json`  | Exact versions of those libraries                    | In your repo (Git)                 |
+| **Dependencies**     | The libraries themselves (other people's code)       | Inside `node_modules/`             |
+| **`node_modules/`**  | The folder that holds the dependencies               | On the machine only (not in Git)   |
+| **Cache (`~/.npm`)** | npm's saved downloads, to make the next run faster   | Saved by `actions/cache`           |
+| **Artifact**         | Files you upload after a job — your **build output** | **On GitHub**, in the workflow run |
 
-- **`npm install` does not compile anything.** It just **downloads and unzips** the libraries listed
-  in `package.json`/`package-lock.json` into `node_modules/`.
-- **`node_modules/` is NOT an artifact.** It's only the libraries your app uses (other people's code),
-  and it lives on the machine. It's **not committed** (it's in `.gitignore`) and **not normally
-  uploaded**. It's large, and anyone can recreate it with `npm ci`.
-- **An artifact is NOT stored in `node_modules/`.** It's stored **on GitHub, in the workflow run**,
-  and only exists if you upload it with `actions/upload-artifact`.
-- **The artifact is your build output** — what `npm run build` creates (usually `dist/`). In this
-  repo, `npm run build` runs `mkdir -p dist && cp index.js dist/`, so `dist/` is the artifact.
-- **But the app still needs its libraries to run.** A Node server needs its runtime dependencies on
-  the server. So at deploy time you either run `npm ci --omit=dev` there, or **bundle** them into
-  `dist/`, or build a **Docker image** that contains both. In that case the Docker image is the
-  artifact you deploy.
-- **Cache vs node_modules:** we usually cache **`~/.npm`** (npm's downloads), not `node_modules/`,
-  because `npm ci` deletes `node_modules/` anyway.
+**Your questions answered:**
+
+- **"Are dependencies and artifacts the same?"** **No.** Dependencies = **other people's
+  libraries** you download. Artifact = **your own app's output** that you upload.
+- **"Does `npm install` compile everything into one folder?"** **No.** It only **downloads** the
+  libraries into `node_modules/`. Nothing is compiled. Building is a separate step
+  (`npm run build`).
+- **"Is the artifact stored in `node_modules/`?"** **No.** `node_modules/` is only on the runner
+  machine, and it's deleted when the job ends. The artifact is stored **on GitHub**, and only if you
+  upload it.
+- **"Is `node_modules/` uploaded as an artifact?"** **Usually no.** It's big, and anyone can
+  recreate it with `npm ci`. It's also not in Git (it's in `.gitignore`).
+- **"Then how does the app get its libraries on the server?"** At deploy time you either run
+  `npm ci --omit=dev` on the server, or build a **Docker image** that contains your app plus its
+  libraries. Then the Docker image is the thing you deploy.
+
+**In this repo:** `npm run build` runs `mkdir -p dist && cp index.js dist/`. So `dist/` is the
+build output, and that is what we upload as the artifact.
 
 > **Interview answer:** "`package.json` lists the dependencies and `package-lock.json` locks their
-> exact versions. `npm ci` downloads those dependencies into `node_modules/` — it doesn't compile
-> them. The npm cache speeds up that download. `npm run build` turns our code into build output like
-> `dist/`, and **that** is what we upload as an **artifact**, which is stored on GitHub, not in
+> exact versions. `npm ci` only **downloads** them into `node_modules/` — it doesn't compile. The
+> cache makes that download faster. `npm run build` creates our app's build output like `dist/`,
+> and **that** is what we upload as an **artifact** — it's stored on GitHub, not in
 > `node_modules/`."
 
 ## 9. Caching
