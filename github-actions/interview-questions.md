@@ -191,3 +191,11 @@ by IAM role.
 
 It writes and **explains workflow YAML**, **debugs failed runs** from logs, and generates scripts
 and tests. Its output must be **reviewed** — check action versions, permissions and secrets.
+
+### 34. Are dependencies, `node_modules`, cache and artifacts the same thing?
+
+No. **Dependencies** are the libraries listed in `package.json` (locked in `package-lock.json`).
+`npm ci` **downloads** them (no compiling) into **`node_modules/`** on the runner — not committed,
+not uploaded. The **cache** (`~/.npm`) just makes that download faster next run. An **artifact** is
+what _you_ upload with `upload-artifact` — usually the **build output** (`dist/`) or reports — and
+it's stored **on GitHub**, not in `node_modules/`.
