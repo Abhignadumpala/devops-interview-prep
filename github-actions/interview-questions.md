@@ -48,7 +48,7 @@ they must share data via **artifacts** (`actions/upload-artifact` / `download-ar
 ### 9. What is the difference between `run` and `uses`?
 
 - `run:` executes a **shell command/script** on the runner.
-- `uses:` invokes a **reusable action** (e.g. `actions/checkout@v4`).
+- `uses:` invokes a **reusable action** (e.g. `actions/checkout@v7`).
 
 ### 10. What is an action? Give examples.
 
@@ -60,7 +60,7 @@ written yourself.
 ### 11. Why pin action versions? How?
 
 To get reproducible builds and protect against malicious or breaking changes. Pin a tag
-(`@v4`) or — more secure — a **full commit SHA**.
+(`@v7`) or — more secure — a **full commit SHA**.
 
 ### 12. What is a runner? What types exist?
 
@@ -101,7 +101,7 @@ Three build jobs (or one matrix job) with no dependencies run **in parallel**; a
 
 Trigger on `push`/`pull_request` to `main` → job on `ubuntu-latest` → `actions/checkout` →
 `actions/setup-node` with npm cache → `npm ci` → lint → format check → test → build. See the worked
-example in [README.md](./README.md#11-example--nodejs-ci-workflow).
+example in [README.md](./README.md#17-example--nodejs-ci-workflow).
 
 ### 18. What is `npm ci` and why use it in CI instead of `npm install`?
 
@@ -136,3 +136,58 @@ person from the run page. Kept 90 days by default (`retention-days` to change).
 
 **Cache = speed**: reuses dependencies **across workflow runs**. **Artifact = output**: shares files
 **between jobs in the same run** and lets people download them.
+
+### 24. What is CodeQL? How is it different from testing?
+
+CodeQL is GitHub's **SAST** tool. It scans **source code** for vulnerabilities like SQL injection,
+XSS and command injection, and shows them in the **Security tab**. **Testing checks "does it
+work?"**, while **CodeQL checks "is it secure?"**.
+
+### 25. What permission does a CodeQL job need?
+
+`security-events: write` — to upload results to the Security tab (plus `contents: read`).
+
+### 26. What is Dependabot?
+
+A GitHub tool that checks dependencies for **outdated or vulnerable versions** and **opens PRs** to
+update them. Version updates are configured in **`.github/dependabot.yml`**; alerts and security
+updates are enabled in repo settings.
+
+### 27. Conditions vs status check functions?
+
+**Conditions (`if:`)** decide **"should I run?"** using branch/event info, e.g.
+`if: github.ref == 'refs/heads/main'`. **Status check functions** (`success()`, `failure()`,
+`always()`, `cancelled()`) answer **"what happened before me?"**, e.g. `if: failure()` for rollback.
+
+### 28. `always()` vs `!cancelled()`?
+
+Both run after a failure. `always()` also runs when the workflow is **cancelled**; `!cancelled()`
+doesn't — so it's the safer choice for things like uploading test reports.
+
+### 29. How do you add manual approval before deploying to production?
+
+Use an **environment** with **required reviewers**: `environment: production` on the deploy job.
+The job pauses until an approver clicks approve. (Not done with `if:`.)
+
+### 30. How do you reduce pipeline time and cost?
+
+Right-size runners, **cache** dependencies, run independent jobs in **parallel**, use **path filters**
+to run only what changed, optimize **Docker builds** (multi-stage, `.dockerignore`), run **fast tests
+first**, and **build once, promote** the same artifact.
+
+### 31. What is OIDC and why use it?
+
+OpenID Connect lets a workflow get a **short-lived token** from AWS/Azure/GCP for each run, instead
+of storing **long-lived cloud keys** as GitHub secrets. Nothing permanent to leak; access is limited
+by IAM role.
+
+### 32. What are SBOM, artifact signing and provenance?
+
+- **SBOM** — list of every component inside the artifact.
+- **Signing** — digital seal proving the artifact wasn't changed.
+- **Provenance** — record of who built it, from which commit, with which workflow.
+
+### 33. How can GitHub Copilot help in DevOps?
+
+It writes and **explains workflow YAML**, **debugs failed runs** from logs, and generates scripts
+and tests. Its output must be **reviewed** — check action versions, permissions and secrets.

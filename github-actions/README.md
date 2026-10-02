@@ -1,7 +1,8 @@
 # GitHub Actions — Basics
 
 Sources: [GitHub Docs](https://docs.github.com/en/actions/get-started/understand-github-actions) ·
-[KodeKloud Notes](https://notes.kodekloud.com/) · Practice: [interview-questions.md](./interview-questions.md)
+[KodeKloud Notes](https://notes.kodekloud.com/) · Practice: [interview-questions.md](./interview-questions.md) ·
+Class code, corrected: [class-workflows.md](./class-workflows.md)
 
 ## 1. The Problem Before CI/CD
 
@@ -145,6 +146,25 @@ A job is a **set of steps that run on the same runner**. **Jobs run in parallel*
 (e.g. 3 OS × 2 Node versions = 6 runs). Different jobs run on different machines, so they **share
 data using artifacts**.
 
+**Parallel vs sequential** (very common interview question):
+
+|              | Parallel                          | Sequential                        |
+| ------------ | --------------------------------- | --------------------------------- |
+| **How**      | Jobs run **at the same time**     | Jobs run **one after another**    |
+| **Keyword**  | Nothing (default)                 | `needs:`                          |
+| **Speed**    | Faster                            | Slower, but keeps the right order |
+| **Use when** | Jobs are independent              | A job depends on another's result |
+| **Example**  | lint + unit tests + security scan | build → test → deploy             |
+
+```yaml
+jobs:
+  lint: # lint, test, codeql have no needs → run in PARALLEL
+  test:
+  codeql:
+  deploy:
+    needs: [lint, test, codeql] # SEQUENTIAL: waits for all three
+```
+
 ### 7.4 Steps
 
 Steps are the **individual tasks inside a job** — either a **shell command (`run`)** or an
@@ -160,8 +180,8 @@ jobs:
         node-version: [18, 20]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4 # get the code
-      - uses: actions/setup-node@v4 # install Node.js
+      - uses: actions/checkout@v7 # get the code
+      - uses: actions/setup-node@v7 # install Node.js
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm ci # install dependencies
@@ -179,7 +199,7 @@ jobs:
 An action is a **ready-made, reusable piece of code** for a common task, so you don't write the
 same steps again. Examples: `actions/checkout` (get code), `actions/setup-node` (install Node),
 `aws-actions/configure-aws-credentials` (cloud login). Get them from the **GitHub Marketplace** or
-write your own, and always **pin the version** (`@v4` or a commit SHA).
+write your own, and always **pin the version** (`@v7` or a commit SHA).
 
 ### 7.6 Runners
 
@@ -187,6 +207,18 @@ A runner is the **server that runs your job** — one job at a time. **GitHub-ho
 (Ubuntu, Windows, macOS) give a **fresh, clean VM for every run**, so nothing is saved between runs
 (use cache/artifacts). **Self-hosted runners** are your own machines, for custom OS, hardware, or
 private network access.
+
+**Self-hosted = your machine, GitHub controls the workflow.** You install the runner app on your
+server (Settings → Actions → Runners → New runner). Then you pick it with `runs-on: self-hosted`, or
+with labels like `runs-on: [self-hosted, linux, gpu]`. Unlike GitHub-hosted runners, it **is not
+cleaned after each job**: old files and caches stay unless you clean them.
+
+> ⚠️ **Don't use self-hosted runners on public repos.** Anyone can open a PR from a fork and run
+> their code on your machine.
+
+**`ubuntu-slim`** is a small, cheap GitHub-hosted runner with **1 CPU and 5 GB RAM**. It runs in a
+**container, not a full VM**, and has **few tools installed**. A job on it is **stopped after 15
+minutes**. Good for small jobs (labels, notifications), not for heavy builds or Docker.
 
 ![Job running on Windows, Ubuntu, macOS runners](https://kodekloud.com/kk-media/image/upload/v1752870456/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-actions-workflow-runners.jpg)
 
@@ -242,7 +274,7 @@ which makes builds faster. The cache is found by its **key**. The key usually co
 **Easy way** — `setup-node` caches npm for you:
 
 ```yaml
-- uses: actions/setup-node@v4
+- uses: actions/setup-node@v7
   with:
     node-version: 20
     cache: npm # caches ~/.npm, key based on package-lock.json
@@ -251,7 +283,7 @@ which makes builds faster. The cache is found by its **key**. The key usually co
 **Manual way** — `actions/cache` (works for any tool: pip, Maven, Gradle, Docker layers…):
 
 ```yaml
-- uses: actions/cache@v4
+- uses: actions/cache@v6
   with:
     path: ~/.npm # what to save
     key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }} # exact match
@@ -276,9 +308,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: npm ci && npm run build
-      - uses: actions/upload-artifact@v4 # SAVE files
+      - uses: actions/upload-artifact@v7 # SAVE files
         with:
           name: app-build
           path: dist/
@@ -288,7 +320,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest # different VM — dist/ is NOT here
     steps:
-      - uses: actions/download-artifact@v4 # GET files from build job
+      - uses: actions/download-artifact@v8 # GET files from build job
         with:
           name: app-build
           path: dist/
@@ -309,7 +341,149 @@ jobs:
 > artifact is for **output**: it saves files a job produced, so another job can use them or a person
 > can download them."
 
-## 11. Example — Node.js CI Workflow
+## 11. Conditions & Status Check Functions
+
+**Conditions** (`if:`) decide **whether a job or step runs**, based on the branch, the event, or
+earlier results. Remember it as **"Should I run?"**
+
+```yaml
+- name: Deploy
+  if: github.ref == 'refs/heads/main' && github.event_name == 'push' # only pushes to main
+  run: ./deploy.sh
+```
+
+**Status check functions** are used inside `if:` to check **what happened to earlier steps or
+jobs**. Remember it as **"What happened before me?"**
+
+| Function       | Runs when…                                                | Use for                        |
+| -------------- | --------------------------------------------------------- | ------------------------------ |
+| `success()`    | All earlier steps passed (**the default**)                | Normal steps                   |
+| `failure()`    | An earlier step failed                                    | Rollback, alerts, upload logs  |
+| `cancelled()`  | The workflow was cancelled                                | Cleanup                        |
+| `always()`     | Always — even after a failure or cancel                   | Must-run cleanup, test reports |
+| `!cancelled()` | Always, **except** when cancelled (safer than `always()`) | Upload test results            |
+
+```yaml
+- name: Rollback
+  if: failure() # runs only if a previous step failed
+  run: echo "rollback is done"
+```
+
+- **Manual approval** before production is **not** done with `if:`. Use an **environment with
+  required reviewers** (`environment: production`), and the job waits until someone approves.
+- **Two meanings of "status checks":** (1) these **functions** inside a workflow, and (2) the
+  **✅/❌ checks shown on a PR**. With **branch protection**, you can make PRs wait until the
+  required checks pass before they can be merged.
+
+## 12. CodeQL (Security Scanning)
+
+CodeQL is GitHub's **code scanning tool (SAST: Static Application Security Testing)**. It reads your
+**source code** and finds **security vulnerabilities** like **SQL injection, XSS, and command
+injection**, without running the app. Results show up in the **Security tab → Code scanning** and
+on PRs. It's **free for public repos**; private repos need **GitHub Code Security** (Advanced
+Security).
+
+**Flow:** Source code → CodeQL builds a database of the code → runs security queries → alerts in
+the Security tab.
+
+**Testing vs CodeQL:**
+
+|              | Testing                             | CodeQL                                |
+| ------------ | ----------------------------------- | ------------------------------------- |
+| **Question** | "**Does it work?**"                 | "**Is the code secure?**"             |
+| **Checks**   | Functionality                       | Security                              |
+| **Finds**    | Bugs                                | Vulnerabilities                       |
+| **Examples** | Unit, integration, functional tests | SQL injection, XSS, command injection |
+
+```yaml
+codeql:
+  runs-on: ubuntu-latest
+  permissions:
+    security-events: write # needed to upload results to the Security tab
+    contents: read
+  steps:
+    - uses: actions/checkout@v7
+    - uses: github/codeql-action/init@v4
+      with:
+        languages: javascript-typescript # JS needs no build → no autobuild step
+    - uses: github/codeql-action/analyze@v4
+```
+
+> **Interview answer:** "Testing checks that the app **works**, and CodeQL checks that the code is
+> **secure**. We run CodeQL in CI as its **own job, in parallel** with the tests, and the results
+> show up in the **Security tab**."
+
+## 13. Dependabot
+
+Dependabot is a GitHub tool that **keeps your dependencies updated and secure**. It checks your
+packages (npm, pip, Docker, GitHub Actions…). When there's a **newer or safer version**, it **opens
+a PR automatically**. You review the PR, and CI runs on it before you merge.
+
+**Flow:** your app uses Express 4.18 → a secure new version comes out → Dependabot opens a PR → CI
+passes → you merge.
+
+| Feature               | What it does                                          | Config                   |
+| --------------------- | ----------------------------------------------------- | ------------------------ |
+| **Dependabot alerts** | Warns you about vulnerable dependencies               | Turn on in repo settings |
+| **Security updates**  | Opens a PR to fix vulnerable ones                     | Turn on in repo settings |
+| **Version updates**   | Opens PRs to keep everything up to date on a schedule | `.github/dependabot.yml` |
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+  - package-ecosystem: 'github-actions' # also updates actions/checkout@vX etc.
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+```
+
+## 14. Cost & Build Optimization
+
+**Faster pipelines = cheaper pipelines** (you pay per runner minute).
+
+| Strategy                   | Simple meaning                            | How                                                        |
+| -------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
+| **Right-size runners**     | Right machine for the job                 | Small job → `ubuntu-slim`; heavy build → larger runner     |
+| **Caching**                | Don't download/build the same thing again | `actions/cache`, `setup-node cache`, Docker layer cache    |
+| **Parallelize**            | Run independent jobs together             | No `needs:` between lint, test, scan                       |
+| **Change-aware pipeline**  | Run only what changed                     | `paths:` filters — docs change → skip app tests            |
+| **Optimize Docker builds** | Smaller, faster images                    | Multi-stage builds, `.dockerignore`, small base images     |
+| **Optimize tests**         | Cheap tests first, expensive later        | Unit tests on every PR; E2E only on main / before release  |
+| **Build once, promote**    | Don't rebuild for every environment       | Build one artifact, deploy the same one to dev → QA → prod |
+
+```yaml
+on:
+  push:
+    paths-ignore: ['**.md', 'docs/**'] # docs-only change → workflow doesn't run
+```
+
+## 15. Security Strategies (Simple Terms)
+
+| #   | Area                    | One word    | In simple words                                                                                                                                                                                                             |
+| --- | ----------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Identity & secrets**  | **Trust**   | Don't save permanent cloud passwords/keys in GitHub. Use **OIDC**: GitHub gets a **temporary token** from AWS/Azure/GCP for each run, and it expires on its own. Give it the **least permissions** needed.                  |
+| 2   | **Code & dependencies** | **Scan**    | Find problems **before** production: **CodeQL** (your code), **Dependabot** (libraries), **secret scanning** (leaked keys), **IaC scanning** (Terraform/K8s files). Block only serious issues, not every small warning.     |
+| 3   | **Artifacts**           | **Prove**   | Prove the artifact is real and unchanged: **SBOM** (a list of everything inside), **signing** (a digital seal), **provenance** (a record of who built it, from which commit). Build once, deploy the same one.              |
+| 4   | **Pipeline & runners**  | **Isolate** | CI runners can reach secrets, so protect them. Use **fresh, temporary runners**, keep untrusted PR code away from secrets, and use **protected branches/environments**.                                                     |
+| 5   | **Policy & deployment** | **Gate**    | Security rules are **checked automatically** before deploying, not by someone remembering a checklist. Use **approval gates**, **branch protection**, **policy-as-code**, and "block if a critical vulnerability is found". |
+
+Also set **`permissions:`** in every workflow to give the `GITHUB_TOKEN` only what it needs
+(e.g. `contents: read`).
+
+## 16. GitHub Copilot
+
+GitHub Copilot is an **AI coding assistant**. It helps developers and DevOps engineers **write,
+understand, fix, and improve code**. In GitHub Actions work, you can use it to **write workflow
+YAML**, **explain** an existing workflow or command, **debug** a failed run from its logs, and write
+**scripts and tests**. **Always review what it writes** — check action versions, permissions, and
+secrets yourself.
+
+## 17. Example — Node.js CI Workflow
 
 A typical CI pipeline in `.github/workflows/ci.yml`. Explain it in an interview like this:
 
@@ -327,8 +501,8 @@ jobs:
   build: # JOB
     runs-on: ubuntu-latest # RUNNER (fresh VM)
     steps: # STEPS (run in order)
-      - uses: actions/checkout@v4 # ACTION: clone the repo
-      - uses: actions/setup-node@v4 # ACTION: install Node + cache npm
+      - uses: actions/checkout@v7 # ACTION: clone the repo
+      - uses: actions/setup-node@v7 # ACTION: install Node + cache npm
         with:
           node-version: 20
           cache: npm
@@ -336,21 +510,25 @@ jobs:
       - run: npm run lint # check code quality
       - run: npm test # run tests
       - run: npm run build # build the app
-      - uses: actions/upload-artifact@v4 # ARTIFACT: save dist/ for download
+      - uses: actions/upload-artifact@v7 # ARTIFACT: save dist/ for download
         with:
           name: app-build
           path: dist/
 ```
 
-## 12. Remember These
+## 18. Remember These
 
 - Workflow files live in **`.github/workflows/`**.
 - **Jobs = parallel**, **steps = sequential**.
 - `run:` = shell command, `uses:` = action.
 - Each job gets a **fresh VM**; jobs share data via **artifacts**.
-- **Pin action versions** (`@v4`) for safe, repeatable builds.
+- **Pin action versions** (`@v7`) for safe, repeatable builds.
 - Use **`npm ci`** in CI (exact versions from the lock file), and **commit `package-lock.json`**.
 - **Cache = speed** (reused between runs). **Artifact = output** (shared between jobs / downloaded).
+- `if:` = **"Should I run?"**; `failure()` / `always()` = **"What happened before me?"**
+- **Testing = does it work?** **CodeQL = is it secure?** **Dependabot = are my libraries safe and
+  up to date?**
+- Use **OIDC** instead of storing cloud keys, and set least-privilege **`permissions:`**.
 
 **Next steps:** [Workflow templates](https://docs.github.com/en/actions/writing-workflows/using-workflow-templates)
 · [CI tutorials](https://docs.github.com/en/actions/use-cases-and-examples/building-and-testing) ·
