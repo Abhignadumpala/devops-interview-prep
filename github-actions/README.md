@@ -202,7 +202,114 @@ private network access.
 > ⚠️ GitHub-hosted runners have **usage limits** based on your plan — check
 > [Billing settings](https://github.com/settings/billing).
 
-## 8. Example — Node.js CI Workflow
+## 8. package.json vs package-lock.json
+
+**`package.json`** is the **project's ID card**, and you edit it yourself. It has the app's name,
+version, **scripts** (`npm test`, `npm run build`) and the **dependencies** it needs. Versions are
+**ranges**: `"eslint": "^9.39.5"` means "9.39.5 or any newer 9.x". So two installs on different days
+can give **different versions**.
+
+**`package-lock.json`** is **created automatically by npm**. It locks the **exact version of every
+package**, including dependencies of dependencies, plus a hash to verify each download. **Commit
+it to Git**, so every developer and every CI run installs the **exact same versions**.
+
+```text
+// package.json  →  "what I want"
+"devDependencies": { "eslint": "^9.39.5" }
+
+// package-lock.json  →  "exactly what was installed"
+"node_modules/eslint": { "version": "9.39.5", "integrity": "sha512-..." }
+```
+
+| Point              | `npm install`                        | `npm ci` (use in CI)                        |
+| ------------------ | ------------------------------------ | ------------------------------------------- |
+| **Reads**          | `package.json` (can update the lock) | `package-lock.json` only (never changes it) |
+| **If out of sync** | Updates the lock file                | **Fails** with an error                     |
+| **node_modules**   | Keeps it and adds to it              | **Deletes it** and installs fresh           |
+| **Use for**        | Local development, adding packages   | CI pipelines — clean, exact, faster         |
+
+> **Interview answer:** "`package.json` lists the dependencies with version ranges, and
+> `package-lock.json` locks the exact versions. In CI we use `npm ci`, which installs exactly what's
+> in the lock file, so the build is the same every time."
+
+## 9. Caching
+
+Every job starts on a **fresh VM**, so dependencies are **downloaded again on every run**, which is
+slow. A **cache** saves files (like `~/.npm`) after one run and **restores them in the next run**,
+which makes builds faster. The cache is found by its **key**. The key usually contains a **hash of
+`package-lock.json`**, so when dependencies change, the key changes and a new cache is made.
+
+**Easy way** — `setup-node` caches npm for you:
+
+```yaml
+- uses: actions/setup-node@v4
+  with:
+    node-version: 20
+    cache: npm # caches ~/.npm, key based on package-lock.json
+```
+
+**Manual way** — `actions/cache` (works for any tool: pip, Maven, Gradle, Docker layers…):
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: ~/.npm # what to save
+    key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }} # exact match
+    restore-keys: ${{ runner.os }}-npm- # fallback: closest older cache
+```
+
+- **Cache hit** = key found, files restored. **Cache miss** = files downloaded, then saved for next
+  time.
+- Caches **not used for 7 days are deleted**, and each repo has a **size limit (10 GB by
+  default)**.
+- **Never cache secrets.** Cache dependencies, not build results.
+
+## 10. Artifacts
+
+Artifacts are **files a workflow saves after a job finishes**: build output (`dist/`), test reports,
+logs, coverage reports. Use them to **share files between jobs**, because each job runs on a
+different VM. You can also **download them from the run's page** in the Actions tab. By default they
+are **kept for 90 days**, and you can change this with `retention-days`.
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm run build
+      - uses: actions/upload-artifact@v4 # SAVE files
+        with:
+          name: app-build
+          path: dist/
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest # different VM — dist/ is NOT here
+    steps:
+      - uses: actions/download-artifact@v4 # GET files from build job
+        with:
+          name: app-build
+          path: dist/
+      - run: ls dist/
+```
+
+### Cache vs Artifact
+
+|                 | Cache                                | Artifact                                      |
+| --------------- | ------------------------------------ | --------------------------------------------- |
+| **Purpose**     | **Speed up** runs                    | **Keep / share output** of a run              |
+| **What**        | Dependencies (`~/.npm`, pip, Maven)  | Build output, test reports, logs              |
+| **Used across** | **Different workflow runs**          | **Jobs in the same run** + download by people |
+| **Action**      | `actions/cache` / `setup-node cache` | `upload-artifact` / `download-artifact`       |
+| **Kept for**    | Deleted if unused for 7 days         | 90 days by default (`retention-days`)         |
+
+> **Interview answer:** "A cache is for **speed**: it reuses dependencies between workflow runs. An
+> artifact is for **output**: it saves files a job produced, so another job can use them or a person
+> can download them."
+
+## 11. Example — Node.js CI Workflow
 
 A typical CI pipeline in `.github/workflows/ci.yml`. Explain it in an interview like this:
 
@@ -229,16 +336,21 @@ jobs:
       - run: npm run lint # check code quality
       - run: npm test # run tests
       - run: npm run build # build the app
+      - uses: actions/upload-artifact@v4 # ARTIFACT: save dist/ for download
+        with:
+          name: app-build
+          path: dist/
 ```
 
-## 9. Remember These
+## 12. Remember These
 
 - Workflow files live in **`.github/workflows/`**.
 - **Jobs = parallel**, **steps = sequential**.
 - `run:` = shell command, `uses:` = action.
 - Each job gets a **fresh VM**; jobs share data via **artifacts**.
 - **Pin action versions** (`@v4`) for safe, repeatable builds.
-- Use **`npm ci`** in CI (exact versions from the lock file).
+- Use **`npm ci`** in CI (exact versions from the lock file), and **commit `package-lock.json`**.
+- **Cache = speed** (reused between runs). **Artifact = output** (shared between jobs / downloaded).
 
 **Next steps:** [Workflow templates](https://docs.github.com/en/actions/writing-workflows/using-workflow-templates)
 · [CI tutorials](https://docs.github.com/en/actions/use-cases-and-examples/building-and-testing) ·
