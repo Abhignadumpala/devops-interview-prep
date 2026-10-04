@@ -71,21 +71,28 @@ name: Secure DevSecOps Pipeline
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - master
+      - develop
+      - feature/** # any branch starting with feature/
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - master
+      - develop
   workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write # required to upload findings to the Security tab
 
 jobs:
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 20 # stop the job if it runs longer than 20 min
-
-    permissions:
-      actions: read
-      contents: read
-      security-events: write # required to upload findings to the Security tab
 
     strategy:
       fail-fast: false
@@ -127,17 +134,21 @@ jobs:
 
 ### What Each Part Does
 
-| Part                        | What it does                                                         |
-| --------------------------- | -------------------------------------------------------------------- |
-| `timeout-minutes: 20`       | Kills the job if it hangs, so it doesn't waste runner minutes        |
-| `security-events: write`    | Lets CodeQL upload its findings to the **Security** tab              |
-| `matrix.language`           | Which language to scan. Add more (e.g. `python`) to scan them too    |
-| `defaults.run.shell: bash`  | Every `run:` step uses bash                                          |
-| `actions/cache` on `~/.npm` | Reuses downloaded packages, so `npm ci` is faster                    |
-| `init`                      | Starts CodeQL and creates a database for the language                |
-| `autobuild`                 | Builds the code if needed (JavaScript needs no build, so it's quick) |
-| `analyze`                   | Runs the security queries and uploads the results                    |
-| `category`                  | Labels the results per language in the Security tab                  |
+| Part                        | What it does                                                               |
+| --------------------------- | -------------------------------------------------------------------------- |
+| `push` branches             | Runs on a push to `main`, `master`, `develop`, or any `feature/...` branch |
+| `pull_request` branches     | Runs on a PR into `main`, `master`, or `develop`                           |
+| `workflow_dispatch`         | Lets you run it by hand from the Actions tab                               |
+| `permissions` (top level)   | Applies to every job in the workflow                                       |
+| `timeout-minutes: 20`       | Kills the job if it hangs, so it doesn't waste runner minutes              |
+| `security-events: write`    | Lets CodeQL upload its findings to the **Security** tab                    |
+| `matrix.language`           | Which language to scan. Add more (e.g. `python`) to scan them too          |
+| `defaults.run.shell: bash`  | Every `run:` step uses bash                                                |
+| `actions/cache` on `~/.npm` | Reuses downloaded packages, so `npm ci` is faster                          |
+| `init`                      | Starts CodeQL and creates a database for the language                      |
+| `autobuild`                 | Builds the code if needed (JavaScript needs no build, so it's quick)       |
+| `analyze`                   | Runs the security queries and uploads the results                          |
+| `category`                  | Labels the results per language in the Security tab                        |
 
 ```
 checkout → cache → npm ci → init CodeQL → autobuild → analyze → Security tab
