@@ -1,3 +1,8 @@
+# GitHub Actions — Interview Questions
+
+Based on [Understanding GitHub Actions](https://docs.github.com/en/actions/get-started/understand-github-actions).
+Notes: [README.md](./README.md)
+
 <!-- toc -->
 
 ## Table of Contents
@@ -39,5 +44,383 @@
 - [35. How do you make the build fast? (with cache)](#35-how-do-you-make-the-build-fast-with-cache)
 - [36. How do you manage dependencies in your app? (with Dependabot)](#36-how-do-you-manage-dependencies-in-your-app-with-dependabot)
 - [37. How do you build and test your app on multiple OS and versions at the same time?](#37-how-do-you-build-and-test-your-app-on-multiple-os-and-versions-at-the-same-time)
+- [38. What is SAST? How do you do it in your pipeline? (with CodeQL)](#38-what-is-sast-how-do-you-do-it-in-your-pipeline-with-codeql)
+- [39. How did you set up a self-hosted runner?](#39-how-did-you-set-up-a-self-hosted-runner)
 
 <!-- tocstop -->
+
+### 1. What is GitHub Actions?
+
+A CI/CD and automation platform built into GitHub. It lets you build, test, and deploy code, and
+automate any repository task (labeling issues, releases, etc.) in response to events.
+
+### 2. What are the main components of GitHub Actions?
+
+**Workflows, events, jobs, steps, actions, and runners.** An event triggers a workflow; the workflow
+has jobs; each job runs on a runner and consists of steps; each step is a shell command or an
+action.
+
+### 3. Where are workflows stored and in what format?
+
+As **YAML** files in the **`.github/workflows/`** directory of the repository.
+
+### 4. Can a repository have more than one workflow?
+
+Yes. Each workflow can do something different — e.g. one for PR tests, one for deployments on
+release, one for issue triage.
+
+### 5. What are the ways to trigger a workflow?
+
+1. A repository **event** (`push`, `pull_request`, `issues`, `release`, …)
+2. **Manually** — `workflow_dispatch`
+3. A **schedule** — `schedule` with cron syntax
+4. An external call to the **REST API** — `repository_dispatch`
+
+### 6. Do jobs run in parallel or sequentially?
+
+**In parallel by default.** Use `needs:` to make a job wait for another job to finish.
+
+### 7. Do steps run in parallel or sequentially?
+
+**Sequentially**, in the order defined, on the same runner.
+
+### 8. How do steps in the same job share data? Can different jobs share data the same way?
+
+Steps run on the **same runner**, so they share the filesystem and environment — a build step's
+output can be used by the next test step. Different jobs run on **different runners (fresh VMs)**, so
+they must share data via **artifacts** (`actions/upload-artifact` / `download-artifact`) or job
+**outputs**.
+
+### 9. What is the difference between `run` and `uses`?
+
+- `run:` executes a **shell command/script** on the runner.
+- `uses:` invokes a **reusable action** (e.g. `actions/checkout@v7`).
+
+### 10. What is an action? Give examples.
+
+A pre-defined, reusable piece of code for a common task, used to reduce repetition. Examples:
+`actions/checkout` (clone repo), `actions/setup-node` (install toolchain),
+`aws-actions/configure-aws-credentials` (cloud auth). Found in the **GitHub Marketplace** or
+written yourself.
+
+### 11. Why pin action versions? How?
+
+To get reproducible builds and protect against malicious or breaking changes. Pin a tag
+(`@v7`) or — more secure — a **full commit SHA**.
+
+### 12. What is a runner? What types exist?
+
+A server that executes a workflow job. Each runner runs **one job at a time**.
+
+- **GitHub-hosted**: Ubuntu, Windows, macOS (plus larger runners).
+- **Self-hosted**: your own machine — for custom OS, hardware, or network access.
+
+### 13. When would you choose a self-hosted runner?
+
+When you need a specific OS/hardware (GPU, ARM), access to private network resources, bigger or
+cheaper compute, or pre-installed tooling/caches that persist.
+
+### 14. Is anything preserved between workflow runs on GitHub-hosted runners?
+
+No. **Each run gets a fresh, newly-provisioned VM.** Use `actions/cache` for dependencies and
+artifacts for build outputs.
+
+### 15. What is a matrix strategy?
+
+Running the same job multiple times with different variable combinations, e.g. testing on Node
+18/20/22 across Linux and Windows:
+
+```yaml
+strategy:
+  matrix:
+    os: [ubuntu-latest, windows-latest]
+    node: [18, 20, 22]
+runs-on: ${{ matrix.os }}
+```
+
+### 16. Scenario: build for 3 architectures, then package once all succeed. How?
+
+Three build jobs (or one matrix job) with no dependencies run **in parallel**; a `package` job with
+`needs: [build]` runs only after all of them succeed.
+
+### 17. Walk through a basic CI workflow for a Node.js app.
+
+Trigger on `push`/`pull_request` to `main` → job on `ubuntu-latest` → `actions/checkout` →
+`actions/setup-node` with npm cache → `npm ci` → lint → format check → test → build. See the worked
+example in [README.md](./README.md#17-example--nodejs-ci-workflow).
+
+### 18. What is `npm ci` and why use it in CI instead of `npm install`?
+
+`npm ci` installs exactly what's in `package-lock.json`, fails if it's out of sync with
+`package.json`, and deletes `node_modules` first — giving clean, reproducible, faster installs.
+
+### 19. What is the difference between `package.json` and `package-lock.json`?
+
+`package.json` lists dependencies with **version ranges** (`^9.39.5`) and scripts — you edit it.
+`package-lock.json` is generated by npm and locks the **exact version** of every package (including
+nested ones). Commit both so every install is identical.
+
+### 20. What is caching in GitHub Actions and why use it?
+
+Each run starts on a fresh VM, so dependencies are downloaded every time. A cache saves them (e.g.
+`~/.npm`) and restores them in later runs using a **key**, usually built from
+`hashFiles('**/package-lock.json')`. Result: **faster builds**. Use `actions/cache` or
+`setup-node`'s `cache: npm`.
+
+### 21. What happens when `package-lock.json` changes?
+
+Its hash changes, so the cache **key** changes → **cache miss** → dependencies are downloaded fresh
+and a new cache is saved. `restore-keys` can restore the closest older cache as a starting point.
+
+### 22. What are artifacts?
+
+Files saved after a job — build output, test reports, logs. Uploaded with
+`actions/upload-artifact` and downloaded by another job with `actions/download-artifact`, or by a
+person from the run page. Kept 90 days by default (`retention-days` to change).
+
+### 23. Cache vs artifact?
+
+**Cache = speed**: reuses dependencies **across workflow runs**. **Artifact = output**: shares files
+**between jobs in the same run** and lets people download them.
+
+### 24. What is CodeQL? How is it different from testing?
+
+CodeQL is GitHub's **SAST** tool. It scans **source code** for vulnerabilities like SQL injection,
+XSS and command injection, and shows them in the **Security tab**. **Testing checks "does it
+work?"**, while **CodeQL checks "is it secure?"**.
+
+### 25. What permission does a CodeQL job need?
+
+`security-events: write` — to upload results to the Security tab (plus `contents: read`).
+
+### 26. What is Dependabot?
+
+A GitHub tool that checks dependencies for **outdated or vulnerable versions** and **opens PRs** to
+update them. Version updates are configured in **`.github/dependabot.yml`**; alerts and security
+updates are enabled in repo settings.
+
+### 27. Conditions vs status check functions?
+
+**Conditions (`if:`)** decide **"should I run?"** using branch/event info, e.g.
+`if: github.ref == 'refs/heads/main'`. **Status check functions** (`success()`, `failure()`,
+`always()`, `cancelled()`) answer **"what happened before me?"**, e.g. `if: failure()` for rollback.
+
+### 28. `always()` vs `!cancelled()`?
+
+Both run after a failure. `always()` also runs when the workflow is **cancelled**; `!cancelled()`
+doesn't — so it's the safer choice for things like uploading test reports.
+
+### 29. How do you add manual approval before deploying to production?
+
+Use an **environment** with **required reviewers**: `environment: production` on the deploy job.
+The job pauses until an approver clicks approve. (Not done with `if:`.)
+
+### 30. How do you reduce pipeline time and cost?
+
+Right-size runners, **cache** dependencies, run independent jobs in **parallel**, use **path filters**
+to run only what changed, optimize **Docker builds** (multi-stage, `.dockerignore`), run **fast tests
+first**, and **build once, promote** the same artifact.
+
+### 31. What is OIDC and why use it?
+
+OpenID Connect lets a workflow get a **short-lived token** from AWS/Azure/GCP for each run, instead
+of storing **long-lived cloud keys** as GitHub secrets. Nothing permanent to leak; access is limited
+by IAM role.
+
+### 32. What are SBOM, artifact signing and provenance?
+
+- **SBOM** — list of every component inside the artifact.
+- **Signing** — digital seal proving the artifact wasn't changed.
+- **Provenance** — record of who built it, from which commit, with which workflow.
+
+### 33. How can GitHub Copilot help in DevOps?
+
+It writes and **explains workflow YAML**, **debugs failed runs** from logs, and generates scripts
+and tests. Its output must be **reviewed** — check action versions, permissions and secrets.
+
+### 34. Are dependencies, `node_modules`, cache and artifacts the same thing?
+
+No. **Dependencies** are the libraries listed in `package.json` (locked in `package-lock.json`).
+`npm ci` **downloads** them (no compiling) into **`node_modules/`** on the runner — not committed,
+not uploaded. The **cache** (`~/.npm`) just makes that download faster next run. An **artifact** is
+what _you_ upload with `upload-artifact` — usually the **build output** (`dist/`) or reports — and
+it's stored **on GitHub**, not in `node_modules/`.
+
+### 35. How do you make the build fast? (with cache)
+
+**Short answer:** "Every run starts on a fresh runner, so without a cache `npm ci` downloads every
+package from the internet each time. I use `actions/setup-node` with `cache: npm`. It saves the npm
+cache folder (`~/.npm`) after a run and restores it in the next run, so `npm ci` installs from the
+local cache instead of downloading again."
+
+**In my pipeline:**
+
+```yaml
+- uses: actions/setup-node@v4
+  with:
+    node-version: 22
+    cache: npm # save + restore ~/.npm
+- run: npm ci # fast: packages come from the cache
+```
+
+**How it works:**
+
+1. **Key:** made from a hash of `package-lock.json` (+ OS).
+2. **Cache hit** (lock file unchanged): restore `~/.npm` → `npm ci` is fast.
+3. **Cache miss** (lock file changed): download as normal → save a new cache for next time.
+
+**Points to mention:**
+
+- Cache **`~/.npm`**, not `node_modules/`. `npm ci` deletes `node_modules/` anyway, and `~/.npm`
+  works across OS and Node versions.
+- `cache: npm` finds the right folder on **every OS**. With `actions/cache` you write the `path` and
+  `key` yourself.
+- Every job with `cache: npm` uses it: lint, the 6 matrix test jobs and build. Ubuntu and
+  Windows jobs each get their own cache, because the key includes the OS.
+- The cache only speeds up **installs**. To pass build output **between jobs**, use **artifacts**.
+- Unused caches are deleted after **7 days**, and a repo can store **10 GB** of caches by default.
+
+**Other ways to make it faster (one line each):** run independent jobs in **parallel**, use
+`fail-fast` and `needs:` to stop early on failure, use **path filters** so docs-only changes don't
+run the pipeline, and use bigger runners only for heavy jobs.
+
+### 36. How do you manage dependencies in your app? (with Dependabot)
+
+**Short answer:** "Dependencies are listed in `package.json` and locked to exact versions in
+`package-lock.json`. CI installs them with `npm ci`, so every run gets the same versions. To keep
+them up to date and secure, I use **Dependabot**: it checks every week, opens a PR for each update,
+my pipeline tests that PR, and I merge only if all checks pass."
+
+**The flow:**
+
+```
+Dependabot checks weekly → finds a newer version → opens a PR
+   ↓
+PR triggers the pipeline → lint, tests, build run
+   ↓
+All ✅ → check the test coverage score → review the changes → merge
+Any ❌ or low coverage → don't merge
+```
+
+**Test coverage score:** after the tests pass, we also check the **coverage %** (how much of the
+code the tests ran). If it's **low, like 30%**, we **don't merge**, because most of the code wasn't
+tested. If it's **good (e.g. 80% or more)**, we merge. Jest can enforce this automatically, so the
+pipeline **fails** if coverage drops below the limit:
+
+```json
+"jest": {
+  "coverageThreshold": {
+    "global": { "lines": 80, "branches": 80, "functions": 80, "statements": 80 }
+  }
+}
+```
+
+**Config** (`.github/dependabot.yml`):
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: 'npm' # libraries in package.json
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+
+  - package-ecosystem: 'github-actions' # actions like checkout@v4 in workflows
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+```
+
+**Points to mention:**
+
+- **Two types:** **version updates** (newer versions, on a schedule, set in `dependabot.yml`) and
+  **security updates** (PRs for known vulnerabilities, turned on in **Settings → Code security**).
+- Each PR shows **old → new version** and the release notes, so I can see what changed.
+- A **required status check** blocks the merge until the pipeline passes, so a breaking update
+  can't reach `main`.
+- **Major versions** (e.g. 4.x → 5.x) can have breaking changes, so I read the release notes
+  before merging, even if tests pass.
+- **`dependencies` vs `devDependencies`:** only `dependencies` (e.g. `express`) are needed to run
+  the app. `devDependencies` (Jest, ESLint) are only for development and CI.
+- Also run **`npm audit`** in CI to fail the build on known high-severity vulnerabilities.
+
+### 37. How do you build and test your app on multiple OS and versions at the same time?
+
+**Short answer:** "I use a **matrix strategy**. I write the test job once and list the operating
+systems and Node versions. GitHub creates one job for every combination and runs them **all in
+parallel**, so testing 6 setups takes about as long as testing 1. That saves a lot of time."
+
+**In my pipeline:**
+
+```yaml
+test:
+  runs-on: ${{ matrix.os }}
+  strategy:
+    fail-fast: false
+    matrix:
+      os: [ubuntu-latest, windows-latest]
+      node-version: [20, 22, 24]
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: npm
+    - run: npm ci
+    - run: npm run test:ci
+```
+
+2 OS × 3 Node versions = **6 jobs, all at the same time**.
+
+**Time saved (real numbers from my pipeline):**
+
+| How the 6 test jobs run            | Time            |
+| ---------------------------------- | --------------- |
+| One after another (added up)       | **120 seconds** |
+| In parallel with a matrix (actual) | **32 seconds**  |
+
+The total time = the **slowest** job (Windows, about 30 s), not all jobs added together.
+
+**Points to mention:**
+
+- **Same job, many setups:** no copy-pasting 6 almost identical jobs.
+- **Catches OS/version bugs early:** e.g. file paths that work on Linux but break on Windows.
+- **`fail-fast: false`:** if one job fails, the others still finish, so I see every failure at
+  once.
+- **Build once after the matrix:** the `build` job has `needs: test`, so it runs **once** after
+  all 6 test jobs pass, not 6 times.
+- **Cache** (`cache: npm`) makes `npm ci` fast in every matrix job.
+- Use **`include`** / **`exclude`** to add or skip specific combinations.
+
+### 38. What is SAST? How do you do it in your pipeline? (with CodeQL)
+
+**Short answer:** "SAST (Static Application Security Testing) is an automated code review that
+finds security issues in the code **without running it**. I use **CodeQL**: it runs in my GitHub
+Actions workflow on every push and PR, scans the JavaScript code, and shows any vulnerabilities in
+the **Security → Code scanning** tab."
+
+- **Finds:** SQL injection, XSS, command injection.
+- **Testing vs CodeQL:** testing checks **"does it work?"**, CodeQL checks **"is the code
+  secure?"**
+- **Steps:** `init` → `autobuild` → `analyze`. The job needs `security-events: write` to upload the
+  results.
+- **Enable it:** Settings → Advanced Security → CodeQL analysis → Default (no YAML) or Advanced
+  (your own workflow). Use only one.
+
+### 39. How did you set up a self-hosted runner?
+
+**Short answer:** "A self-hosted runner is a machine managed by us that runs GitHub Actions jobs. I
+launched an Ubuntu EC2 (t2.medium, 4 GB RAM), downloaded the runner, connected it to my repo with
+`./config.sh --url <repo> --token <token>`, started it with `./run.sh`, and used
+`runs-on: self-hosted` in the workflow."
+
+- **Why:** custom software, private network access, special hardware, more control.
+- **Self-hosted = your machine, your control.** GitHub-hosted = GitHub's machine, nothing to set up.
+- **Install tools yourself:** the EC2 had no Node.js, so I added `actions/setup-node` in the
+  workflow.
+- **The token** comes from Settings → Actions → Runners and expires in 1 hour.
+- **Security:** use self-hosted runners only on private repos, so strangers' PRs can't run code on
+  your machine.
