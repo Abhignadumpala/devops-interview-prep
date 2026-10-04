@@ -1,9 +1,9 @@
-# Class Workflows — Corrected
+# Workflow Examples — Corrected
 
-The workflows from class (Day 1–3), each fixed, with a list of **what was wrong and why**.
+Practice workflows (Day 1–3), each fixed, with a list of **what was wrong and why**.
 Concepts are explained in [README.md](./README.md).
 
-> **Note:** `ubuntu-slim` (used in class) **is a valid runner**: 1 CPU, container-based, 15-minute
+> **Note:** `ubuntu-slim` **is a valid runner**: 1 CPU, container-based, 15-minute
 > job limit. It's fine for light jobs, but use `ubuntu-latest` for CodeQL, matrix builds, or anything
 > heavy.
 
@@ -135,7 +135,7 @@ jobs:
   only, so every push still gets built and tested.
 - **The cache path `~/.npm` is wrong on Windows.** npm keeps its cache in a different folder there,
   so the Windows runs saved an empty cache. `setup-node` with `cache: npm` uses the right folder on
-  every OS. (Including `node-version` in the manual key, as in class, was a good idea.)
+  every OS. (Including `node-version` in the manual key was a good idea.)
 - **Unused settings were removed.** The `language` matrix key and `security-events: write` were only
   needed for CodeQL, which this workflow doesn't run. An unused matrix key adds confusion, and an
   unused permission is a security risk.
@@ -196,7 +196,7 @@ jobs:
 
 **What was fixed:**
 
-- **A cache doesn't pass files between jobs.** In class, the test job restored the cache but never
+- **A cache doesn't pass files between jobs.** In the original workflow, the test job restored the cache but never
   installed or used anything. The cache only speeds up `npm ci`. To pass the **build output** from
   one job to the next, use **artifacts** (upload → download).
 - **`deploy` now downloads the artifact.** It deploys the **same files that were built and

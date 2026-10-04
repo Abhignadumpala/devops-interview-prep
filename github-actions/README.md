@@ -1,8 +1,8 @@
 # GitHub Actions — Basics
 
 Sources: [GitHub Docs](https://docs.github.com/en/actions/get-started/understand-github-actions) ·
-[KodeKloud Notes](https://notes.kodekloud.com/) · Practice: [interview-questions.md](./interview-questions.md) ·
-Class code, corrected: [class-workflows.md](./class-workflows.md)
+Practice: [interview-questions.md](./interview-questions.md) ·
+Workflow examples: [workflow.md](./workflow.md)
 
 ## 1. The Problem Before CI/CD
 
@@ -73,28 +73,56 @@ to build, test, and deploy your code.
 > runs on a **runner** and has **steps**. A step is a shell command (`run`) or an **action**
 > (`uses`).
 
-![GitHub Actions workflow runs list](https://kodekloud.com/kk-media/image/upload/v1752870447/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-actions-workflow-runs-interface.jpg)
+```mermaid
+flowchart LR
+    E["⚡ Event<br/>push / pull_request"] --> W["📄 Workflow<br/>.github/workflows/ci.yml"]
+    W --> J1["🧱 Job: build"]
+    W --> J2["🧱 Job: test"]
+    J1 --> R1["🖥️ Runner<br/>ubuntu-latest"]
+    J2 --> R2["🖥️ Runner<br/>ubuntu-latest"]
+    R1 --> S1["Step 1: uses: actions/checkout<br/>Step 2: run: npm ci<br/>Step 3: run: npm run build"]
+    R2 --> S2["Step 1: uses: actions/checkout<br/>Step 2: run: npm ci<br/>Step 3: run: npm test"]
+```
 
-![A workflow in progress](https://kodekloud.com/kk-media/image/upload/v1752870448/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-actions-workflow-progress.jpg)
+In the repo's **Actions** tab, every workflow run is listed with its status: ✅ success,
+❌ failure, or 🟡 in progress. Click a run to see each job and the live log of every step.
 
 **GitHub manages the servers for you** — setup, scaling, and maintenance. You only write the
 workflow. Runners are available on **Ubuntu, Windows, and macOS**.
 
-![Ubuntu, Windows, macOS runners](https://kodekloud.com/kk-media/image/upload/v1752870449/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-actions-ubuntu-windows-macos.jpg)
-
-![GitHub manages infrastructure](https://kodekloud.com/kk-media/image/upload/v1752870450/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-manages-infrastructure-infographic.jpg)
+```mermaid
+flowchart TB
+    subgraph GH["☁️ GitHub manages: setup, scaling, updates, cleanup"]
+        U["🐧 ubuntu-latest"]
+        WI["🪟 windows-latest"]
+        M["🍎 macos-latest"]
+    end
+    Y["📄 Your workflow YAML<br/>(the only thing you write)"] -- "runs-on:" --> GH
+```
 
 ## 6. Not Just CI/CD
 
 **CI/CD:** build → test → lint → dockerize → security scan → deploy.
 
-![CI/CD with GitHub Actions](https://kodekloud.com/kk-media/image/upload/v1752870453/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-actions-cicd-diagram.jpg)
+```mermaid
+flowchart LR
+    P["👩‍💻 git push"] --> B["🔨 Build"] --> T["🧪 Test"] --> L["🧹 Lint"]
+    L --> D["🐳 Dockerize"] --> S["🔒 Security scan"] --> DEP["🚀 Deploy"]
+    T -. "❌ fails" .-> X["⛔ Pipeline stops<br/>nothing is deployed"]
+```
 
 **Repo automation:** it also reacts to issues, pull requests, releases, and packages. For example,
 when a new PR is opened it can post a welcome comment, add labels based on changed files, and
 assign reviewers.
 
-![Repository automation events](https://kodekloud.com/kk-media/image/upload/v1752870454/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-actions-flowchart-automation.jpg)
+```mermaid
+flowchart LR
+    PR["📬 New pull request opened"] --> A1["💬 Post a welcome comment"]
+    PR --> A2["🏷️ Add labels based on changed files"]
+    PR --> A3["👀 Assign reviewers"]
+    I["🐞 New issue opened"] --> A4["🏷️ Label it / triage"]
+    REL["📦 Release published"] --> A5["📤 Publish package"]
+```
 
 ## 7. Core Components
 
@@ -220,7 +248,13 @@ cleaned after each job**: old files and caches stay unless you clean them.
 **container, not a full VM**, and has **few tools installed**. A job on it is **stopped after 15
 minutes**. Good for small jobs (labels, notifications), not for heavy builds or Docker.
 
-![Job running on Windows, Ubuntu, macOS runners](https://kodekloud.com/kk-media/image/upload/v1752870456/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-actions-workflow-runners.jpg)
+```mermaid
+flowchart LR
+    J["🧱 Job"] -- "runs-on: ubuntu-latest" --> U["🐧 Ubuntu VM"]
+    J -- "runs-on: windows-latest" --> W["🪟 Windows VM"]
+    J -- "runs-on: macos-latest" --> M["🍎 macOS VM"]
+    J -- "runs-on: self-hosted" --> SH["🏠 Your own server"]
+```
 
 |                   | GitHub-hosted                      | Self-hosted                       |
 | ----------------- | ---------------------------------- | --------------------------------- |
@@ -229,7 +263,15 @@ minutes**. Good for small jobs (labels, notifications), not for heavy builds or 
 | **Cost**          | Free minutes in plan, limits apply | You pay for servers + maintenance |
 | **Managed by**    | GitHub                             | You                               |
 
-![GitHub-hosted vs self-hosted runners](https://kodekloud.com/kk-media/image/upload/v1752870456/notes-assets/images/Certified-Jenkins-Engineer-Github-Actions-Basics/github-self-hosted-runners-comparison.jpg)
+```mermaid
+flowchart TB
+    subgraph A["GitHub-hosted"]
+        A1["☁️ GitHub's cloud"] --> A2["New clean VM every job"] --> A3["Deleted after the job"]
+    end
+    subgraph B["Self-hosted"]
+        B1["🏠 Your server"] --> B2["Same machine every job"] --> B3["Files and caches stay"]
+    end
+```
 
 > ⚠️ GitHub-hosted runners have **usage limits** based on your plan — check
 > [Billing settings](https://github.com/settings/billing).
@@ -596,6 +638,6 @@ jobs:
 - Use **OIDC** instead of storing cloud keys, and set least-privilege **`permissions:`**.
 
 **Next steps:** [Workflow templates](https://docs.github.com/en/actions/writing-workflows/using-workflow-templates)
-· [CI tutorials](https://docs.github.com/en/actions/use-cases-and-examples/building-and-testing) ·
-[Deployment](https://docs.github.com/en/actions/use-cases-and-examples/deploying) ·
+· [CI tutorials](https://docs.github.com/en/actions/use-cases-and-examples/building-and-testing)
+[Deployment](https://docs.github.com/en/actions/use-cases-and-examples/deploying)
 [GitHub Actions certification](https://resources.github.com/learn/certifications/)
