@@ -237,3 +237,52 @@ local cache instead of downloading again."
 **Other ways to make it faster (one line each):** run independent jobs in **parallel**, use
 `fail-fast` and `needs:` to stop early on failure, use **path filters** so docs-only changes don't
 run the pipeline, and use bigger runners only for heavy jobs.
+
+### 36. How do you manage dependencies in your app? (with Dependabot)
+
+**Short answer:** "Dependencies are listed in `package.json` and locked to exact versions in
+`package-lock.json`. CI installs them with `npm ci`, so every run gets the same versions. To keep
+them up to date and secure, I use **Dependabot**: it checks every week, opens a PR for each update,
+my pipeline tests that PR, and I merge only if all checks pass."
+
+**The flow:**
+
+```
+Dependabot checks weekly → finds a newer version → opens a PR
+   ↓
+PR triggers the pipeline → lint, tests, build run
+   ↓
+All ✅ → review the changes → merge        Any ❌ → the update breaks something → don't merge
+```
+
+**Config** (`.github/dependabot.yml`):
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: 'npm' # libraries in package.json
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+
+  - package-ecosystem: 'github-actions' # actions like checkout@v4 in workflows
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+```
+
+**Points to mention:**
+
+- **Two types:** **version updates** (newer versions, on a schedule, set in `dependabot.yml`) and
+  **security updates** (PRs for known vulnerabilities, turned on in **Settings → Code security**).
+- Each PR shows **old → new version** and the release notes, so I can see what changed.
+- A **required status check** blocks the merge until the pipeline passes, so a breaking update
+  can't reach `main`.
+- **Major versions** (e.g. 4.x → 5.x) can have breaking changes, so I read the release notes
+  before merging, even if tests pass.
+- **`dependencies` vs `devDependencies`:** only `dependencies` (e.g. `express`) are needed to run
+  the app. `devDependencies` (Jest, ESLint) are only for development and CI.
+- Also run **`npm audit`** in CI to fail the build on known high-severity vulnerabilities.
