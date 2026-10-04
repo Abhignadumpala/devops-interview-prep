@@ -2,62 +2,27 @@ name: Secure DevSecOps Pipeline
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - develop
-      - feature/** # any branch starting with feature/
-  pull_request:
-    branches:
-      - main
-      - master
-      - develop
+    branches: [main]
   workflow_dispatch:
 
-permissions:
-  actions: read
-  contents: read
-  security-events: write # required to upload findings to the Security tab
-
 jobs:
-  codeql:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-    timeout-minutes: 20 # stop the job if it runs longer than 20 min
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ['javascript-typescript'] # languages to scan
-
-    defaults:
-      run:
-        shell: bash
-
+  build:
+    runs-on: self-hosted # or [self-hosted, label1] to pick a runner by label
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Cache Dependencies
-        uses: actions/cache@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+          node-version: '20' # Node.js version to install
+          cache: 'npm' # caches npm packages for faster runs
 
       - name: Install Dependencies
         run: npm ci
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
+      - name: Test
+        run: npm test
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: '/language:${{ matrix.language }}'
+      - name: Build
+        run: npm run build
