@@ -35,6 +35,22 @@ devops-interview-prep/
 - A test file is named after the file it tests: `app.js` → `app.test.js`,
   `calculator.js` → `calculator.test.js`.
 
+## Files in Short
+
+| File                         | What it has                                                           |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `src/app.js`                 | The **complete application code**: all routes and responses           |
+| `src/server.js`              | The **port number** (`3000`) and the code that starts the app on it   |
+| `src/services/calculator.js` | The **maths logic**: add, subtract, multiply, divide                  |
+| `tests/`                     | The **tests** that check the app and the calculator work              |
+| `package.json`               | **All dependencies and libraries** the project uses, plus the scripts |
+| `package-lock.json`          | The **exact versions** of every installed library                     |
+| `eslint.config.js`           | **Lint** rules: checks the code for mistakes                          |
+| `.prettierrc`                | **Formatting** rules: how the code should look                        |
+| `.prettierignore`            | Files Prettier should **not format**                                  |
+| `.gitignore`                 | Files Git should **ignore** (not upload to GitHub)                    |
+| `.github/workflows/ci.yml`   | The **CI/CD pipeline** that runs on every push                        |
+
 ## API Endpoints
 
 | Method | Route                     | Example response                                      |
