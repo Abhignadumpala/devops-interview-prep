@@ -300,13 +300,18 @@ runs-on: self-hosted
 **empty**, so the job **fails** with `npm: command not found`. Fix: install Node.js **in the
 pipeline** with `actions/setup-node`.
 
+File: `.github/workflows/self-hosted.yml` (a separate workflow, so CodeQL in `ci.yml` stays as it is)
+
 ```yaml
-name: Secure DevSecOps Pipeline
+name: Self-Hosted Runner Build
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read # read-only access to the repo
 
 jobs:
   build:
