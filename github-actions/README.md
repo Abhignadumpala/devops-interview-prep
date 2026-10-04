@@ -193,6 +193,67 @@ jobs:
     needs: [lint, test, codeql] # SEQUENTIAL: waits for all three
 ```
 
+#### Matrix Jobs
+
+**Matrix = same job, many setups.** You write a job **once**, give it a list of values (like
+operating systems and Node versions), and GitHub runs the job **once for every combination**, all
+**at the same time**.
+
+**Without a matrix:** to test on 2 OS × 3 Node versions, you'd copy-paste the same job **6 times**.
+**With a matrix:** you write it **once**:
+
+```yaml
+jobs:
+  test:
+    runs-on: ${{ matrix.os }} # filled in for each job
+    strategy:
+      fail-fast: false # one failure doesn't stop the others
+      matrix:
+        os: [ubuntu-latest, windows-latest] # 2 values
+        node-version: [20, 22, 24] # 3 values
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }} # filled in for each job
+      - run: npm ci
+      - run: npm test
+```
+
+GitHub creates **2 × 3 = 6 jobs** and runs them in parallel:
+
+|                    | Node 20 | Node 22 | Node 24 |
+| ------------------ | ------- | ------- | ------- |
+| **ubuntu-latest**  | job 1   | job 2   | job 3   |
+| **windows-latest** | job 4   | job 5   | job 6   |
+
+- **`matrix:`** lists the values. Each key (`os`, `node-version`) is a variable.
+- **`${{ matrix.os }}`** / **`${{ matrix.node-version }}`** are replaced with each job's values.
+- **`fail-fast`**: `true` (default) cancels the other jobs when one fails. `false` lets them all
+  finish, so you see every failure.
+- **`include`** adds an extra combination, and **`exclude`** removes one. Example: skip
+  Windows + Node 20:
+
+  ```yaml
+  matrix:
+    os: [ubuntu-latest, windows-latest]
+    node-version: [20, 22, 24]
+    exclude:
+      - os: windows-latest
+        node-version: 20
+  ```
+
+**Why use it?**
+
+- **Test everywhere:** proves the app works on every OS and version users might have.
+- **No copy-paste:** one job definition instead of many.
+- **Saves time:** all combinations run **in parallel**. In this repo, 6 test jobs took **32
+  seconds** instead of **120 seconds** one after another.
+
+> **Interview one-liner:** "A matrix runs the same job many times with different settings, like
+> different operating systems or language versions, all in parallel. Matrix = same job, many
+> setups."
+
 ### 7.4 Steps
 
 Steps are the **individual tasks inside a job** — either a **shell command (`run`)** or an
