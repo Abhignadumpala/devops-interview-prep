@@ -22,7 +22,6 @@
   - [Use the Self-Hosted Runner in a Workflow](#use-the-self-hosted-runner-in-a-workflow)
   - [Things to Remember](#things-to-remember)
 - [Parallel Builds](#parallel-builds)
-- [Screenshots](#screenshots)
 
 <!-- tocstop -->
 
@@ -343,9 +342,3 @@ security ─┘
 
 **Why:** the pipeline takes as long as the **slowest** job, not the **sum** of all jobs, so you get
 faster feedback.
-
-## Screenshots
-
-<!-- Put screenshots in ./images/ and show them like this:
-![Workflow run in the Actions tab](./images/actions-run.png)
--->

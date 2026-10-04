@@ -24,7 +24,6 @@
   - [How to Test the Conditions](#how-to-test-the-conditions)
 - [Dependabot](#dependabot)
 - [Status Check](#status-check)
-- [Screenshots](#screenshots)
 
 <!-- tocstop -->
 
@@ -423,9 +422,3 @@ Makes the pipeline a **required check**: a PR **can't be merged** until it passe
 - The checks appear in the list only **after the workflow has run once**.
 - This is why the workflow also runs on **`pull_request`**: the checks run on the PR, and the
   **Merge** button stays blocked until they're ✅.
-
-## Screenshots
-
-<!-- Put screenshots in ./images/ and show them like this:
-![Workflow run in the Actions tab](./images/actions-run.png)
--->

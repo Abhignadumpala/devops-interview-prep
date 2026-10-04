@@ -15,7 +15,6 @@
 
 - [Simple CI Pipeline](#simple-ci-pipeline)
 - [Artifacts + CodeQL](#artifacts--codeql)
-- [Screenshots](#screenshots)
 
 <!-- tocstop -->
 
@@ -110,9 +109,3 @@ jobs:
 - **`permissions`:** the workflow only gets the access it needs. Only the `codeql` job can write
   security results.
 - JavaScript isn't compiled, so CodeQL scans the code directly (no build step needed).
-
-## Screenshots
-
-<!-- Put screenshots in ./images/ and show them like this:
-![Workflow run in the Actions tab](./images/actions-run.png)
--->
