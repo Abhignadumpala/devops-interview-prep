@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - master
-     
+      - main
   pull_request: # also run on PRs, so the status check shows on the PR
     branches:
       - main
