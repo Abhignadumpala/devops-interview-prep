@@ -199,3 +199,41 @@ No. **Dependencies** are the libraries listed in `package.json` (locked in `pack
 not uploaded. The **cache** (`~/.npm`) just makes that download faster next run. An **artifact** is
 what _you_ upload with `upload-artifact` — usually the **build output** (`dist/`) or reports — and
 it's stored **on GitHub**, not in `node_modules/`.
+
+### 35. How do you make the build fast? (with cache)
+
+**Short answer:** "Every run starts on a fresh runner, so without a cache `npm ci` downloads every
+package from the internet each time. I use `actions/setup-node` with `cache: npm`. It saves the npm
+cache folder (`~/.npm`) after a run and restores it in the next run, so `npm ci` installs from the
+local cache instead of downloading again."
+
+**In my pipeline:**
+
+```yaml
+- uses: actions/setup-node@v4
+  with:
+    node-version: 22
+    cache: npm # save + restore ~/.npm
+- run: npm ci # fast: packages come from the cache
+```
+
+**How it works:**
+
+1. **Key:** made from a hash of `package-lock.json` (+ OS).
+2. **Cache hit** (lock file unchanged): restore `~/.npm` → `npm ci` is fast.
+3. **Cache miss** (lock file changed): download as normal → save a new cache for next time.
+
+**Points to mention:**
+
+- Cache **`~/.npm`**, not `node_modules/`. `npm ci` deletes `node_modules/` anyway, and `~/.npm`
+  works across OS and Node versions.
+- `cache: npm` finds the right folder on **every OS**. With `actions/cache` you write the `path` and
+  `key` yourself.
+- Every job with `cache: npm` uses it: lint, the 6 matrix test jobs and build. Ubuntu and
+  Windows jobs each get their own cache, because the key includes the OS.
+- The cache only speeds up **installs**. To pass build output **between jobs**, use **artifacts**.
+- Unused caches are deleted after **7 days**, and a repo can store **10 GB** of caches by default.
+
+**Other ways to make it faster (one line each):** run independent jobs in **parallel**, use
+`fail-fast` and `needs:` to stop early on failure, use **path filters** so docs-only changes don't
+run the pipeline, and use bigger runners only for heavy jobs.
