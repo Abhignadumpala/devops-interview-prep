@@ -49,16 +49,16 @@ jobs:
 
 ## Day 2 — Cache, Dependabot, Matrix Jobs, Conditions, Status Check
 
-- **Cache + build → test → deploy:** split the pipeline into 3 jobs and cached npm packages.
-- **Matrix jobs + conditions:** 2 operating systems × 3 Node versions, deploy only on a push to
-  `main`, and rollback with `if: failure()`.
-- **Dependabot:** `.github/dependabot.yml`, set to check for updates weekly.
-- **Status check:** made the workflow a required check, so a PR can't merge until it passes.
+- **Cache:** saved npm packages between runs, so `npm ci` is faster.
+- **Jobs with `needs:`:** split the pipeline into lint → test → build → deploy.
+- **Matrix jobs:** ran the tests on 2 operating systems × 3 Node versions (6 runs).
+- **Conditions:** deploy only on a push to `main`, and rollback only if deploy fails.
+- **Dependabot:** `.github/dependabot.yml` checks for library updates every week.
+- **Status check:** made the pipeline a required check, so a PR can't merge until it passes.
 
-### Cache + Build → Test → Deploy
+### The Full Day 2 Workflow
 
-Split the pipeline into 3 jobs that run one after another using `needs:`, and cached npm
-packages so installs are faster.
+`.github/workflows/ci.yml`
 
 ```yaml
 name: Secure DevSecOps Pipeline
@@ -68,110 +68,180 @@ on:
     branches:
       - master
       - main
+  pull_request: # also run on PRs, so the status check shows on the PR
+    branches:
+      - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
-    runs-on: ubuntu-slim
+  # 1. LINT: check code quality and formatting (once)
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Cache Dependencies
-        uses: actions/cache@v4
+      - name: Setup Node.js + Cache # CACHE: saves ~/.npm, key = hash of package-lock.json
+        uses: actions/setup-node@v4
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          node-version: 22
+          cache: npm
 
-      - name: Build
-        run: npm install
+      - name: Install Dependencies
+        run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Format Check
+        run: npm run format:check
+
+  # 2. TEST: MATRIX → 2 OS × 3 Node versions = 6 jobs in parallel
   test:
-    runs-on: ubuntu-slim
-    needs: build
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Cache Dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-
-      - name: Test
-        run: echo "code is tested"
-
-  deploy:
-    runs-on: ubuntu-slim
-    needs: test
-    steps:
-      - name: Deploy
-        run: echo "code is deploy"
-```
-
-- **`needs: build`**: `test` starts only after `build` passes. `deploy` waits for `test`.
-- **Cache `key`**: built from a hash of `package-lock.json`. Same lock file → same key → cache is
-  reused. Lock file changes → new key → fresh cache.
-- Each job runs on a **new runner**, so every job checks out the code again.
-
-### Matrix Jobs + Conditions
-
-One job definition runs on **every combination** of OS and Node version (2 × 3 = 6 runs).
-Deploy runs only on a push to `main`, and rollback runs only if deploy fails.
-
-```yaml
-name: Secure DevSecOps Pipeline
-
-on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:
-
-jobs:
-  build_and_test:
-    name: BUILD (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    needs: lint # starts only after lint passes
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false # one failing combo doesn't cancel the others
+      fail-fast: false # if one combination fails, the others keep running
       matrix:
         os: [ubuntu-latest, windows-latest]
         node-version: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js + Cache
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
-      - run: npm test
 
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm run test:ci
+
+  # 3. BUILD: create dist/ and save it as an artifact
+  build:
+    name: Build
+    needs: test # waits for ALL 6 matrix jobs to pass
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js + Cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: dist/
+
+  # 4. DEPLOY: CONDITIONS → only on a push to main, rollback only on failure
   deploy:
-    needs: build_and_test # waits for all 6 matrix runs
+    name: Deploy
+    needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-build
+          path: dist/
+
       - name: Deploy
-        run: echo "my code is deployed"
+        run: echo "code is deployed"
+
       - name: Rollback
-        if: failure() # only if a step above failed
+        if: failure() # runs only if a step above failed
         run: echo "rollback is done"
 ```
 
-- **`strategy.matrix`**: runs the same job for each combination.
-- **`fail-fast: false`**: if one combination fails, the others keep running.
-- **`if:` on a job**: the job runs only when the condition is true.
-- **`if: failure()` on a step**: the step runs only when an earlier step failed.
+**Flow:**
+
+```
+lint ──→ test (6 matrix jobs in parallel) ──→ build ──→ deploy (main only)
+                                                          └─ rollback (if deploy fails)
+```
+
+### Cache
+
+```yaml
+- uses: actions/setup-node@v4
+  with:
+    node-version: 22
+    cache: npm
+```
+
+- `cache: npm` saves the npm download folder (`~/.npm`) after the run, and restores it next time.
+- The cache **key** is made from a hash of `package-lock.json`. Same lock file → cache is reused.
+  Lock file changes → a new cache is made.
+- It's the same as writing `actions/cache` yourself, but it finds the right folder on **every OS**
+  (Linux, Windows, macOS):
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: ~/.npm
+    key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+```
+
+- A cache only makes **installs faster**. To pass files **between jobs** (like `dist/`), use
+  **artifacts** (upload → download).
+
+### Matrix Jobs
+
+```yaml
+strategy:
+  fail-fast: false
+  matrix:
+    os: [ubuntu-latest, windows-latest]
+    node-version: [20, 22, 24]
+```
+
+- One job definition runs on **every combination**: 2 × 3 = **6 jobs**, all in parallel.
+- `${{ matrix.os }}` and `${{ matrix.node-version }}` are filled in for each job.
+- **`fail-fast: false`**: if one combination fails, the others still finish, so you see every
+  failure at once.
+- **Why:** proves the app works on every OS and Node version your users might have.
+
+### Conditions
+
+| Where     | Condition                                                            | Meaning                            |
+| --------- | -------------------------------------------------------------------- | ---------------------------------- |
+| Job       | `if: github.ref == 'refs/heads/main' && github.event_name == 'push'` | Deploy only on a push to `main`    |
+| Step      | `if: failure()`                                                      | Run only if an earlier step failed |
+| (default) | `if: success()`                                                      | Run only if everything passed      |
+| Step      | `if: always()`                                                       | Run every time (e.g. cleanup)      |
+
+On a **pull request**, lint, test and build run, but deploy is **skipped**, so unmerged code is
+never deployed.
 
 ### Dependabot
 
-Added `.github/dependabot.yml`. Dependabot checks every week for newer package versions and opens a
-pull request to update them.
+`.github/dependabot.yml` (not a workflow: GitHub reads it directly)
 
 ```yaml
 version: 2
 updates:
-  - package-ecosystem: 'npm'
+  - package-ecosystem: 'npm' # libraries in package.json
     directory: '/'
     schedule:
       interval: 'weekly'
@@ -182,22 +252,28 @@ updates:
     commit-message:
       prefix: 'deps'
 
-  - package-ecosystem: 'github-actions' # also updates actions/checkout@vX etc.
+  - package-ecosystem: 'github-actions' # actions/checkout@v4 etc. in workflows
     directory: '/'
     schedule:
       interval: 'weekly'
 ```
 
+- Every week, Dependabot checks for newer versions and **opens a pull request** for each update.
+- That PR runs the pipeline above, so you **see if the update breaks anything** before merging.
+
 ### Status Check
 
-Made the pipeline a **required status check**, so a pull request **can't be merged until the
-workflow passes**.
+Makes the pipeline a **required check**: a PR **can't be merged** until it passes.
 
-**Settings → Branches (or Rules → Rulesets) → add a rule for `main` → Require status checks to
-pass → select the job (e.g. `BUILD-JOB`).**
+1. **Settings → Branches → Add branch protection rule** (or **Settings → Rules → Rulesets**).
+2. Branch name pattern: `main`.
+3. Tick **Require status checks to pass before merging**.
+4. Search and select the checks: `Lint & Format`, each `Test (...)` job, and `Build`.
+5. Save.
 
-The PR page then shows ✅ or ❌ next to each check, and the **Merge** button stays blocked until
-they're green.
+- The checks appear in the list only **after the workflow has run once**.
+- This is why the workflow also runs on **`pull_request`**: the checks run on the PR, and the
+  **Merge** button stays blocked until they're ✅.
 
 ## Day 3 — Parallel Builds, Self-Hosted Runner
 
