@@ -397,17 +397,20 @@ query without being cleaned.
 
 The pipeline will be built step by step:
 
-| Step | Stage                  | Command / Tool           | Status                    |
-| ---- | ---------------------- | ------------------------ | ------------------------- |
-| 1    | Checkout code          | `actions/checkout`       | ✅ Done                   |
-| 2    | Install dependencies   | `npm ci`                 | ⏳ Uses `npm install` now |
-| 3    | Lint                   | `npm run lint`           | ⏳ To add                 |
-| 4    | Format check           | `npm run format:check`   | ⏳ To add                 |
-| 5    | Unit test              | `npm run test:ci`        | ⏳ Placeholder `echo` now |
-| 6    | Build                  | `npm run build`          | ⏳ To add                 |
-| 7    | Security: SAST         | CodeQL                   | ⏳ To add                 |
-| 8    | Security: dependencies | `npm audit` / Dependabot | ⏳ To add                 |
-| 9    | Deploy                 | —                        | ⏳ Placeholder `echo` now |
+| Step | Stage                  | Command / Tool                   | Status                           |
+| ---- | ---------------------- | -------------------------------- | -------------------------------- |
+| 1    | Checkout code          | `actions/checkout`               | ✅ Done                          |
+| 2    | Install dependencies   | `npm ci` + npm cache             | ✅ Done                          |
+| 3    | Lint                   | `npm run lint`                   | ✅ Done                          |
+| 4    | Format check           | `npm run format:check`           | ✅ Done                          |
+| 5    | Tests (matrix)         | `npm run test:ci`, 2 OS × 3 Node | ✅ Done                          |
+| 6    | Build + artifact       | `npm run build`, `app-build`     | ✅ Done                          |
+| 7    | Deploy + rollback      | `main` only                      | ✅ Placeholder `echo` for now    |
+| 8    | Security: SAST         | CodeQL                           | ⏳ In Day 1 notes, not in ci.yml |
+| 9    | Security: dependencies | `npm audit` / Dependabot         | ⏳ To add                        |
+
+Daily notes: [Day 1](./github-actions/day-1/README.md) · [Day 2](./github-actions/day-2/README.md) ·
+[Day 3](./github-actions/day-3/README.md)
 
 ## Run Locally
 

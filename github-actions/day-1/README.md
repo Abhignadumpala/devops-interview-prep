@@ -45,6 +45,60 @@ jobs:
 - **`runs-on: ubuntu-slim`**: a small GitHub-hosted runner (1 CPU, 15-minute job limit).
 - **`uses:`** runs a ready-made action. **`run:`** runs a shell command.
 
+## Artifacts + CodeQL
+
+Added a real build that saves `dist/` as an **artifact**, and a **CodeQL** security scan that runs
+**in parallel** with the build.
+
+```yaml
+name: Secure DevSecOps Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: BUILD-JOB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4 # NODE.JS: install Node 22
+        with:
+          node-version: 22
+      - run: npm ci # install exact dependencies from package-lock.json
+      - run: npm test
+      - run: npm run build # creates dist/
+      - uses: actions/upload-artifact@v4 # ARTIFACT: save dist/ from this run
+        with:
+          name: app-build
+          path: dist/
+
+  codeql: # separate job → runs at the SAME TIME as build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # allows uploading results to the Security tab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v4 # CODEQL: start the scan
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v4 # CODEQL: analyse and upload results
+```
+
+- **Artifact:** a file or folder saved from a run. Download it from the run page (**Artifacts**
+  section), or pass it to a later job with `actions/download-artifact`.
+- **CodeQL:** GitHub's security scanner (**SAST**). It finds problems like user input reaching a
+  database query. Results appear in **Security → Code scanning**.
+- **`permissions`:** the workflow only gets the access it needs. Only the `codeql` job can write
+  security results.
+- JavaScript isn't compiled, so CodeQL scans the code directly (no build step needed).
+
 ## Screenshots
 
 <!-- Put screenshots in ./images/ and show them like this:

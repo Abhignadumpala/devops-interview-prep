@@ -134,6 +134,18 @@ lint ──→ test (6 matrix jobs in parallel) ──→ build ──→ deploy
                                                           └─ rollback (if deploy fails)
 ```
 
+## Result
+
+This workflow is the live `.github/workflows/ci.yml`. On a push to `main`, **all 9 jobs passed**:
+
+| Job                                          | Result   |
+| -------------------------------------------- | -------- |
+| Lint & Format                                | ✅       |
+| Test (ubuntu-latest, Node 20 / 22 / 24)      | ✅ ✅ ✅ |
+| Test (windows-latest, Node 20 / 22 / 24)     | ✅ ✅ ✅ |
+| Build (uploaded artifact `app-build`)        | ✅       |
+| Deploy (ran because it was a push to `main`) | ✅       |
+
 ## Cache
 
 ```yaml
