@@ -3,111 +3,61 @@ name: Secure DevSecOps Pipeline
 on:
   push:
     branches:
-      - master
       - main
-
-  pull_request: # also run on PRs, so the status check shows on the PR
+      - master
+      - develop
+      - feature/** # any branch starting with feature/
+  pull_request:
     branches:
       - main
+      - master
+      - develop
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
+  security-events: write # required to upload findings to the Security tab
 
 jobs:
-  # 1. LINT: check code quality and formatting (once)
-  lint:
-    name: Lint & Format
+  codeql:
+    name: CodeQL Analysis
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    timeout-minutes: 20 # stop the job if it runs longer than 20 min
 
-      - name: Setup Node.js + Cache # CACHE: saves ~/.npm, key = hash of package-lock.json
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Format Check
-        run: npm run format:check
-
-  # 2. TEST: MATRIX → 2 OS × 3 Node versions = 6 jobs in parallel
-  test:
-    name: Test (${{ matrix.os }}, Node ${{ matrix.node-version }})
-    needs: lint # starts only after lint passes
-    runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false # if one combination fails, the others keep running
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        node-version: [20, 22, 24]
+        language: ['javascript-typescript'] # languages to scan
+
+    defaults:
+      run:
+        shell: bash
+
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js + Cache
-        uses: actions/setup-node@v4
+      - name: Cache Dependencies
+        uses: actions/cache@v5
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install Dependencies
         run: npm ci
 
-      - name: Test
-        run: npm run test:ci
-
-  # 3. BUILD: create dist/ and save it as an artifact
-  build:
-    name: Build
-    needs: test # waits for ALL 6 matrix jobs to pass
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js + Cache
-        uses: actions/setup-node@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
         with:
-          node-version: 22
-          cache: npm
+          languages: ${{ matrix.language }}
 
-      - name: Install Dependencies
-        run: npm ci
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
 
-      - name: Build
-        run: npm run build
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
         with:
-          name: app-build
-          path: dist/
-          retention-days: 7 # delete the artifact after 7 days (default is 90)
-
-  # 4. DEPLOY: CONDITIONS → only on a push to main, rollback only on failure
-  deploy:
-    name: Deploy
-    needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app-build
-          path: dist/
-
-      - name: Deploy
-        run: echo "code is deployed"
-
-      - name: Rollback
-        if: failure() # runs only if a step above failed
-        run: echo "rollback is done"
+          category: '/language:${{ matrix.language }}'
