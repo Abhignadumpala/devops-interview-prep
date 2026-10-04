@@ -91,7 +91,9 @@ jobs:
       - uses: github/codeql-action/analyze@v4 # CODEQL: analyse and upload results
 ```
 
-- **Artifact:** a file or folder saved from a run. Download it from the run page (**Artifacts**
+- **Artifact:** a file or folder saved from a run. Here: name **`app-build`**, folder
+  **`dist/`**. Full details are in [Day 2 → Artifact](../day-2/README.md#artifact--name-path-and-where-to-find-it).
+- Download it from the run page (**Artifacts**
   section), or pass it to a later job with `actions/download-artifact`.
 - **CodeQL:** GitHub's security scanner (**SAST**). It finds problems like user input reaching a
   database query. Results appear in **Security → Code scanning**.

@@ -146,6 +146,50 @@ This workflow is the live `.github/workflows/ci.yml`. On a push to `main`, **all
 | Build (uploaded artifact `app-build`)        | ✅       |
 | Deploy (ran because it was a push to `main`) | ✅       |
 
+## Artifact — Name, Path and Where to Find It
+
+| What                | Value                                                          |
+| ------------------- | -------------------------------------------------------------- |
+| Artifact name       | **`app-build`** (set by `name:` in the Upload Artifact step)   |
+| Folder uploaded     | **`dist/`** (set by `path:`)                                   |
+| Who creates `dist/` | `npm run build` → `mkdir -p dist && cp -r src/. dist/`         |
+| Uploaded by job     | **Build** (`actions/upload-artifact@v4`)                       |
+| Downloaded by job   | **Deploy** (`actions/download-artifact@v4`), back into `dist/` |
+| Size                | About **1 KB** (zipped)                                        |
+| Kept for            | **90 days** (GitHub's default), then deleted automatically     |
+
+**What's inside `app-build`:**
+
+```
+app-build.zip
+├── app.js                  ← from src/app.js
+├── server.js               ← from src/server.js
+└── services/
+    └── calculator.js       ← from src/services/calculator.js
+```
+
+The **contents** of `dist/` go into the zip (not the `dist` folder itself). When Deploy downloads
+it with `path: dist/`, the files land back in `dist/` on the deploy runner.
+
+**Where to find it on GitHub:**
+
+1. Open the repo → **Actions** tab.
+2. Click a workflow run (e.g. the latest push to `main`).
+3. On the run's **Summary** page, scroll down to **Artifacts**.
+4. Click **`app-build`** to download it as `app-build.zip`.
+
+**How it moves through the pipeline:**
+
+```
+Build runner                       GitHub storage              Deploy runner
+src/ ──npm run build──→ dist/ ──upload──→ app-build ──download──→ dist/ ──→ deploy
+```
+
+- `dist/` is in **`.gitignore`**, so it's **never in the repo**. It only exists inside the runner
+  and in the artifact.
+- Each job runs on a **new, empty runner**. Without the artifact, Deploy would have no `dist/`
+  folder to deploy.
+
 ## Cache
 
 ```yaml
