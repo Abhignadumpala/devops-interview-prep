@@ -6,6 +6,29 @@ not the app.
 
 > Notes on GitHub Actions concepts: [github-actions/README.md](./github-actions/README.md)
 
+<!-- toc -->
+
+## Table of Contents
+
+- [Project Structure](#project-structure)
+- [Files in Short](#files-in-short)
+- [API Endpoints](#api-endpoints)
+- [Files Explained](#files-explained)
+  - [1. `src/` — the application](#1-src--the-application)
+  - [2. `tests/` — Jest tests](#2-tests--jest-tests)
+  - [3. `package.json` — project info and commands](#3-packagejson--project-info-and-commands)
+  - [4. `package-lock.json` — exact versions](#4-package-lockjson--exact-versions)
+  - [5. `eslint.config.js` — linting rules](#5-eslintconfigjs--linting-rules)
+  - [6. `.prettierrc` — formatting rules](#6-prettierrc--formatting-rules)
+  - [7. `.prettierignore` — files Prettier skips](#7-prettierignore--files-prettier-skips)
+  - [8. `.gitignore` — files Git doesn't track](#8-gitignore--files-git-doesnt-track)
+- [Lint vs Format vs Test vs CodeQL](#lint-vs-format-vs-test-vs-codeql)
+  - [Is ESLint the same as CodeQL?](#is-eslint-the-same-as-codeql)
+- [Pipeline Plan](#pipeline-plan)
+- [Run Locally](#run-locally)
+
+<!-- tocstop -->
+
 ## Project Structure
 
 ```

@@ -5,6 +5,16 @@
 - **Parallel builds:** build, test, and security jobs run at the same time; deploy waits for all.
 - **Self-hosted runner:** ran the pipeline on my own machine instead of GitHub's servers.
 
+<!-- toc -->
+
+## Table of Contents
+
+- [Parallel Builds](#parallel-builds)
+- [Self-Hosted Runner](#self-hosted-runner)
+- [Screenshots](#screenshots)
+
+<!-- tocstop -->
+
 ## Parallel Builds
 
 Jobs **without `needs:`** run **at the same time**. Build, test, and security don't depend on each

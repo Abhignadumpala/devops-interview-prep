@@ -9,6 +9,25 @@
 - **Dependabot:** `.github/dependabot.yml` checks for library updates every week.
 - **Status check:** made the pipeline a required check, so a PR can't merge until it passes.
 
+<!-- toc -->
+
+## Table of Contents
+
+- [The Full Day 2 Workflow](#the-full-day-2-workflow)
+- [Result](#result)
+- [Artifact — Name, Path and Where to Find It](#artifact--name-path-and-where-to-find-it)
+- [Cache](#cache)
+- [Matrix Jobs](#matrix-jobs)
+- [Conditions](#conditions)
+  - [The Deploy Condition](#the-deploy-condition)
+  - [Trigger vs Condition](#trigger-vs-condition)
+  - [How to Test the Conditions](#how-to-test-the-conditions)
+- [Dependabot](#dependabot)
+- [Status Check](#status-check)
+- [Screenshots](#screenshots)
+
+<!-- tocstop -->
+
 ## The Full Day 2 Workflow
 
 `.github/workflows/ci.yml`

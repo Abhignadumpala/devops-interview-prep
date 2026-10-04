@@ -4,6 +4,40 @@ Sources: [GitHub Docs](https://docs.github.com/en/actions/get-started/understand
 Practice: [interview-questions.md](./interview-questions.md) ·
 Daily notes: [Day 1](./day-1/README.md) · [Day 2](./day-2/README.md) · [Day 3](./day-3/README.md)
 
+<!-- toc -->
+
+## Table of Contents
+
+- [1. The Problem Before CI/CD](#1-the-problem-before-cicd)
+- [2. Traditional CI/CD Tools](#2-traditional-cicd-tools)
+- [3. What is Jenkins?](#3-what-is-jenkins)
+- [4. Why GitHub Actions over Jenkins?](#4-why-github-actions-over-jenkins)
+- [5. What is GitHub Actions?](#5-what-is-github-actions)
+- [6. Not Just CI/CD](#6-not-just-cicd)
+- [7. Core Components](#7-core-components)
+  - [7.1 Workflow](#71-workflow)
+  - [7.2 Events](#72-events)
+  - [7.3 Jobs](#73-jobs)
+    - [Matrix Jobs](#matrix-jobs)
+  - [7.4 Steps](#74-steps)
+  - [7.5 Actions](#75-actions)
+  - [7.6 Runners](#76-runners)
+- [8. package.json vs package-lock.json](#8-packagejson-vs-package-lockjson)
+  - [8.1 Dependencies vs node_modules vs Cache vs Artifact — NOT the same!](#81-dependencies-vs-node_modules-vs-cache-vs-artifact--not-the-same)
+- [9. Caching](#9-caching)
+- [10. Artifacts](#10-artifacts)
+  - [Cache vs Artifact](#cache-vs-artifact)
+- [11. Conditions & Status Check Functions](#11-conditions--status-check-functions)
+- [12. CodeQL (Security Scanning)](#12-codeql-security-scanning)
+- [13. Dependabot](#13-dependabot)
+- [14. Cost & Build Optimization](#14-cost--build-optimization)
+- [15. Security Strategies (Simple Terms)](#15-security-strategies-simple-terms)
+- [16. GitHub Copilot](#16-github-copilot)
+- [17. Example — Node.js CI Workflow](#17-example--nodejs-ci-workflow)
+- [18. Remember These](#18-remember-these)
+
+<!-- tocstop -->
+
 ## 1. The Problem Before CI/CD
 
 Before CI/CD, teams built, tested, and deployed code **by hand**:

@@ -9,6 +9,16 @@
 - **Artifacts:** saved the build output so it can be downloaded or used by later jobs.
 - **CodeQL:** added a security scan that finds vulnerabilities in the code.
 
+<!-- toc -->
+
+## Table of Contents
+
+- [Simple CI Pipeline](#simple-ci-pipeline)
+- [Artifacts + CodeQL](#artifacts--codeql)
+- [Screenshots](#screenshots)
+
+<!-- tocstop -->
+
 ## Simple CI Pipeline
 
 ```yaml
