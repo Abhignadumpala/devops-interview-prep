@@ -119,15 +119,45 @@ workflow. Runners are available on **Ubuntu, Windows, and macOS**.
 
 ## 6. Not Just CI/CD
 
-**CI/CD:** build → test → lint → dockerize → security scan → deploy.
+GitHub Actions can do **more than build, test, and deploy**. It can also automate everyday work in
+the repo.
+
+**1. CI/CD:** `git push` → build → test → lint → dockerize → security scan → deploy.
 
 ![CI/CD pipeline](./images/cicd-pipeline.svg)
 
-**Repo automation:** it also reacts to issues, pull requests, releases, and packages. For example,
-when a new PR is opened it can post a welcome comment, add labels based on changed files, and
-assign reviewers.
+**2. Repo automation:** any **event** in the repo can start a workflow, not only a push.
+
+| When this happens           | The workflow can…                                    |
+| --------------------------- | ---------------------------------------------------- |
+| New pull request opened     | Post a welcome comment, add labels, assign reviewers |
+| New issue opened            | Add a label like `bug` or `triage`                   |
+| Release published           | Publish the package                                  |
+| Schedule (cron), e.g. night | Run a security scan, clean up old branches           |
 
 ![Repo automation](./images/repo-automation.svg)
+
+**Example — label every new issue** (no push, no build):
+
+```yaml
+on:
+  issues:
+    types: [opened] # runs when someone opens an issue
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - run: gh issue edit ${{ github.event.issue.number }} --add-label "triage"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+```
+
+> **Interview one-liner:** GitHub Actions is not only CI/CD. It's an automation tool for the whole
+> repo. Any event (PR, issue, release, schedule) can trigger a workflow that does the work for you.
 
 ## 7. Core Components
 
