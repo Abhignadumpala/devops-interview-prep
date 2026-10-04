@@ -1,78 +1,124 @@
-# Workflow Examples — Corrected
+# Workflows — Day by Day
 
-Practice workflows (Day 1–3), each fixed, with a list of **what was wrong and why**.
-Concepts are explained in [README.md](./README.md).
+What I built each day. Concepts are explained in [README.md](./README.md).
 
-> **Note:** `ubuntu-slim` **is a valid runner**: 1 CPU, container-based, 15-minute
-> job limit. It's fine for light jobs, but use `ubuntu-latest` for CodeQL, matrix builds, or anything
-> heavy.
+## Day 1 — Intro, Workflows, Triggers, Node.js, Artifacts, CodeQL
 
-## Day 1 — Build + CodeQL + Artifact
+- **Intro:** what CI/CD is and how GitHub Actions automates build, test, and deploy.
+- **Workflows:** wrote my first workflow file in `.github/workflows/`.
+- **Triggers:** runs on every push to `main`/`master`, or manually (`workflow_dispatch`).
+- **Node.js:** installed the app's dependencies with npm.
+- **Artifacts:** saved the build output so it can be downloaded or used by later jobs.
+- **CodeQL:** added a security scan that finds vulnerabilities in the code.
+
+### Simple CI Pipeline
 
 ```yaml
 name: Secure DevSecOps Pipeline
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - master
+      - main
   workflow_dispatch:
 
-permissions:
-  contents: read
+jobs:
+  build_and_package:
+    name: BUILD-JOB
+    runs-on: ubuntu-slim
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Test
+        run: echo "code is tested!"
+
+      - name: Deploy
+        run: echo "my code is deployed"
+```
+
+- **`on: push`**: runs the workflow automatically when code is pushed.
+- **`workflow_dispatch`**: adds a **Run workflow** button to run it manually.
+- **`runs-on: ubuntu-slim`**: a small GitHub-hosted runner (1 CPU, 15-minute job limit).
+- **`uses:`** runs a ready-made action. **`run:`** runs a shell command.
+
+## Day 2 — Cache, Dependabot, Matrix Jobs, Conditions, Status Check
+
+- **Cache + build → test → deploy:** split the pipeline into 3 jobs and cached npm packages.
+- **Matrix jobs + conditions:** 2 operating systems × 3 Node versions, deploy only on a push to
+  `main`, and rollback with `if: failure()`.
+- **Dependabot:** `.github/dependabot.yml`, set to check for updates weekly.
+- **Status check:** made the workflow a required check, so a PR can't merge until it passes.
+
+### Cache + Build → Test → Deploy
+
+Split the pipeline into 3 jobs that run one after another using `needs:`, and cached npm
+packages so installs are faster.
+
+```yaml
+name: Secure DevSecOps Pipeline
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
 
 jobs:
   build:
-    name: BUILD-JOB
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci # install exact dependencies
-      - run: npm test
-      - run: npm run build
-      - uses: actions/upload-artifact@v7
-        with:
-          name: app-build
-          path: dist/ # the build output, not package*.json
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-  codeql: # separate job → runs in PARALLEL with build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write # upload results to the Security tab
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [javascript-typescript]
+      - name: Cache Dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Build
+        run: npm install
+
+  test:
+    runs-on: ubuntu-slim
+    needs: build
     steps:
-      - uses: actions/checkout@v7
-      - uses: github/codeql-action/init@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Cache Dependencies
+        uses: actions/cache@v4
         with:
-          languages: ${{ matrix.language }}
-      - uses: github/codeql-action/analyze@v4
-        with:
-          category: '/language:${{ matrix.language }}'
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Test
+        run: echo "code is tested"
+
+  deploy:
+    runs-on: ubuntu-slim
+    needs: test
+    steps:
+      - name: Deploy
+        run: echo "code is deploy"
 ```
 
-**What was fixed:**
+- **`needs: build`**: `test` starts only after `build` passes. `deploy` waits for `test`.
+- **Cache `key`**: built from a hash of `package-lock.json`. Same lock file → same key → cache is
+  reused. Lock file changes → new key → fresh cache.
+- Each job runs on a **new runner**, so every job checks out the code again.
 
-- **Only `master` was a trigger.** This repo's default branch is now `main`, so pushes to `main`
-  never ran the workflow. Both branches are now listed.
-- **CodeQL was mixed into the build job.** Moving it into its own job lets it run **in parallel**
-  with the build, and `security-events: write` is given only to the job that needs it.
-- **The `autobuild` step was removed.** JavaScript/TypeScript doesn't need to be compiled, so CodeQL
-  scans it directly. Autobuild is only needed for compiled languages like Java, C#, or Go.
-- **`codeql-action@v3` → `@v4`**, and **`checkout@v4` → `@v7`**. The old versions still run, but
-  newer major versions exist.
-- **`npm install` is not a build.** It only installs dependencies. Use `npm ci` in CI, then the real
-  test and build commands.
-- **The artifact was `package*`**, which only uploaded `package.json` and `package-lock.json`. Those
-  files are already in Git. An artifact should be the **build output** (`dist/`) or **reports**.
+### Matrix Jobs + Conditions
 
-## Day 2 — Matrix + Cache + Conditions + Rollback
+One job definition runs on **every combination** of OS and Node version (2 × 3 = 6 runs).
+Deploy runs only on a push to `main`, and rollback runs only if deploy fails.
 
 ```yaml
 name: Secure DevSecOps Pipeline
@@ -81,9 +127,6 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build_and_test:
@@ -95,118 +138,37 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         node-version: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm # correct cache folder on Linux AND Windows
+          cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build
-      - uses: actions/upload-artifact@v7
-        with:
-          name: artifact-${{ runner.os }}-node-${{ matrix.node-version }}
-          path: dist/
 
   deploy:
     needs: build_and_test # waits for all 6 matrix runs
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: artifact-Linux-node-22
-          path: dist/
       - name: Deploy
         run: echo "my code is deployed"
       - name: Rollback
-        if: failure() # only if deploy failed
+        if: failure() # only if a step above failed
         run: echo "rollback is done"
 ```
 
-**What was fixed:**
+- **`strategy.matrix`**: runs the same job for each combination.
+- **`fail-fast: false`**: if one combination fails, the others keep running.
+- **`if:` on a job**: the job runs only when the condition is true.
+- **`if: failure()` on a step**: the step runs only when an earlier step failed.
 
-- **Broken YAML indentation.** `on: push: branches:` was on one line, and `os:` was not indented
-  under `matrix:`. YAML depends on indentation, so the workflow would not even load.
-- **Deploy ran inside the matrix**, so it would deploy **6 times** (2 OS × 3 versions). Deploy is
-  now a separate job that runs **once**, after all builds pass (`needs:`).
-- **The `if:` condition didn't match the triggers.** The workflow ran on `main` and `master`, but the
-  job only allowed `master`, so pushes to `main` were skipped. The condition is now on the deploy job
-  only, so every push still gets built and tested.
-- **The cache path `~/.npm` is wrong on Windows.** npm keeps its cache in a different folder there,
-  so the Windows runs saved an empty cache. `setup-node` with `cache: npm` uses the right folder on
-  every OS. (Including `node-version` in the manual key was a good idea.)
-- **Unused settings were removed.** The `language` matrix key and `security-events: write` were only
-  needed for CodeQL, which this workflow doesn't run. An unused matrix key adds confusion, and an
-  unused permission is a security risk.
-- **Node 18 → Node 24.** Node 18 is end-of-life (no more security fixes).
-- **`npm install` → `npm ci`**, and a real `npm test` instead of `echo "code is tested!"`.
+### Dependabot
 
-## Day 2 — Build → Test → Deploy (Sequential)
+Added `.github/dependabot.yml`. Dependabot checks every week for newer package versions and opens a
+pull request to update them.
 
 ```yaml
-name: Secure DevSecOps Pipeline
-
-on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  build:
-    runs-on: ubuntu-slim
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - uses: actions/upload-artifact@v7 # pass the build to later jobs
-        with:
-          name: app-build
-          path: dist/
-
-  test:
-    needs: build
-    runs-on: ubuntu-slim
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm # fast, because build already saved the cache
-      - run: npm ci
-      - run: npm test
-
-  deploy:
-    needs: test
-    runs-on: ubuntu-slim
-    steps:
-      - uses: actions/download-artifact@v8 # deploy exactly what build made
-        with:
-          name: app-build
-          path: dist/
-      - run: echo "code is deployed"
-```
-
-**What was fixed:**
-
-- **A cache doesn't pass files between jobs.** In the original workflow, the test job restored the cache but never
-  installed or used anything. The cache only speeds up `npm ci`. To pass the **build output** from
-  one job to the next, use **artifacts** (upload → download).
-- **`deploy` now downloads the artifact.** It deploys the **same files that were built and
-  tested** (build once, promote).
-- **`npm install` → `npm ci`**, and `setup-node` sets the Node version so all jobs use the same one.
-
-## Day 2 — Dependabot
-
-```yaml
-# .github/dependabot.yml
 version: 2
 updates:
   - package-ecosystem: 'npm'
@@ -220,23 +182,32 @@ updates:
     commit-message:
       prefix: 'deps'
 
-  - package-ecosystem: 'github-actions' # keeps actions/checkout@vX etc. up to date
+  - package-ecosystem: 'github-actions' # also updates actions/checkout@vX etc.
     directory: '/'
     schedule:
       interval: 'weekly'
 ```
 
-**What was fixed:**
+### Status Check
 
-- **Wrong indentation.** `interval` must be inside `schedule:`, and `prefix` inside
-  `commit-message:`. `open-pull-requests-limit`, `labels`, and `commit-message` must be indented
-  under the `- package-ecosystem` item, not at the `updates:` level.
-- **`reviewers:` was removed.** It's no longer a supported Dependabot option. To auto-assign
-  reviewers, add a **`.github/CODEOWNERS`** file (e.g. `* @devopsbyraham`).
-- **Added the `github-actions` ecosystem**, so Dependabot also opens PRs when actions like
-  `checkout@v4` get a newer version.
+Made the pipeline a **required status check**, so a pull request **can't be merged until the
+workflow passes**.
 
-## Day 3 — Self-Hosted Runner
+**Settings → Branches (or Rules → Rulesets) → add a rule for `main` → Require status checks to
+pass → select the job (e.g. `BUILD-JOB`).**
+
+The PR page then shows ✅ or ❌ next to each check, and the **Merge** button stays blocked until
+they're green.
+
+## Day 3 — Parallel Builds, Self-Hosted Runner
+
+- **Parallel builds:** build, test, and security jobs run at the same time; deploy waits for all.
+- **Self-hosted runner:** ran the pipeline on my own machine instead of GitHub's servers.
+
+### Parallel Builds
+
+Jobs **without `needs:`** run **at the same time**. Build, test, and security don't depend on each
+other, so they run in parallel. Deploy waits for all three.
 
 ```yaml
 name: Secure DevSecOps Pipeline
@@ -246,31 +217,67 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
-permissions:
-  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run build
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm test
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm audit --audit-level=high
+
+  deploy:
+    needs: [build, test, security] # starts only after all 3 pass
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "code is deployed"
+```
+
+```
+build    ─┐
+test     ─┼──→ deploy
+security ─┘
+```
+
+**Why:** the pipeline takes as long as the **slowest** job, not the **sum** of all jobs, so you get
+faster feedback.
+
+### Self-Hosted Runner
+
+Ran the job on **my own machine** instead of GitHub's servers. I installed the runner app from
+**Settings → Actions → Runners → New self-hosted runner**.
+
+```yaml
+name: Secure DevSecOps Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: [self-hosted, linux] # labels pick the right machine
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7 # don't rely on whatever Node is on the server
-        with:
-          node-version: 22
+      - uses: actions/checkout@v4
       - run: npm ci
       - run: npm test
       - run: npm run build
       - run: echo "code is deployed"
 ```
 
-**What was fixed:**
-
-- **YAML on one line** (`jobs: build: runs-on: ...`) was split back into proper indentation.
-- **`actions/cache` was removed.** A self-hosted runner **keeps its files between runs**, so
-  `~/.npm` is already there. Uploading and downloading a cache from GitHub just adds time.
-- **Added `setup-node`**, so the job doesn't depend on whatever Node version is installed on the
-  server.
-- **`npm install` → `npm ci`.** On a self-hosted runner it also deletes the old `node_modules` left
-  by the last run.
-- ⚠️ **Only use self-hosted runners on private repos.** On a public repo, anyone can open a PR from a
-  fork and run their code on your machine.
+- The machine **keeps its files between runs** (unlike GitHub-hosted runners, which start clean).
+- ⚠️ Use self-hosted runners only on **private repos**. On a public repo, anyone can open a PR and
+  run code on your machine.

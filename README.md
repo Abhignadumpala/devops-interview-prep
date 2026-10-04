@@ -45,9 +45,33 @@ if (require.main === module) {
 module.exports = { add }; // export add() so tests can use it
 ```
 
-- **`require.main === module`** stops the server from starting when tests load this file.
-  Without it, `npm test` would start a server and never finish.
 - **`module.exports`** makes `add` available to other files (like the test).
+
+#### Why `require.main === module`?
+
+`require()` runs **all** the code in a file, not just the function you import. So when the test
+does `require('../index')` to get `add`, the server would start too, even though the test doesn't
+need it.
+
+| Command     | `require.main` | `module`   | Equal? | Server starts? |
+| ----------- | -------------- | ---------- | ------ | -------------- |
+| `npm start` | `index.js`     | `index.js` | ✅     | ✅ Yes         |
+| `npm test`  | test file      | `index.js` | ❌     | ❌ No          |
+
+**What happens without it:**
+
+1. The test loads `index.js`, and the server starts on port 3000.
+2. The test **passes** in about 1 ms.
+3. Node exits only when nothing is left running, but a server **listens forever**, so `npm test`
+   never finishes.
+4. The CI job hangs until GitHub kills it (15 min on `ubuntu-slim`, 6 h by default) and marks it
+   **❌ failed**, even though the code is correct.
+
+Also, two test files loading `index.js` would both use port 3000, and the second would crash with
+`EADDRINUSE`.
+
+> **Interview one-liner:** A server never exits by design; tests must exit so CI can move on. The
+> `if` starts the server only for `node index.js`, never when the file is imported.
 
 ### 2. `test/index.test.js` — the unit test
 
