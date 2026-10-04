@@ -362,7 +362,7 @@ Artifact on GitHub                    →  deploy job or a person downloads it
   `npm ci --omit=dev` on the server, or build a **Docker image** that contains your app plus its
   libraries. Then the Docker image is the thing you deploy.
 
-**In this repo:** `npm run build` runs `mkdir -p dist && cp index.js dist/`. So `dist/` is the
+**In this repo:** `npm run build` runs `mkdir -p dist && cp -r src/. dist/`. So `dist/` is the
 build output, and that is what we upload as the artifact.
 
 > **Interview answer:** "`package.json` lists the dependencies and `package-lock.json` locks their

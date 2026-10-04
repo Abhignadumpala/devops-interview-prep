@@ -2,15 +2,15 @@
   "name": "secure-devsecops-pipeline",
   "version": "1.0.0",
   "description": "Simple Node.js app with CI",
-  "main": "index.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node src/server.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node --test",
     "test:ci": "node --test --test-reporter=spec",
-    "build": "mkdir -p dist && cp index.js dist/"
+    "build": "mkdir -p dist && cp -r src/. dist/"
   },
   "author": "Abhignadumpala",
   "license": "MIT",

@@ -10,90 +10,118 @@ not the app.
 
 ```
 devops-interview-prep/
-├── .github/workflows/ci.yml   # The CI/CD pipeline (GitHub Actions)
-├── test/index.test.js         # Unit test for index.js
-├── index.js                   # The application code
-├── package.json               # Project info, scripts, dev tools
-├── package-lock.json          # Exact versions of every installed package
-├── eslint.config.js           # ESLint rules (code quality)
-├── .prettierrc                # Prettier rules (code formatting)
-├── .prettierignore            # Files Prettier should skip
-├── .gitignore                 # Files Git should not track
-└── github-actions/            # Study notes (not part of the app)
+├── .github/workflows/ci.yml       # The CI/CD pipeline (GitHub Actions)
+├── src/
+│   ├── services/
+│   │   └── calculator.js          # Business logic: add()
+│   ├── app.js                     # Creates the HTTP app (does NOT start it)
+│   └── server.js                  # Entry point: starts the app on a port
+├── test/
+│   └── calculator.test.js         # Unit test for src/services/calculator.js
+├── package.json                   # Project info, scripts, dev tools
+├── package-lock.json              # Exact versions of every installed package
+├── eslint.config.js               # ESLint rules (code quality)
+├── .prettierrc                    # Prettier rules (code formatting)
+├── .prettierignore                # Files Prettier should skip
+├── .gitignore                     # Files Git should not track
+└── github-actions/                # Study notes (not part of the app)
 ```
+
+**Naming rules used:**
+
+- Folders and files are **lowercase**.
+- Each file has **one job**, and its name says what that job is.
+- A test file is named after the file it tests: `calculator.js` → `calculator.test.js`.
 
 ## Files Explained
 
-### 1. `index.js` — the application
+### 1. `src/` — the application
+
+#### `src/services/calculator.js` — business logic
 
 ```js
-const http = require('http'); // Node's built-in web server module
-
 function add(a, b) {
   return a + b; // simple function so we have something to test
 }
 
-if (require.main === module) {
-  // Runs ONLY when started with "node index.js",
-  // NOT when a test file does require('../index')
-  const port = process.env.PORT || 3000; // use PORT env var, else 3000
-  http
-    .createServer((req, res) => res.end('Hello, world!')) // every request gets "Hello, world!"
-    .listen(port, () => console.log(`Server running on port ${port}`));
-}
-
-module.exports = { add }; // export add() so tests can use it
+module.exports = { add }; // export add() so other files (and tests) can use it
 ```
 
-- **`module.exports`** makes `add` available to other files (like the test).
+**Services** hold the app's logic: pure functions with no web server code, so they're easy to
+test.
 
-#### Why `require.main === module`?
+#### `src/app.js` — the HTTP app
 
-`require()` runs **all** the code in a file, not just the function you import. So when the test
-does `require('../index')` to get `add`, the server would start too, even though the test doesn't
-need it.
+```js
+const http = require('http'); // Node's built-in web server module
 
-| Command     | `require.main` | `module`   | Equal? | Server starts? |
-| ----------- | -------------- | ---------- | ------ | -------------- |
-| `npm start` | `index.js`     | `index.js` | ✅     | ✅ Yes         |
-| `npm test`  | test file      | `index.js` | ❌     | ❌ No          |
+// every request gets "Hello, world!"
+const app = http.createServer((req, res) => res.end('Hello, world!'));
 
-**What happens without it:**
+module.exports = app; // export the app WITHOUT starting it
+```
 
-1. The test loads `index.js`, and the server starts on port 3000.
+#### `src/server.js` — the entry point
+
+```js
+const app = require('./app');
+
+const port = process.env.PORT || 3000; // use PORT env var, else 3000
+
+app.listen(port, () => console.log(`Server running on port ${port}`)); // start listening
+```
+
+This is the only file that calls `listen()`. `npm start` runs it.
+
+#### Why split into `app.js` and `server.js`?
+
+A running server **never exits by design**: it waits for requests forever. Tests **must exit**, so
+CI can move to the next step. So the code that **starts** the server lives only in `server.js`,
+and **tests never import it**.
+
+| File                     | Starts the server? | Imported by tests? |
+| ------------------------ | ------------------ | ------------------ |
+| `services/calculator.js` | ❌                 | ✅                 |
+| `app.js`                 | ❌                 | ✅ (later)         |
+| `server.js`              | ✅                 | ❌ Never           |
+
+**What happens if a test loads a file that starts the server:**
+
+1. `require()` runs **all** the code in that file, so the server starts on port 3000.
 2. The test **passes** in about 1 ms.
-3. Node exits only when nothing is left running, but a server **listens forever**, so `npm test`
-   never finishes.
+3. Node exits only when nothing is left running, but the server is still listening, so `npm test`
+   **never finishes**.
 4. The CI job hangs until GitHub kills it (15 min on `ubuntu-slim`, 6 h by default) and marks it
    **❌ failed**, even though the code is correct.
 
-Also, two test files loading `index.js` would both use port 3000, and the second would crash with
+Also, two test files starting the server would both use port 3000, and the second would crash with
 `EADDRINUSE`.
 
-> **Interview one-liner:** A server never exits by design; tests must exit so CI can move on. The
-> `if` starts the server only for `node index.js`, never when the file is imported.
+> **Interview one-liner:** I keep `app` (what the server does) separate from `server` (starting it
+> on a port). Tests import the app and logic, never `server.js`, so they don't open a port and the
+> test run always exits.
 
-### 2. `test/index.test.js` — the unit test
+### 2. `test/calculator.test.js` — the unit test
 
 ```js
 const test = require('node:test'); // Node's built-in test runner (no Jest needed)
 const assert = require('node:assert'); // built-in checks like strictEqual
-const { add } = require('../index'); // import the function to test
+const { add } = require('../src/services/calculator'); // import the function to test
 
 test('add returns the sum of two numbers', () => {
   assert.strictEqual(add(2, 3), 5); // fails if add(2, 3) is not exactly 5
 });
 ```
 
-Run with `npm test`. If the assertion fails, the command exits with an error, and **the CI job
-fails**. That's how a pipeline stops broken code.
+Run with `npm test`. Node finds every `*.test.js` file automatically. If the assertion fails, the
+command exits with an error, and **the CI job fails**. That's how a pipeline stops broken code.
 
 ### 3. `package.json` — project info and commands
 
 | Field             | Meaning                                                   |
 | ----------------- | --------------------------------------------------------- |
 | `name`, `version` | Project name (`secure-devsecops-pipeline`) and version    |
-| `main`            | Entry file of the project (`index.js`)                    |
+| `main`            | Entry file of the project (`src/server.js`)               |
 | `scripts`         | Short commands you run with `npm run <name>` (used in CI) |
 | `devDependencies` | Tools needed only for development/CI, not to run the app  |
 | `license`         | MIT: anyone can use the code                              |
@@ -102,13 +130,13 @@ fails**. That's how a pipeline stops broken code.
 
 | Command                | Runs                                 | Purpose                                    |
 | ---------------------- | ------------------------------------ | ------------------------------------------ |
-| `npm start`            | `node index.js`                      | Start the server                           |
+| `npm start`            | `node src/server.js`                 | Start the server                           |
 | `npm run lint`         | `eslint .`                           | Check code quality                         |
 | `npm run format`       | `prettier --write .`                 | Auto-fix formatting (local use)            |
 | `npm run format:check` | `prettier --check .`                 | Only check formatting, don't change (CI)   |
 | `npm test`             | `node --test`                        | Run all tests                              |
 | `npm run test:ci`      | `node --test --test-reporter=spec`   | Run tests with readable output for CI logs |
-| `npm run build`        | `mkdir -p dist && cp index.js dist/` | Create the `dist/` folder to deploy        |
+| `npm run build`        | `mkdir -p dist && cp -r src/. dist/` | Copy the app into `dist/` to deploy        |
 
 **devDependencies:**
 
