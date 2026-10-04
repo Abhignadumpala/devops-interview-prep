@@ -300,3 +300,51 @@ updates:
 - **`dependencies` vs `devDependencies`:** only `dependencies` (e.g. `express`) are needed to run
   the app. `devDependencies` (Jest, ESLint) are only for development and CI.
 - Also run **`npm audit`** in CI to fail the build on known high-severity vulnerabilities.
+
+### 37. How do you build and test your app on multiple OS and versions at the same time?
+
+**Short answer:** "I use a **matrix strategy**. I write the test job once and list the operating
+systems and Node versions. GitHub creates one job for every combination and runs them **all in
+parallel**, so testing 6 setups takes about as long as testing 1. That saves a lot of time."
+
+**In my pipeline:**
+
+```yaml
+test:
+  runs-on: ${{ matrix.os }}
+  strategy:
+    fail-fast: false
+    matrix:
+      os: [ubuntu-latest, windows-latest]
+      node-version: [20, 22, 24]
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: npm
+    - run: npm ci
+    - run: npm run test:ci
+```
+
+2 OS × 3 Node versions = **6 jobs, all at the same time**.
+
+**Time saved (real numbers from my pipeline):**
+
+| How the 6 test jobs run            | Time            |
+| ---------------------------------- | --------------- |
+| One after another (added up)       | **120 seconds** |
+| In parallel with a matrix (actual) | **32 seconds**  |
+
+The total time = the **slowest** job (Windows, about 30 s), not all jobs added together.
+
+**Points to mention:**
+
+- **Same job, many setups:** no copy-pasting 6 almost identical jobs.
+- **Catches OS/version bugs early:** e.g. file paths that work on Linux but break on Windows.
+- **`fail-fast: false`:** if one job fails, the others still finish, so I see every failure at
+  once.
+- **Build once after the matrix:** the `build` job has `needs: test`, so it runs **once** after
+  all 6 test jobs pass, not 6 times.
+- **Cache** (`cache: npm`) makes `npm ci` fast in every matrix job.
+- Use **`include`** / **`exclude`** to add or skip specific combinations.
