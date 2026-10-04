@@ -156,8 +156,38 @@ checkout → cache → npm ci → init CodeQL → autobuild → analyze → Secu
 
 ### Where to See the Results
 
-**Repo → Security → Code scanning.** Each alert shows the file, the line, how serious it is, and how
-to fix it. No alerts = no known vulnerabilities found.
+**1. Security overview — Repo → Security and quality → Overview**
+
+Shows which security features are on. **Code scanning alerts: Enabled** means CodeQL is working.
+
+![Security and quality overview](./images/security-overview.png)
+
+| Feature                | Status   | What it does                                         |
+| ---------------------- | -------- | ---------------------------------------------------- |
+| Dependabot alerts      | Enabled  | Alerts when a dependency has a known vulnerability   |
+| Code scanning alerts   | Enabled  | CodeQL finds vulnerabilities in my code              |
+| Secret scanning alerts | Enabled  | Alerts when a password / token is pushed to the repo |
+| Security policy        | Disabled | A `SECURITY.md` telling people how to report issues  |
+
+**2. CodeQL tool status — Code scanning → Tools → CodeQL**
+
+Direct link: `https://github.com/<user>/<repo>/security/code-scanning/tools/CodeQL/status`
+
+![CodeQL tool status](./images/codeql-tool-status.png)
+
+- **Scanned files:** what CodeQL checked. My repo: **GitHub Actions 1/1** (the workflow file) and
+  **JavaScript 6/6** — 100% scanned.
+- **Setup types:** **Secure DevSecOps Pipeline — Actions workflow** = CodeQL runs from my own YAML
+  (Advanced setup), with the time of the last scan.
+
+**3. Alerts — Security and quality → Code scanning**
+
+Each alert shows the file, the line, how serious it is, and how to fix it. **No alerts = no known
+vulnerabilities found.**
+
+```
+push → workflow runs CodeQL → results uploaded → Security and quality → Code scanning
+```
 
 ## Self-Hosted Runners
 
