@@ -1,23 +1,33 @@
 {
   "name": "secure-devsecops-pipeline",
   "version": "1.0.0",
-  "description": "Simple Node.js app with CI",
+  "description": "Production-style Node.js application for CI/CD pipeline testing",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --test",
-    "test:ci": "node --test --test-reporter=spec",
-    "build": "mkdir -p dist && cp -r src/. dist/"
+    "test": "jest --runInBand --coverage",
+    "test:ci": "jest --runInBand --coverage --ci",
+    "build": "mkdir -p dist && cp -r src/. dist/",
+    "ci": "npm run lint && npm run format:check && npm run test:ci"
   },
   "author": "Abhignadumpala",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "eslint": "^9.39.5",
     "globals": "^17.12.0",
-    "prettier": "^3.9.9"
+    "jest": "^30.5.2",
+    "prettier": "^3.9.9",
+    "supertest": "^7.3.1"
   }
 }
