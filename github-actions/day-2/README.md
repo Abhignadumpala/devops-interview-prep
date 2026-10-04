@@ -187,12 +187,30 @@ app-build.zip
 The **contents** of `dist/` go into the zip (not the `dist` folder itself). When Deploy downloads
 it with `path: dist/`, the files land back in `dist/` on the deploy runner.
 
-**Where to find it on GitHub:**
+**Where to find it on GitHub (2 ways):**
+
+**Way 1: Summary page**
 
 1. Open the repo → **Actions** tab.
 2. Click a workflow run (e.g. the latest push to `main`).
 3. On the run's **Summary** page, scroll down to **Artifacts**.
-4. Click **`app-build`** to download it as `app-build.zip`.
+4. Click the **download icon** next to **`app-build`** to download `app-build.zip`.
+
+![Artifacts section on the run Summary page, with app-build and its download button](./images/artifact-download-summary.png)
+
+**Way 2: Build job log**
+
+1. In the run, click the **Build** job → open the **Upload Artifact** step.
+
+![Build job steps with the Upload Artifact step](./images/artifact-build-job-steps.png)
+
+2. The last line of the log shows the **Artifact download URL**. Click it to download.
+
+![Upload Artifact log showing 3 files uploaded, size 1095 bytes and the download URL](./images/artifact-upload-log.png)
+
+The log also shows: **3 files uploaded** (`app.js`, `server.js`, `services/calculator.js`), final
+size **1095 bytes**, and the artifact's **SHA256 digest** (a checksum to check the zip wasn't
+changed).
 
 **How it moves through the pipeline:**
 
