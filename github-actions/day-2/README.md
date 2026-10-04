@@ -243,6 +243,30 @@ strategy:
 On a **pull request**, lint, test and build run, but deploy is **skipped**, so unmerged code is
 never deployed.
 
+### The Deploy Condition
+
+```yaml
+deploy:
+  needs: build
+  if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+```
+
+**Deploy runs only when tested code is pushed to `main`.** All 3 must be true (`&&`):
+
+1. `needs: build`: Build passed (so lint and tests passed).
+2. `github.ref == 'refs/heads/main'`: the branch is `main`.
+3. `github.event_name == 'push'`: it was a push (not a PR or manual run).
+
+| What happened                | Deploy?                       |
+| ---------------------------- | ----------------------------- |
+| Push to `main`, tests pass   | ✅ runs                       |
+| Push to `main`, a test fails | ⚪ skipped (Build didn't run) |
+| Push to `master`             | ⚪ skipped (wrong branch)     |
+| PR into `main`               | ⚪ skipped (not a push)       |
+| Run workflow button          | ⚪ skipped (not a push)       |
+
+**Skipped ≠ failed.** If an `if:` is false, the job is ⚪ skipped and the run still shows ✅.
+
 ### Trigger vs Condition
 
 There are two checks, at two levels:
@@ -260,6 +284,13 @@ There are two checks, at two levels:
 | `1a8aac5` | `master`, `main`     | ✅ ran                |
 | `accea71` | `master` only        | ❌ **no run**         |
 | `e584b73` | `master`, `main`     | ✅ ran                |
+| `da3d37b` | `master` only        | ❌ **no run**         |
+
+Tested again with `on: push: branches: [master]` and Deploy's `if:` set to `main` (commit
+`da3d37b`): **no run.** The only case where Deploy's `if:` is true (push to `main`) is blocked by
+the trigger, so Deploy can **never** run.
+
+**Rule:** the branch in the `if:` must also be in `on:`.
 
 A condition like `if: github.ref == 'refs/heads/staging'` only works if `staging` is **also in
 `on:`**. Otherwise a push to `staging` never starts the workflow, so the `if:` is never checked.
