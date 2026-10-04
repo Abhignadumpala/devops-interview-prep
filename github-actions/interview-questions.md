@@ -252,7 +252,21 @@ Dependabot checks weekly → finds a newer version → opens a PR
    ↓
 PR triggers the pipeline → lint, tests, build run
    ↓
-All ✅ → review the changes → merge        Any ❌ → the update breaks something → don't merge
+All ✅ → check the test coverage score → review the changes → merge
+Any ❌ or low coverage → don't merge
+```
+
+**Test coverage score:** after the tests pass, we also check the **coverage %** (how much of the
+code the tests ran). If it's **low, like 30%**, we **don't merge**, because most of the code wasn't
+tested. If it's **good (e.g. 80% or more)**, we merge. Jest can enforce this automatically, so the
+pipeline **fails** if coverage drops below the limit:
+
+```json
+"jest": {
+  "coverageThreshold": {
+    "global": { "lines": 80, "branches": 80, "functions": 80, "statements": 80 }
+  }
+}
 ```
 
 **Config** (`.github/dependabot.yml`):
