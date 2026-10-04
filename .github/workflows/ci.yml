@@ -5,22 +5,107 @@ on:
     branches:
       - master
       - main
+  pull_request: # also run on PRs, so the status check shows on the PR
+    branches:
+      - main
   workflow_dispatch:
 
-jobs:
-  build_and_package:
-    name: BUILD-JOB
-    runs-on: ubuntu-slim
+permissions:
+  contents: read
 
+jobs:
+  # 1. LINT: check code quality and formatting (once)
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js + Cache # CACHE: saves ~/.npm, key = hash of package-lock.json
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format Check
+        run: npm run format:check
+
+  # 2. TEST: MATRIX → 2 OS × 3 Node versions = 6 jobs in parallel
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    needs: lint # starts only after lint passes
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # if one combination fails, the others keep running
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node-version: [20, 22, 24]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js + Cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
 
       - name: Test
-        run: echo "code is tested!"
+        run: npm run test:ci
+
+  # 3. BUILD: create dist/ and save it as an artifact
+  build:
+    name: Build
+    needs: test # waits for ALL 6 matrix jobs to pass
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js + Cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: dist/
+
+  # 4. DEPLOY: CONDITIONS → only on a push to main, rollback only on failure
+  deploy:
+    name: Deploy
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-build
+          path: dist/
 
       - name: Deploy
-        run: echo "my code is deployed"
+        run: echo "code is deployed"
+
+      - name: Rollback
+        if: failure() # runs only if a step above failed
+        run: echo "rollback is done"
