@@ -4,6 +4,12 @@ Sources: [GitHub Docs](https://docs.github.com/en/actions/get-started/understand
 Practice: [interview-questions.md](./interview-questions.md) ·
 Daily notes: [Day 1](./day-1/README.md) · [Day 2](./day-2/README.md) · [Day 3](./day-3/README.md)
 
+**Cheat sheet — all topics at a glance:**
+
+![GitHub Actions cheat sheet part 1: basics](./images/cheatsheet-part1-basics.svg)
+
+![GitHub Actions cheat sheet part 2: pipeline features](./images/cheatsheet-part2-pipeline.svg)
+
 <!-- toc -->
 
 ## Table of Contents
