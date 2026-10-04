@@ -167,6 +167,8 @@ This workflow is the live `.github/workflows/ci.yml`. On a push to `main`, **all
 
 ## Artifact — Name, Path and Where to Find It
 
+![Artifacts](../images/artifacts-flow.svg)
+
 | What                | Value                                                          |
 | ------------------- | -------------------------------------------------------------- |
 | Artifact name       | **`app-build`** (set by `name:` in the Upload Artifact step)   |
@@ -244,6 +246,8 @@ src/ ──npm run build──→ dist/ ──upload──→ app-build ──do
 
 ## Cache
 
+![Caching](../images/cache-flow.svg)
+
 ```yaml
 - uses: actions/setup-node@v4
   with:
@@ -268,6 +272,8 @@ src/ ──npm run build──→ dist/ ──upload──→ app-build ──do
   **artifacts** (upload → download).
 
 ## Matrix Jobs
+
+![Matrix jobs](../images/matrix-jobs.svg)
 
 **Matrix = same job, many setups.** You write the job **once**, list the values (OS, Node
 versions), and GitHub runs the job for **every combination**.

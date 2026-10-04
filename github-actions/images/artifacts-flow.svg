@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="540" viewBox="0 0 900 540" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#64748b"/></marker><marker id="r" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#dc2626"/></marker></defs>
+  <rect x="2" y="2" width="896" height="536" rx="18" fill="#ffffff" stroke="#7c3aed" stroke-width="3"/>
+  <text x="450.0" y="54" font-size="30" font-weight="800" fill="#0f172a" text-anchor="middle">Artifacts — Share Files Between Jobs</text>
+  <rect x="30" y="84" width="270" height="240" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <path d="M30 128 V98 Q30 84 44 84 H286 Q300 84 300 98 V128 Z" fill="#2563eb"/>
+  <text x="165.0" y="113" font-size="18" font-weight="700" fill="#fff" text-anchor="middle">Build job (VM 1)</text>
+  <rect x="48" y="142" width="234" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="165" y="165" font-size="14" font-weight="700" fill="#1e3a8a" text-anchor="middle" font-family="Consolas, Menlo, monospace" xml:space="preserve">checkout</text>
+  <rect x="48" y="186" width="234" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="165" y="209" font-size="14" font-weight="700" fill="#1e3a8a" text-anchor="middle" font-family="Consolas, Menlo, monospace" xml:space="preserve">npm ci</text>
+  <rect x="48" y="230" width="234" height="36" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="165" y="253" font-size="14" font-weight="700" fill="#1e3a8a" text-anchor="middle" font-family="Consolas, Menlo, monospace" xml:space="preserve">npm run build → dist/</text>
+  <rect x="48" y="274" width="234" height="36" rx="8" fill="#2563eb" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="165" y="297" font-size="14" font-weight="700" fill="#fff" text-anchor="middle" font-family="Consolas, Menlo, monospace" xml:space="preserve">upload-artifact</text>
+  <rect x="600" y="84" width="270" height="240" rx="14" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <path d="M600 128 V98 Q600 84 614 84 H856 Q870 84 870 98 V128 Z" fill="#16a34a"/>
+  <text x="735.0" y="113" font-size="18" font-weight="700" fill="#fff" text-anchor="middle">Deploy job (VM 2)</text>
+  <rect x="618" y="142" width="234" height="36" rx="8" fill="#16a34a" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="735" y="165" font-size="14" font-weight="700" fill="#fff" text-anchor="middle" font-family="Consolas, Menlo, monospace" xml:space="preserve">download-artifact</text>
+  <rect x="618" y="186" width="234" height="36" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="735" y="209" font-size="14" font-weight="700" fill="#14532d" text-anchor="middle" font-family="Consolas, Menlo, monospace" xml:space="preserve">dist/ is here ✅</text>
+  <rect x="618" y="230" width="234" height="36" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="735" y="253" font-size="14" font-weight="700" fill="#14532d" text-anchor="middle" font-family="Consolas, Menlo, monospace" xml:space="preserve">deploy</text>
+  <path d="M304 250 L336 210" fill="none" stroke="#64748b" stroke-width="2.5" marker-end="url(#a)"/>
+  <rect x="340" y="140" width="220" height="120" rx="16" fill="#faf5ff" stroke="#7c3aed" stroke-width="3"/>
+  <text x="450" y="172" font-size="20" font-weight="800" fill="#4c1d95" text-anchor="middle">Artifact</text>
+  <text x="450" y="196" font-size="15" font-weight="400" fill="#4c1d95" text-anchor="middle" font-family="Consolas, Menlo, monospace" xml:space="preserve">app-build</text>
+  <text x="450" y="218" font-size="14" font-weight="400" fill="#4c1d95" text-anchor="middle">contains dist/</text>
+  <text x="450" y="242" font-size="12" font-weight="400" fill="#4c1d95" text-anchor="middle">kept 7 days (retention-days)</text>
+  <path d="M564 200 L618 162" fill="none" stroke="#64748b" stroke-width="2.5" marker-end="url(#a)"/>
+  <path d="M450 264 L450 330" fill="none" stroke="#64748b" stroke-width="2.5" marker-end="url(#a)"/>
+  <rect x="300" y="338" width="300" height="62" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="450" y="363" font-size="16" font-weight="800" fill="#7c2d12" text-anchor="middle">You download the zip</text>
+  <text x="450" y="384" font-size="13" font-weight="400" fill="#7c2d12" text-anchor="middle">Actions → run → Summary → Artifacts</text>
+  <rect x="30" y="418" width="840" height="44" rx="12" fill="#fef2f2" stroke="#fca5a5" stroke-width="2"/>
+  <text x="450" y="446" font-size="14" font-weight="700" fill="#7f1d1d" text-anchor="middle">⚠ Each job runs on a different VM — dist/ is NOT in the deploy job unless you download it</text>
+  <rect x="30" y="478" width="840" height="46" rx="14" fill="#4c1d95"/>
+  <text x="450.0" y="507.5" font-size="18" font-weight="700" text-anchor="middle"><tspan fill="#ffffff">Artifact = </tspan><tspan fill="#fde047">output</tspan><tspan fill="#ffffff">: save files from one job, use them in another</tspan></text>
+</svg>

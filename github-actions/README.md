@@ -240,6 +240,8 @@ jobs:
 operating systems and Node versions), and GitHub runs the job **once for every combination**, all
 **at the same time**.
 
+![Matrix jobs](./images/matrix-jobs.svg)
+
 **Without a matrix:** to test on 2 OS × 3 Node versions, you'd copy-paste the same job **6 times**.
 **With a matrix:** you write it **once**:
 
@@ -466,6 +468,8 @@ slow. A **cache** saves files (like `~/.npm`) after one run and **restores them 
 which makes builds faster. The cache is found by its **key**. The key usually contains a **hash of
 `package-lock.json`**, so when dependencies change, the key changes and a new cache is made.
 
+![Caching](./images/cache-flow.svg)
+
 **Easy way** — `setup-node` caches npm for you:
 
 ```yaml
@@ -497,6 +501,8 @@ Artifacts are **files a workflow saves after a job finishes**: build output (`di
 logs, coverage reports. Use them to **share files between jobs**, because each job runs on a
 different VM. You can also **download them from the run's page** in the Actions tab. By default they
 are **kept for 90 days**, and you can change this with `retention-days`.
+
+![Artifacts](./images/artifacts-flow.svg)
 
 ```yaml
 jobs:
