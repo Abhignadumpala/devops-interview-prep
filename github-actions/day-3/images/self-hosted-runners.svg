@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="530" viewBox="0 0 900 530" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect x="2" y="2" width="896" height="526" rx="18" fill="#ffffff" stroke="#7c3aed" stroke-width="3"/>
+
+  <text x="450" y="58" text-anchor="middle" font-size="36" font-weight="800" fill="#1e1b4b">Self-Hosted Runners</text>
+
+  <rect x="30" y="80" width="840" height="62" rx="12" fill="#f5f3ff" stroke="#c4b5fd"/>
+  <text x="450" y="118" text-anchor="middle" font-size="18" fill="#1e1b4b">A <tspan font-weight="700" fill="#7c3aed">self-hosted runner</tspan> is a machine managed by <tspan font-weight="700">your organization</tspan> that runs <tspan font-weight="700" fill="#2563eb">GitHub Actions jobs</tspan>.</text>
+
+  <!-- GitHub-hosted -->
+  <rect x="30" y="160" width="270" height="275" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <rect x="30" y="160" width="270" height="46" rx="14" fill="#2563eb"/>
+  <rect x="30" y="190" width="270" height="16" fill="#2563eb"/>
+  <text x="165" y="190" text-anchor="middle" font-size="19" font-weight="700" fill="#fff">GitHub-Hosted Runner</text>
+  <rect x="60" y="226" width="210" height="44" rx="10" fill="#fff" stroke="#93c5fd"/>
+  <text x="165" y="254" text-anchor="middle" font-size="16" font-weight="600" fill="#1e3a8a">GitHub</text>
+  <line x1="165" y1="272" x2="165" y2="300" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="60" y="304" width="210" height="44" rx="10" fill="#fff" stroke="#93c5fd"/>
+  <text x="165" y="332" text-anchor="middle" font-size="16" font-weight="600" fill="#1e3a8a">GitHub-hosted runner</text>
+  <rect x="50" y="366" width="230" height="54" rx="10" fill="#dbeafe"/>
+  <text x="165" y="388" text-anchor="middle" font-size="14" fill="#1e3a8a">Uses GitHub's own machines</text>
+  <text x="165" y="408" text-anchor="middle" font-size="14" fill="#1e3a8a">Fresh VM for every job</text>
+
+  <!-- Self-hosted -->
+  <rect x="315" y="160" width="270" height="275" rx="14" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <rect x="315" y="160" width="270" height="46" rx="14" fill="#16a34a"/>
+  <rect x="315" y="190" width="270" height="16" fill="#16a34a"/>
+  <text x="450" y="190" text-anchor="middle" font-size="19" font-weight="700" fill="#fff">Self-Hosted Runner</text>
+  <rect x="345" y="220" width="210" height="36" rx="10" fill="#fff" stroke="#86efac"/>
+  <text x="450" y="243" text-anchor="middle" font-size="15" font-weight="600" fill="#14532d">GitHub</text>
+  <line x1="450" y1="257" x2="450" y2="270" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="345" y="274" width="210" height="36" rx="10" fill="#fff" stroke="#86efac"/>
+  <text x="450" y="297" text-anchor="middle" font-size="15" font-weight="600" fill="#14532d">Your organization</text>
+  <line x1="450" y1="311" x2="450" y2="324" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="345" y="328" width="210" height="36" rx="10" fill="#bbf7d0" stroke="#16a34a"/>
+  <text x="450" y="351" text-anchor="middle" font-size="15" font-weight="700" fill="#14532d">Self-hosted runner</text>
+  <line x1="450" y1="365" x2="450" y2="378" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="345" y="382" width="210" height="36" rx="10" fill="#fff" stroke="#86efac"/>
+  <text x="450" y="405" text-anchor="middle" font-size="15" font-weight="600" fill="#14532d">Your server / VM / EC2</text>
+
+  <!-- Why -->
+  <rect x="600" y="160" width="270" height="275" rx="14" fill="#faf5ff" stroke="#7c3aed" stroke-width="2"/>
+  <rect x="600" y="160" width="270" height="46" rx="14" fill="#7c3aed"/>
+  <rect x="600" y="190" width="270" height="16" fill="#7c3aed"/>
+  <text x="735" y="190" text-anchor="middle" font-size="19" font-weight="700" fill="#fff">Why Self-Hosted?</text>
+  <g font-size="15" font-weight="600">
+    <rect x="615" y="222" width="240" height="42" rx="10" fill="#e0f2fe"/>
+    <circle cx="640" cy="243" r="14" fill="#2563eb"/><text x="640" y="248" text-anchor="middle" fill="#fff">1</text>
+    <text x="664" y="248" fill="#0c4a6e">Custom software / OS</text>
+    <rect x="615" y="274" width="240" height="42" rx="10" fill="#dcfce7"/>
+    <circle cx="640" cy="295" r="14" fill="#16a34a"/><text x="640" y="300" text-anchor="middle" fill="#fff">2</text>
+    <text x="664" y="300" fill="#14532d">Private network access</text>
+    <rect x="615" y="326" width="240" height="42" rx="10" fill="#ede9fe"/>
+    <circle cx="640" cy="347" r="14" fill="#7c3aed"/><text x="640" y="352" text-anchor="middle" fill="#fff">3</text>
+    <text x="664" y="352" fill="#4c1d95">Special hardware (GPU)</text>
+    <rect x="615" y="378" width="240" height="42" rx="10" fill="#ffedd5"/>
+    <circle cx="640" cy="399" r="14" fill="#f59e0b"/><text x="640" y="404" text-anchor="middle" fill="#fff">4</text>
+    <text x="664" y="404" fill="#7c2d12">More control</text>
+  </g>
+
+  <rect x="30" y="455" width="840" height="52" rx="14" fill="#3b0764"/>
+  <text x="450" y="488" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">In short:  <tspan fill="#fde047">Self-hosted runner = your machine, your control</tspan></text>
+</svg>

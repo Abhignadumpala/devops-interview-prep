@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="590" viewBox="0 0 900 590" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="2" y="2" width="896" height="586" rx="18" fill="#ffffff" stroke="#0f766e" stroke-width="3"/>
+  <text x="450" y="56" text-anchor="middle" font-size="32" font-weight="800" fill="#0f172a">GitHub-Hosted <tspan fill="#94a3b8">vs</tspan> Self-Hosted</text>
+
+  <!-- header -->
+  <rect x="30" y="80" width="200" height="48" rx="10" fill="#334155"/>
+  <text x="130" y="110" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">Topic</text>
+  <rect x="238" y="80" width="312" height="48" rx="10" fill="#2563eb"/>
+  <text x="394" y="110" text-anchor="middle" font-size="18" font-weight="700" fill="#fff">GitHub-Hosted</text>
+  <rect x="558" y="80" width="312" height="48" rx="10" fill="#16a34a"/>
+  <text x="714" y="110" text-anchor="middle" font-size="18" font-weight="700" fill="#fff">Self-Hosted</text>
+
+  <g font-size="15">
+    <!-- row backgrounds -->
+    <rect x="30" y="136" width="840" height="44" rx="8" fill="#f8fafc"/>
+    <rect x="30" y="232" width="840" height="44" rx="8" fill="#f8fafc"/>
+    <rect x="30" y="328" width="840" height="44" rx="8" fill="#f8fafc"/>
+    <rect x="30" y="424" width="840" height="44" rx="8" fill="#f8fafc"/>
+
+    <g font-weight="700" fill="#334155">
+      <text x="50" y="164">Where</text>
+      <text x="50" y="212">Managed by</text>
+      <text x="50" y="260">Setup</text>
+      <text x="50" y="308">Tools (Node, npm)</text>
+      <text x="50" y="356">Customization</text>
+      <text x="50" y="404">Cost</text>
+      <text x="50" y="452">Machine</text>
+      <text x="50" y="500">Best for</text>
+    </g>
+    <g fill="#1e3a8a">
+      <text x="258" y="164">GitHub's cloud</text>
+      <text x="258" y="212">GitHub</text>
+      <text x="258" y="260">Nothing to set up</text>
+      <text x="258" y="308">Pre-installed by GitHub</text>
+      <text x="258" y="356">Standard images only</text>
+      <text x="258" y="404">Free minutes, then pay per minute</text>
+      <text x="258" y="452">Fresh VM for every job</text>
+      <text x="258" y="500">General workloads</text>
+    </g>
+    <g fill="#14532d">
+      <text x="578" y="164">Your own server / cloud (EC2)</text>
+      <text x="578" y="212">You / your organization</text>
+      <text x="578" y="260">Install + configure the runner</text>
+      <text x="578" y="308">You install everything</text>
+      <text x="578" y="356">Full control (GPU, custom OS)</text>
+      <text x="578" y="404">You pay for server + maintenance</text>
+      <text x="578" y="452">Keeps files between jobs</text>
+      <text x="578" y="500">Custom / private workloads</text>
+    </g>
+  </g>
+  <line x1="234" y1="136" x2="234" y2="516" stroke="#e2e8f0" stroke-width="2"/>
+  <line x1="554" y1="136" x2="554" y2="516" stroke="#e2e8f0" stroke-width="2"/>
+
+  <rect x="30" y="526" width="840" height="46" rx="12" fill="#134e4a"/>
+  <text x="450" y="556" text-anchor="middle" font-size="18" font-weight="700" fill="#fff">Self-hosted = <tspan fill="#fde047">your machine</tspan>, GitHub controls the <tspan fill="#5eead4">workflow</tspan></text>
+</svg>
