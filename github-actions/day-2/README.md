@@ -251,6 +251,9 @@ src/ ──npm run build──→ dist/ ──upload──→ app-build ──do
 
 ## Matrix Jobs
 
+**Matrix = same job, many setups.** You write the job **once**, list the values (OS, Node
+versions), and GitHub runs the job for **every combination**.
+
 ```yaml
 strategy:
   fail-fast: false
@@ -259,11 +262,24 @@ strategy:
     node-version: [20, 22, 24]
 ```
 
-- One job definition runs on **every combination**: 2 × 3 = **6 jobs**, all in parallel.
+This creates **2 × 3 = 6 jobs**, all running at the same time:
+
+|                    | Node 20 | Node 22 | Node 24 |
+| ------------------ | ------- | ------- | ------- |
+| **ubuntu-latest**  | ✅      | ✅      | ✅      |
+| **windows-latest** | ✅      | ✅      | ✅      |
+
 - `${{ matrix.os }}` and `${{ matrix.node-version }}` are filled in for each job.
-- **`fail-fast: false`**: if one combination fails, the others still finish, so you see every
-  failure at once.
-- **Why:** proves the app works on every OS and Node version your users might have.
+- **`fail-fast: false`**: if one job fails, the others still finish, so you see every failure at
+  once.
+
+**Why use it?**
+
+- **Test on many setups:** proves the app works on every OS and Node version users might have.
+- **No copy-paste:** without a matrix, you'd write 6 almost identical jobs. With it, you write 1.
+
+> **Interview one-liner:** A matrix runs the same job several times with different settings, like
+> different operating systems or Node versions. Matrix = same job, many setups.
 
 ## Conditions
 
