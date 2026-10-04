@@ -1,53 +1,6 @@
-# Workflows — Day by Day
+# Day 2 — Cache, Dependabot, Matrix Jobs, Conditions, Status Check
 
-What I built each day. Concepts are explained in [README.md](./README.md).
-
-## Day 1 — Intro, Workflows, Triggers, Node.js, Artifacts, CodeQL
-
-- **Intro:** what CI/CD is and how GitHub Actions automates build, test, and deploy.
-- **Workflows:** wrote my first workflow file in `.github/workflows/`.
-- **Triggers:** runs on every push to `main`/`master`, or manually (`workflow_dispatch`).
-- **Node.js:** installed the app's dependencies with npm.
-- **Artifacts:** saved the build output so it can be downloaded or used by later jobs.
-- **CodeQL:** added a security scan that finds vulnerabilities in the code.
-
-### Simple CI Pipeline
-
-```yaml
-name: Secure DevSecOps Pipeline
-
-on:
-  push:
-    branches:
-      - master
-      - main
-  workflow_dispatch:
-
-jobs:
-  build_and_package:
-    name: BUILD-JOB
-    runs-on: ubuntu-slim
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Test
-        run: echo "code is tested!"
-
-      - name: Deploy
-        run: echo "my code is deployed"
-```
-
-- **`on: push`**: runs the workflow automatically when code is pushed.
-- **`workflow_dispatch`**: adds a **Run workflow** button to run it manually.
-- **`runs-on: ubuntu-slim`**: a small GitHub-hosted runner (1 CPU, 15-minute job limit).
-- **`uses:`** runs a ready-made action. **`run:`** runs a shell command.
-
-## Day 2 — Cache, Dependabot, Matrix Jobs, Conditions, Status Check
+[← Day 1](../day-1/README.md) · [All notes](../README.md) · [Day 3 →](../day-3/README.md)
 
 - **Cache:** saved npm packages between runs, so `npm ci` is faster.
 - **Jobs with `needs:`:** split the pipeline into lint → test → build → deploy.
@@ -56,7 +9,7 @@ jobs:
 - **Dependabot:** `.github/dependabot.yml` checks for library updates every week.
 - **Status check:** made the pipeline a required check, so a PR can't merge until it passes.
 
-### The Full Day 2 Workflow
+## The Full Day 2 Workflow
 
 `.github/workflows/ci.yml`
 
@@ -181,7 +134,7 @@ lint ──→ test (6 matrix jobs in parallel) ──→ build ──→ deploy
                                                           └─ rollback (if deploy fails)
 ```
 
-### Cache
+## Cache
 
 ```yaml
 - uses: actions/setup-node@v4
@@ -206,7 +159,7 @@ lint ──→ test (6 matrix jobs in parallel) ──→ build ──→ deploy
 - A cache only makes **installs faster**. To pass files **between jobs** (like `dist/`), use
   **artifacts** (upload → download).
 
-### Matrix Jobs
+## Matrix Jobs
 
 ```yaml
 strategy:
@@ -222,7 +175,7 @@ strategy:
   failure at once.
 - **Why:** proves the app works on every OS and Node version your users might have.
 
-### Conditions
+## Conditions
 
 | Where     | Condition                                                            | Meaning                            |
 | --------- | -------------------------------------------------------------------- | ---------------------------------- |
@@ -234,7 +187,7 @@ strategy:
 On a **pull request**, lint, test and build run, but deploy is **skipped**, so unmerged code is
 never deployed.
 
-### Dependabot
+## Dependabot
 
 `.github/dependabot.yml` (not a workflow: GitHub reads it directly)
 
@@ -261,7 +214,7 @@ updates:
 - Every week, Dependabot checks for newer versions and **opens a pull request** for each update.
 - That PR runs the pipeline above, so you **see if the update breaks anything** before merging.
 
-### Status Check
+## Status Check
 
 Makes the pipeline a **required check**: a PR **can't be merged** until it passes.
 
@@ -275,85 +228,8 @@ Makes the pipeline a **required check**: a PR **can't be merged** until it passe
 - This is why the workflow also runs on **`pull_request`**: the checks run on the PR, and the
   **Merge** button stays blocked until they're ✅.
 
-## Day 3 — Parallel Builds, Self-Hosted Runner
+## Screenshots
 
-- **Parallel builds:** build, test, and security jobs run at the same time; deploy waits for all.
-- **Self-hosted runner:** ran the pipeline on my own machine instead of GitHub's servers.
-
-### Parallel Builds
-
-Jobs **without `needs:`** run **at the same time**. Build, test, and security don't depend on each
-other, so they run in parallel. Deploy waits for all three.
-
-```yaml
-name: Secure DevSecOps Pipeline
-
-on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npm run build
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npm test
-
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm audit --audit-level=high
-
-  deploy:
-    needs: [build, test, security] # starts only after all 3 pass
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "code is deployed"
-```
-
-```
-build    ─┐
-test     ─┼──→ deploy
-security ─┘
-```
-
-**Why:** the pipeline takes as long as the **slowest** job, not the **sum** of all jobs, so you get
-faster feedback.
-
-### Self-Hosted Runner
-
-Ran the job on **my own machine** instead of GitHub's servers. I installed the runner app from
-**Settings → Actions → Runners → New self-hosted runner**.
-
-```yaml
-name: Secure DevSecOps Pipeline
-
-on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: [self-hosted, linux] # labels pick the right machine
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-      - run: echo "code is deployed"
-```
-
-- The machine **keeps its files between runs** (unlike GitHub-hosted runners, which start clean).
-- ⚠️ Use self-hosted runners only on **private repos**. On a public repo, anyone can open a PR and
-  run code on your machine.
+<!-- Put screenshots in ./images/ and show them like this:
+![Workflow run in the Actions tab](./images/actions-run.png)
+-->
