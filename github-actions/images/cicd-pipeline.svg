@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="400" viewBox="0 0 900 400" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#64748b"/></marker><marker id="r" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#dc2626"/></marker></defs>
+  <rect x="2" y="2" width="896" height="396" rx="18" fill="#ffffff" stroke="#7c3aed" stroke-width="3"/>
+  <text x="450.0" y="54" font-size="30" font-weight="800" fill="#0f172a" text-anchor="middle">CI/CD Pipeline</text>
+  <rect x="34" y="100" width="100" height="86" rx="12" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
+  <circle cx="84.0" cy="100" r="14" fill="#475569"/>
+  <text x="84.0" y="105.5" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+  <text x="84.0" y="150" font-size="16" font-weight="700" fill="#0f172a" text-anchor="middle">git push</text>
+  <path d="M136 143 L152 143" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="156" y="100" width="100" height="86" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <circle cx="206.0" cy="100" r="14" fill="#2563eb"/>
+  <text x="206.0" y="105.5" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+  <text x="206.0" y="150" font-size="16" font-weight="700" fill="#1e3a8a" text-anchor="middle">Build</text>
+  <path d="M258 143 L274 143" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="278" y="100" width="100" height="86" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <circle cx="328.0" cy="100" r="14" fill="#16a34a"/>
+  <text x="328.0" y="105.5" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+  <text x="328.0" y="150" font-size="16" font-weight="700" fill="#14532d" text-anchor="middle">Test</text>
+  <path d="M380 143 L396 143" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="400" y="100" width="100" height="86" rx="12" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+  <circle cx="450.0" cy="100" r="14" fill="#0891b2"/>
+  <text x="450.0" y="105.5" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">4</text>
+  <text x="450.0" y="150" font-size="16" font-weight="700" fill="#164e63" text-anchor="middle">Lint</text>
+  <path d="M502 143 L518 143" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="522" y="100" width="100" height="86" rx="12" fill="#f0fdfa" stroke="#0d9488" stroke-width="2"/>
+  <circle cx="572.0" cy="100" r="14" fill="#0d9488"/>
+  <text x="572.0" y="105.5" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">5</text>
+  <text x="572.0" y="150" font-size="16" font-weight="700" fill="#134e4a" text-anchor="middle">Dockerize</text>
+  <path d="M624 143 L640 143" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="644" y="100" width="100" height="86" rx="12" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <circle cx="694.0" cy="100" r="14" fill="#dc2626"/>
+  <text x="694.0" y="105.5" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">6</text>
+  <text x="694.0" y="140" font-size="16" font-weight="700" fill="#7f1d1d" text-anchor="middle">Security</text>
+  <text x="694.0" y="160" font-size="16" font-weight="700" fill="#7f1d1d" text-anchor="middle">scan</text>
+  <path d="M746 143 L762 143" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="766" y="100" width="100" height="86" rx="12" fill="#faf5ff" stroke="#7c3aed" stroke-width="2"/>
+  <circle cx="816.0" cy="100" r="14" fill="#7c3aed"/>
+  <text x="816.0" y="105.5" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">7</text>
+  <text x="816.0" y="150" font-size="16" font-weight="700" fill="#4c1d95" text-anchor="middle">Deploy</text>
+  <path d="M328.0 190 L328.0 250" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#r)"/>
+  <text x="338.0" y="226" font-size="14" font-weight="700" fill="#dc2626" text-anchor="start">Test fails</text>
+  <rect x="168.0" y="258" width="320" height="56" rx="12" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="328.0" y="282" font-size="17" font-weight="800" fill="#7f1d1d" text-anchor="middle">Pipeline stops</text>
+  <text x="328.0" y="302" font-size="14" font-weight="400" fill="#7f1d1d" text-anchor="middle">nothing is deployed</text>
+  <rect x="520" y="258" width="350" height="56" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="695" y="282" font-size="17" font-weight="800" fill="#14532d" text-anchor="middle">All stages pass</text>
+  <text x="695" y="302" font-size="14" font-weight="400" fill="#14532d" text-anchor="middle">the app is deployed</text>
+  <rect x="30" y="334" width="840" height="46" rx="14" fill="#4c1d95"/>
+  <text x="450.0" y="363.5" font-size="18" font-weight="700" text-anchor="middle"><tspan fill="#ffffff">Each stage must </tspan><tspan fill="#86efac">pass</tspan><tspan fill="#ffffff"> before the next one starts</tspan></text>
+</svg>
