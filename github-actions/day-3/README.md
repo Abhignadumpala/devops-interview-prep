@@ -235,11 +235,17 @@ Organizations may need:
 - Key pair for SSH, and a security group with **SSH (port 22)** open.
 - No other inbound port is needed. The runner connects **out** to GitHub over HTTPS.
 
+My instance `sel-host-runner` — **t2.medium**, **Running**:
+
+![EC2 instance t2.medium running](./images/ec2-instance-t2-medium.png)
+
 **Step 2 — Connect as the `ubuntu` user**
 
 ```bash
 ssh -i my-key.pem ubuntu@<EC2_PUBLIC_IP>
 ```
+
+![SSH into the EC2 instance](./images/ssh-into-ec2.png)
 
 **Step 3 — Download the runner**
 
@@ -259,7 +265,15 @@ echo "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613  actions-
 tar xzf ./actions-runner-linux-x64-2.337.0.tar.gz
 ```
 
+The hash check prints **OK**, so the download is not corrupted:
+
+![Download and extract the runner](./images/download-runner.png)
+
 **Step 4 — Configure (connect the machine to my GitHub repo)**
+
+Before this step, the repo has no self-hosted runners:
+
+![No self-hosted runners yet](./images/runners-empty.png)
 
 ```bash
 ./config.sh --url https://github.com/Abhignadumpala/devops-interview-prep --token <YOUR_TOKEN>
@@ -277,6 +291,8 @@ Answers I gave:
 | Additional labels | `label1`                |
 | Work folder       | Press Enter → `_work`   |
 
+![config.sh and run.sh output](./images/config-and-run.png)
+
 **Step 5 — Run it**
 
 ```bash
@@ -285,6 +301,9 @@ Answers I gave:
 
 - The terminal shows **"Connected to GitHub"** and **"Listening for Jobs"**.
 - In **Settings → Actions → Runners**, the runner `dev` shows as **Idle** (green).
+
+  ![Runner dev is Idle](./images/runner-dev-idle.png)
+
 - `run.sh` stops when you close the terminal. To keep it running in the background, install it as a
   service: `sudo ./svc.sh install && sudo ./svc.sh start`.
 
@@ -300,7 +319,7 @@ runs-on: self-hosted
 **empty**, so the job **fails** with `npm: command not found`. Fix: install Node.js **in the
 pipeline** with `actions/setup-node`.
 
-File: `.github/workflows/self-hosted.yml` (a separate workflow, so CodeQL in `ci.yml` stays as it is)
+File: `.github/workflows/self-hosted.yml`
 
 ```yaml
 name: Self-Hosted Runner Build
@@ -339,6 +358,11 @@ jobs:
 ```
 push → GitHub → my EC2 runner (dev) → checkout → setup Node → npm ci → test → build
 ```
+
+**Result:** I pushed to `main`, and the jobs ran **on my EC2 machine**. The runner terminal shows
+`Running job: build` → `Job build completed with result: Succeeded` ✅
+
+![Jobs succeeded on the self-hosted runner](./images/runner-jobs-succeeded.png)
 
 ### Things to Remember
 
