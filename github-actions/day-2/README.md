@@ -243,6 +243,46 @@ strategy:
 On a **pull request**, lint, test and build run, but deploy is **skipped**, so unmerged code is
 never deployed.
 
+### Trigger vs Condition
+
+There are two checks, at two levels:
+
+```
+1. TRIGGER (on:)     → does the workflow start at all?   no → no run, nothing in Actions
+2. CONDITION (if:)   → does this job/step run?           no → run exists, job shows ⚪ skipped
+```
+
+**Tested it:** I removed `main` from `on: push: branches` and pushed to `main` (commit `accea71`).
+**No run was created at all.** After adding `main` back (`e584b73`), the run started again ✅.
+
+| Commit    | `on: push: branches` | Push to `main` → run? |
+| --------- | -------------------- | --------------------- |
+| `1a8aac5` | `master`, `main`     | ✅ ran                |
+| `accea71` | `master` only        | ❌ **no run**         |
+| `e584b73` | `master`, `main`     | ✅ ran                |
+
+A condition like `if: github.ref == 'refs/heads/staging'` only works if `staging` is **also in
+`on:`**. Otherwise a push to `staging` never starts the workflow, so the `if:` is never checked.
+
+### How to Test the Conditions
+
+| #   | What I do                       | `ref` / `event`                         | Expected                                   |
+| --- | ------------------------------- | --------------------------------------- | ------------------------------------------ |
+| 1   | Push to `main`                  | `refs/heads/main` / `push`              | ✅ Deploy runs, Rollback skipped           |
+| 2   | **Actions → Run workflow**      | `refs/heads/main` / `workflow_dispatch` | ⚪ Deploy skipped (not a push)             |
+| 3   | Push to `master`                | `refs/heads/master` / `push`            | ⚪ Deploy skipped (wrong branch)           |
+| 4   | Open a pull request into `main` | `refs/pull/N/merge` / `pull_request`    | ⚪ Deploy skipped; lint, test, build run   |
+| 5   | Break a test in the PR          | —                                       | ❌ Tests fail, ⚪ Build and Deploy skipped |
+| 6   | Add `exit 1` to the Deploy step | `refs/heads/main` / `push`              | ❌ Deploy fails, ✅ Rollback runs          |
+| 7   | Remove `main` from `on: push`   | —                                       | ❌ No run at all                           |
+
+To see the values, I added a debug step to the build job:
+
+```yaml
+- name: Show condition values
+  run: echo "ref=${{ github.ref }}  event=${{ github.event_name }}"
+```
+
 ## Dependabot
 
 `.github/dependabot.yml` (not a workflow: GitHub reads it directly)
