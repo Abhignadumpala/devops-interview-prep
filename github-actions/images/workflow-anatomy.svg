@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#64748b"/></marker><marker id="r" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#dc2626"/></marker></defs>
+  <rect x="2" y="2" width="896" height="556" rx="18" fill="#ffffff" stroke="#334155" stroke-width="3"/>
+  <rect x="2" y="2" width="896" height="556" rx="18" fill="#0f172a" stroke="#334155" stroke-width="3"/>
+  <text x="450" y="52" font-size="28" font-weight="800" fill="#f8fafc" text-anchor="middle">Anatomy of a Workflow File</text>
+  <text x="450" y="76" font-size="14" font-weight="400" fill="#94a3b8" text-anchor="middle" font-family="Consolas, Menlo, monospace">.github/workflows/ci.yml</text>
+  <text x="40" y="124" font-size="17" font-family="Consolas, Menlo, monospace" xml:space="preserve"><tspan fill="#facc15"></tspan><tspan fill="#7dd3fc">name</tspan><tspan fill="#e2e8f0">: Secure DevSecOps Pipeline</tspan></text>
+  <path d="M520 118 L380.2 118" stroke="#38bdf8" stroke-width="2" fill="none"/>
+  <path d="M370.2 118 L382.2 112 L382.2 124 Z" fill="#38bdf8"/>
+  <circle cx="534" cy="118" r="6" fill="#38bdf8"/>
+  <text x="550" y="124" font-size="15" font-weight="600" fill="#f1f5f9" text-anchor="start">Workflow name (shown in Actions tab)</text>
+  <text x="40" y="173" font-size="17" font-family="Consolas, Menlo, monospace" xml:space="preserve"><tspan fill="#facc15"></tspan><tspan fill="#7dd3fc">on</tspan><tspan fill="#e2e8f0">: push</tspan></text>
+  <path d="M520 167 L145.6 167" stroke="#fb923c" stroke-width="2" fill="none"/>
+  <path d="M135.6 167 L147.6 161 L147.6 173 Z" fill="#fb923c"/>
+  <circle cx="534" cy="167" r="6" fill="#fb923c"/>
+  <text x="550" y="173" font-size="15" font-weight="600" fill="#f1f5f9" text-anchor="start">Event that triggers the workflow</text>
+  <text x="40" y="222" font-size="17" font-family="Consolas, Menlo, monospace" xml:space="preserve"><tspan fill="#facc15"></tspan><tspan fill="#7dd3fc">jobs</tspan><tspan fill="#e2e8f0">:</tspan></text>
+  <path d="M520 216 L115.0 216" stroke="#a78bfa" stroke-width="2" fill="none"/>
+  <path d="M105.0 216 L117.0 210 L117.0 222 Z" fill="#a78bfa"/>
+  <circle cx="534" cy="216" r="6" fill="#a78bfa"/>
+  <text x="550" y="222" font-size="15" font-weight="600" fill="#f1f5f9" text-anchor="start">Jobs to run when it triggers</text>
+  <text x="40" y="271" font-size="17" font-family="Consolas, Menlo, monospace" xml:space="preserve"><tspan fill="#facc15">  </tspan><tspan fill="#7dd3fc">build</tspan><tspan fill="#e2e8f0">:</tspan></text>
+  <path d="M520 265 L145.6 265" stroke="#c084fc" stroke-width="2" fill="none"/>
+  <path d="M135.6 265 L147.6 259 L147.6 271 Z" fill="#c084fc"/>
+  <circle cx="534" cy="265" r="6" fill="#c084fc"/>
+  <text x="550" y="271" font-size="15" font-weight="600" fill="#f1f5f9" text-anchor="start">Job name — you choose it</text>
+  <text x="40" y="320" font-size="17" font-family="Consolas, Menlo, monospace" xml:space="preserve"><tspan fill="#facc15">    </tspan><tspan fill="#7dd3fc">runs-on</tspan><tspan fill="#e2e8f0">: ubuntu-latest</tspan></text>
+  <path d="M520 314 L329.2 314" stroke="#22d3ee" stroke-width="2" fill="none"/>
+  <path d="M319.2 314 L331.2 308 L331.2 320 Z" fill="#22d3ee"/>
+  <circle cx="534" cy="314" r="6" fill="#22d3ee"/>
+  <text x="550" y="320" font-size="15" font-weight="600" fill="#f1f5f9" text-anchor="start">Runner — the machine that runs the job</text>
+  <text x="40" y="369" font-size="17" font-family="Consolas, Menlo, monospace" xml:space="preserve"><tspan fill="#facc15">    </tspan><tspan fill="#7dd3fc">steps</tspan><tspan fill="#e2e8f0">:</tspan></text>
+  <path d="M520 363 L166.0 363" stroke="#4ade80" stroke-width="2" fill="none"/>
+  <path d="M156.0 363 L168.0 357 L168.0 369 Z" fill="#4ade80"/>
+  <circle cx="534" cy="363" r="6" fill="#4ade80"/>
+  <text x="550" y="369" font-size="15" font-weight="600" fill="#f1f5f9" text-anchor="start">Steps — run one after another</text>
+  <text x="40" y="418" font-size="17" font-family="Consolas, Menlo, monospace" xml:space="preserve"><tspan fill="#facc15">      - </tspan><tspan fill="#7dd3fc">uses</tspan><tspan fill="#e2e8f0">: actions/checkout@v4</tspan></text>
+  <path d="M520 412 L400.59999999999997 412" stroke="#facc15" stroke-width="2" fill="none"/>
+  <path d="M390.59999999999997 412 L402.59999999999997 406 L402.59999999999997 418 Z" fill="#facc15"/>
+  <circle cx="534" cy="412" r="6" fill="#facc15"/>
+  <text x="550" y="418" font-size="15" font-weight="600" fill="#f1f5f9" text-anchor="start">Action — a ready-made, reusable step</text>
+  <text x="40" y="467" font-size="17" font-family="Consolas, Menlo, monospace" xml:space="preserve"><tspan fill="#facc15">      - </tspan><tspan fill="#7dd3fc">run</tspan><tspan fill="#e2e8f0">: npm ci</tspan></text>
+  <path d="M520 461 L257.79999999999995 461" stroke="#f472b6" stroke-width="2" fill="none"/>
+  <path d="M247.79999999999998 461 L259.79999999999995 455 L259.79999999999995 467 Z" fill="#f472b6"/>
+  <circle cx="534" cy="461" r="6" fill="#f472b6"/>
+  <text x="550" y="467" font-size="15" font-weight="600" fill="#f1f5f9" text-anchor="start">Shell command you write yourself</text>
+  <rect x="30" y="500" width="840" height="42" rx="12" fill="#1e293b"/>
+  <text x="450" y="527" font-size="17" font-weight="700" text-anchor="middle" fill="#f8fafc"><tspan fill="#fb923c">Event</tspan> → <tspan fill="#a78bfa">Jobs</tspan> → <tspan fill="#22d3ee">Runner</tspan> → <tspan fill="#4ade80">Steps</tspan> (<tspan fill="#facc15">uses</tspan> or <tspan fill="#f472b6">run</tspan>)</text>
+</svg>

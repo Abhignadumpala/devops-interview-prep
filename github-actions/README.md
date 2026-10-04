@@ -81,6 +81,8 @@ run the jobs), and gets most features from **1,800+ plugins**.
 
 ## 4. Why GitHub Actions over Jenkins?
 
+![GitHub Actions vs Jenkins](./images/github-actions-vs-jenkins.svg)
+
 | Point           | Jenkins                                | GitHub Actions                           |
 | --------------- | -------------------------------------- | ---------------------------------------- |
 | **Setup**       | Install + maintain your own server     | Nothing to install — built into GitHub   |
@@ -185,11 +187,15 @@ A workflow is an **automated process that runs one or more jobs**. It's a **YAML
 test PRs, one to deploy on release, one to label new issues. One workflow can also **reuse another
 workflow**.
 
+![Anatomy of a workflow file](./images/workflow-anatomy.svg)
+
 ### 7.2 Events
 
 An event is **an activity that starts a workflow** — like a push, a pull request, or an opened
 issue. Workflows can also run on a **schedule** (cron), **manually** (`workflow_dispatch`), or from
 an **API call** (`repository_dispatch`).
+
+![Events trigger a workflow](./images/events-trigger-workflow.svg)
 
 ```yaml
 name: My Awesome App
@@ -610,6 +616,8 @@ a PR automatically**. You review the PR, and CI runs on it before you merge.
 
 **Flow:** your app uses Express 4.18 → a secure new version comes out → Dependabot opens a PR → CI
 passes → you merge.
+
+![Dependabot — how it works](./images/dependabot-flow.svg)
 
 | Feature               | What it does                                          | Config                   |
 | --------------------- | ----------------------------------------------------- | ------------------------ |

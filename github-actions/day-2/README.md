@@ -384,6 +384,8 @@ To see the values, I added a debug step to the build job:
 
 ## Dependabot
 
+![Dependabot — how it works](../images/dependabot-flow.svg)
+
 `.github/dependabot.yml` (not a workflow: GitHub reads it directly)
 
 ```yaml
