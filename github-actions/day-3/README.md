@@ -1,10 +1,9 @@
-# Day 3 — CodeQL (SAST), Self-Hosted Runners, Parallel Builds
+# Day 3 — CodeQL (SAST), Self-Hosted Runners
 
 [← Day 2](../day-2/README.md) · [All notes](../README.md)
 
 - **CodeQL (SAST):** scanned my source code for security issues on every push and PR.
 - **Self-hosted runners:** set up my own AWS EC2 machine as a runner and ran jobs on it.
-- **Parallel builds:** build, test, and security jobs run at the same time; deploy waits for all.
 
 <!-- toc -->
 
@@ -12,6 +11,7 @@
 
 - [CodeQL — SAST](#codeql--sast)
   - [Testing vs CodeQL](#testing-vs-codeql)
+  - [Enable CodeQL in GitHub](#enable-codeql-in-github)
   - [CodeQL Workflow](#codeql-workflow)
   - [What Each Part Does](#what-each-part-does)
   - [Where to See the Results](#where-to-see-the-results)
@@ -21,7 +21,6 @@
   - [Set Up a Self-Hosted Runner on AWS EC2](#set-up-a-self-hosted-runner-on-aws-ec2)
   - [Use the Self-Hosted Runner in a Workflow](#use-the-self-hosted-runner-in-a-workflow)
   - [Things to Remember](#things-to-remember)
-- [Parallel Builds](#parallel-builds)
 
 <!-- tocstop -->
 
@@ -51,6 +50,19 @@ Examples of what it finds:
 
 **Interview one-liner:** Testing validates application functionality, while CodeQL analyzes source
 code for potential security vulnerabilities.
+
+### Enable CodeQL in GitHub
+
+1. Open the repo on GitHub → **Settings**.
+2. In the left menu, go to **Advanced Security**.
+3. Under **Code scanning**, find **CodeQL analysis** → click **Set up**.
+4. Choose:
+   - **Default** — GitHub scans the code for you, no YAML needed.
+   - **Advanced** — GitHub creates a workflow file (`codeql.yml`) that you can edit, like the one
+     below.
+
+> Use **one** of them. If Default is on, a CodeQL workflow in YAML fails to upload its results.
+> To use your own YAML, switch Default off first.
 
 ### CodeQL Workflow
 
@@ -292,53 +304,3 @@ push → GitHub → my EC2 runner (dev) → checkout → setup Node → npm ci �
 
 **Interview one-liner:** A self-hosted runner is a machine managed by the organization that executes
 GitHub Actions jobs instead of using GitHub-hosted infrastructure.
-
-## Parallel Builds
-
-Jobs **without `needs:`** run **at the same time**. Build, test, and security don't depend on each
-other, so they run in parallel. Deploy waits for all three.
-
-```yaml
-name: Secure DevSecOps Pipeline
-
-on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npm run build
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm ci
-      - run: npm test
-
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm audit --audit-level=high
-
-  deploy:
-    needs: [build, test, security] # starts only after all 3 pass
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "code is deployed"
-```
-
-```
-build    ─┐
-test     ─┼──→ deploy
-security ─┘
-```
-
-**Why:** the pipeline takes as long as the **slowest** job, not the **sum** of all jobs, so you get
-faster feedback.
