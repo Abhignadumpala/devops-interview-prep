@@ -105,6 +105,7 @@ jobs:
         with:
           name: app-build
           path: dist/
+          retention-days: 7 # delete the artifact after 7 days (default is 90)
 
   # 4. DEPLOY: CONDITIONS → only on a push to main, rollback only on failure
   deploy:
@@ -156,7 +157,22 @@ This workflow is the live `.github/workflows/ci.yml`. On a push to `main`, **all
 | Uploaded by job     | **Build** (`actions/upload-artifact@v4`)                       |
 | Downloaded by job   | **Deploy** (`actions/download-artifact@v4`), back into `dist/` |
 | Size                | About **1 KB** (zipped)                                        |
-| Kept for            | **90 days** (GitHub's default), then deleted automatically     |
+| Kept for            | **7 days** (`retention-days: 7`), then deleted automatically   |
+
+**Retention days:** how long GitHub keeps the artifact before deleting it.
+
+```yaml
+- uses: actions/upload-artifact@v4
+  with:
+    name: app-build
+    path: dist/
+    retention-days: 7
+```
+
+- Default is **90 days**. Allowed: **1 to 90** on public repos (up to 400 on private repos), and never more than the repo setting.
+- Shorter = **less storage used** (artifact storage counts against your GitHub plan).
+- Set it per upload. Repo-wide default: **Settings → Actions → General → Artifact and log
+  retention**.
 
 **What's inside `app-build`:**
 
