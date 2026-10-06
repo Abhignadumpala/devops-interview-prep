@@ -18,6 +18,7 @@
   - [Scenarios — How I Made CI/CD Faster](#scenarios--how-i-made-cicd-faster)
 - [4. Composite Action](#4-composite-action)
   - [My Code — Composite Action in This Repo](#my-code--composite-action-in-this-repo)
+  - [Practice — Turn My DevSecOps Pipeline into a Composite](#practice--turn-my-devsecops-pipeline-into-a-composite)
 - [5. Reusable Workflow](#5-reusable-workflow)
 - [6. Composite vs Reusable](#6-composite-vs-reusable)
 - [7. When to Use What](#7-when-to-use-what)
@@ -460,6 +461,140 @@ there), like the deploy in `ci.yml`. Later it can be replaced with a real deploy
 
 **Benefit:** if 5 workflows need these steps and I change the Node version or add a step, I change
 **one file** (`action.yml`), not 5.
+
+### Practice — Turn My DevSecOps Pipeline into a Composite
+
+**Goal:** take my normal pipeline, move its steps into **one main file** (the composite action), and
+run them by **calling** that file from another workflow.
+
+| File                                            | Name                     | What goes in it                                           |
+| ----------------------------------------------- | ------------------------ | --------------------------------------------------------- |
+| `.github/actions/devsecops-pipeline/action.yml` | **Main file** (steps)    | Install, Test, Deploy, Rollback — the steps only          |
+| `.github/workflows/run-devsecops.yml`           | **Caller file** (runner) | `on:`, `jobs:`, `runs-on:`, checkout + call the main file |
+
+#### Step 1 — My Original Pipeline (normal workflow)
+
+```yaml
+name: Secure DevSecOps Pipeline
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: BUILD-JOB
+    runs-on: ubuntu-slim
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: echo "code build is done"
+
+      - name: Test
+        run: echo "code is tested!"
+
+      - name: Deploy
+        run: echo "my code is deployed" # ⚠️ fixed: the closing " was missing
+
+      - name: Rollback
+        if: failure() # runs only if a step above failed
+        run: echo "rollback is done"
+```
+
+#### Step 2 — What Moves Where
+
+A workflow file **can't** be called as a composite. A composite file can only hold **steps**, so I
+split the pipeline into two files:
+
+| Part of the pipeline                  | Goes to                    | Why                                   |
+| ------------------------------------- | -------------------------- | ------------------------------------- |
+| `on:` (push, workflow_dispatch)       | Caller `run-devsecops.yml` | Only workflows have triggers          |
+| `jobs:`, `name: BUILD-JOB`, `runs-on` | Caller `run-devsecops.yml` | Only workflows have jobs and runners  |
+| Checkout Code                         | Caller `run-devsecops.yml` | Must run first so `action.yml` exists |
+| Install, Test, Deploy, Rollback       | Main `action.yml`          | These are the reusable steps          |
+
+#### Step 3 — Main File: `.github/actions/devsecops-pipeline/action.yml`
+
+```yaml
+name: 'Secure DevSecOps Pipeline'
+description: 'Install, test, deploy and rollback steps — written once, called from any workflow'
+
+runs:
+  using: composite # makes this a composite action (only steps, no on:/jobs:/runs-on:)
+  steps:
+    - name: Install Dependencies
+      run: echo "code build is done"
+      shell: bash # every run: step in a composite needs a shell
+
+    - name: Test
+      run: echo "code is tested!"
+      shell: bash
+
+    - name: Deploy
+      run: echo "my code is deployed"
+      shell: bash
+
+    - name: Rollback
+      if: failure() # runs only if a step above failed
+      run: echo "rollback is done"
+      shell: bash
+```
+
+#### Step 4 — Caller File: `.github/workflows/run-devsecops.yml`
+
+```yaml
+name: Run DevSecOps Composite
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: BUILD-JOB
+    runs-on: ubuntu-slim
+
+    steps:
+      - name: Checkout Code # must be first, so the main file exists on the runner
+        uses: actions/checkout@v4
+
+      - name: Secure DevSecOps Pipeline # calls install → test → deploy → rollback
+        uses: ./.github/actions/devsecops-pipeline
+```
+
+```
+run-devsecops.yml:  checkout ──► uses: ./.github/actions/devsecops-pipeline
+                                              │
+                                              ▼  (runs in the background)
+                      action.yml:  Install → Test → Deploy → (Rollback only if something failed)
+```
+
+#### Step 5 — Run It
+
+1. Paste Step 3 into `action.yml` and Step 4 into `run-devsecops.yml`.
+2. Commit and push to `main` (or use **Run workflow** in the Actions tab).
+3. Open **Actions** → **Run DevSecOps Composite** → **BUILD-JOB** → expand **Secure DevSecOps
+   Pipeline**. You'll see `code build is done`, `code is tested!`, `my code is deployed`, and
+   **Rollback skipped** (because nothing failed).
+4. **Test the rollback:** change the Test step to `run: exit 1`, push again → Test fails ❌, Deploy is
+   skipped, and **Rollback runs** ✅.
+
+**Common mistakes:**
+
+- Putting `on:`, `jobs:` or `runs-on:` in `action.yml` → error. The main file holds **steps only**.
+- Forgetting `shell: bash` on a `run:` step → error: `Required property is missing: shell`.
+- Calling the main file **before** checkout → error: `Can't find 'action.yml'`.
+- Calling it by the file name (`.../action.yml`) → use the **folder** path:
+  `./.github/actions/devsecops-pipeline`.
 
 ## 5. Reusable Workflow
 
