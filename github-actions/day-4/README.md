@@ -17,7 +17,6 @@
   - [Mixing Both](#mixing-both)
   - [Scenarios — How I Made CI/CD Faster](#scenarios--how-i-made-cicd-faster)
 - [4. Composite Action](#4-composite-action)
-  - [My Code — Composite Action in This Repo](#my-code--composite-action-in-this-repo)
   - [Practice — Turn My DevSecOps Pipeline into a Composite](#practice--turn-my-devsecops-pipeline-into-a-composite)
 - [5. Reusable Workflow](#5-reusable-workflow)
 - [6. Composite vs Reusable](#6-composite-vs-reusable)
@@ -354,121 +353,12 @@ jobs:
 - For a local action (`./.github/...`) you must run **`actions/checkout` first**.
 - It can't read `secrets` directly — pass them in as **inputs**.
 
-### My Code — Composite Action in This Repo
-
-**In short:** I wrote the setup Node → install → test → build → deploy steps **once** in `action.yml`. My
-`dev.yml` workflow only has **checkout** + **one line** that calls those steps by their **path**.
-When it runs, all 5 steps run on the runner, even though `dev.yml` doesn't list them.
-
-```
-.github/
-├── actions/
-│   └── build-test-deploy/
-│       └── action.yml   ← the steps, written ONCE (setup Node, npm ci, test, build, deploy)
-└── workflows/
-    └── dev.yml          ← checkout + "uses: ./.github/actions/build-test-deploy"
-```
-
-⚠️ The shared steps live in an **`action.yml`** file, **not** in a workflow like `ci.yml`. A
-workflow file can't be used as a set of steps. Calling a whole workflow file is a **reusable
-workflow** (section 5).
-
-**File: `.github/actions/build-test-deploy/action.yml`** (the steps, written once)
-
-```yaml
-name: 'Build, Test and Deploy'
-description: 'Setup Node.js, install dependencies, test, build and deploy'
-
-inputs:
-  node-version:
-    description: 'Node.js version to install'
-    required: false
-    default: '20'
-
-runs:
-  using: composite # makes this a composite action (a bundle of steps)
-  steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ inputs.node-version }}
-        cache: 'npm'
-
-    - name: Install Dependencies
-      run: npm ci
-      shell: bash # every run: step in a composite action needs a shell
-
-    - name: Test
-      run: npm test
-      shell: bash
-
-    - name: Build
-      run: npm run build
-      shell: bash
-
-    - name: Deploy
-      run: |
-        echo "Deploying dist/ to the dev environment..." # placeholder until a real server exists
-        ls dist
-        echo "Deploy complete ✅"
-      shell: bash
-```
-
-**File: `.github/workflows/dev.yml`** (calls the steps)
-
-```yaml
-name: Dev Build (Composite Action)
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  dev:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository # must come first, so the action file exists on the runner
-        uses: actions/checkout@v4
-
-      - name: Build, Test and Deploy # setup Node → npm ci → test → build → deploy, all from action.yml
-        uses: ./.github/actions/build-test-deploy
-        with:
-          node-version: '20'
-```
-
-```
-dev.yml:  checkout ──► uses: ./.github/actions/build-test-deploy
-                                    │
-                                    ▼  (runs in the background)
-              action.yml:  setup Node → npm ci → test → build → deploy ✅
-```
-
-**Where to see it:** **Actions** tab → **Dev Build (Composite Action)** → job `dev` → open the
-**Build, Test and Deploy** step. It expands to show setup Node, `npm ci`, test, build and deploy
-running inside.
-
-**Deploy step:** for now it's a **placeholder** (`echo` + `ls dist` to show the build output is
-there), like the deploy in `ci.yml`. Later it can be replaced with a real deploy, e.g. copying
-`dist/` to an EC2 server or pushing a Docker image.
-
-> **Note:** in a real pipeline, **deploy is usually a separate job** with `needs:` and
-> `if: github.ref == 'refs/heads/main'`, so it only runs on `main` and can use an environment with
-> approvals. Here it's a step inside the composite action to keep the example simple.
-
-> **Update:** later I emptied `dev.yml` and replaced it with `devci.yml`, the caller for the
-> practice below (`securepipeline/action.yml`).
-
-**Benefit:** if 5 workflows need these steps and I change the Node version or add a step, I change
-**one file** (`action.yml`), not 5.
-
 ### Practice — Turn My DevSecOps Pipeline into a Composite
 
 **Goal:** take my normal pipeline, move its steps into **one main file** (the composite action), and
 run them by **calling** that file from another workflow.
+
+✅ **This lab needs only 2 files:** `action.yml` (main code block) and `devci.yml` (the caller).
 
 | File                                          | Name                     | What goes in it                                           |
 | --------------------------------------------- | ------------------------ | --------------------------------------------------------- |
@@ -493,6 +383,9 @@ never run. The **composite** `action.yml` can live in any folder, including a su
 `workflows/`, because it's only called by its path.
 
 #### Step 1 — My Original Pipeline (normal workflow)
+
+> **Just for comparison — don't create this file.** This is my pipeline **before** splitting it.
+> Steps 3 and 4 are the 2 files I actually create.
 
 ```yaml
 name: Secure DevSecOps Pipeline
