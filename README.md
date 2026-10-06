@@ -433,7 +433,7 @@ The pipeline will be built step by step:
 | 9    | Security: dependencies | `npm audit` / Dependabot         | ⏳ To add                        |
 
 Daily notes: [Day 1](./github-actions/day-1/README.md) · [Day 2](./github-actions/day-2/README.md) ·
-[Day 3](./github-actions/day-3/README.md)
+[Day 3](./github-actions/day-3/README.md) · [Day 4](./github-actions/day-4/README.md)
 
 ## Run Locally
 

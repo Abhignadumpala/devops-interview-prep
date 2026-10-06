@@ -2,7 +2,8 @@
 
 Sources: [GitHub Docs](https://docs.github.com/en/actions/get-started/understand-github-actions) ·
 Practice: [interview-questions.md](./interview-questions.md) ·
-Daily notes: [Day 1](./day-1/README.md) · [Day 2](./day-2/README.md) · [Day 3](./day-3/README.md)
+Daily notes: [Day 1](./day-1/README.md) · [Day 2](./day-2/README.md) · [Day 3](./day-3/README.md) ·
+[Day 4](./day-4/README.md)
 
 <!-- toc -->
 

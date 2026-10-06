@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#64748b"/></marker></defs>
+  <rect x="2" y="2" width="896" height="556" rx="18" fill="#ffffff" stroke="#0f766e" stroke-width="3"/>
+  <text x="450" y="54" text-anchor="middle" font-size="30" font-weight="800" fill="#0f172a">Composite or Reusable? — When to Use What</text>
+
+  <rect x="270" y="80" width="360" height="52" rx="12" fill="#0f172a"/>
+  <text x="450" y="113" text-anchor="middle" font-size="19" font-weight="700" fill="#fff">What do you want to reuse?</text>
+  <path d="M370 132 L235 172" fill="none" stroke="#64748b" stroke-width="2.5" marker-end="url(#a)"/>
+  <path d="M530 132 L665 172" fill="none" stroke="#64748b" stroke-width="2.5" marker-end="url(#a)"/>
+
+  <rect x="50" y="178" width="370" height="52" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="235" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#7c2d12">A few STEPS</text>
+  <text x="235" y="220" text-anchor="middle" font-size="13" fill="#7c2d12">setup, install, login… inside my own jobs</text>
+  <rect x="480" y="178" width="370" height="52" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="665" y="200" text-anchor="middle" font-size="15" font-weight="700" fill="#4c1d95">A whole PIPELINE of JOBS</text>
+  <text x="665" y="220" text-anchor="middle" font-size="13" fill="#4c1d95">build → test → deploy, the same everywhere</text>
+
+  <path d="M235 230 L235 256" fill="none" stroke="#64748b" stroke-width="2.5" marker-end="url(#a)"/>
+  <path d="M665 230 L665 256" fill="none" stroke="#64748b" stroke-width="2.5" marker-end="url(#a)"/>
+
+  <rect x="50" y="262" width="370" height="50" rx="12" fill="#ea580c"/>
+  <text x="235" y="294" text-anchor="middle" font-size="20" font-weight="800" fill="#fff">Composite Action</text>
+  <rect x="480" y="262" width="370" height="50" rx="12" fill="#7c3aed"/>
+  <text x="665" y="294" text-anchor="middle" font-size="20" font-weight="800" fill="#fff">Reusable Workflow</text>
+
+  <rect x="50" y="326" width="370" height="140" rx="12" fill="#fffbf5" stroke="#fdba74" stroke-width="1.5"/>
+  <g font-size="14" fill="#7c2d12">
+    <text x="70" y="354">✅ Setup Node + cache + npm ci in every job</text>
+    <text x="70" y="384">✅ Log in to AWS / Docker Hub</text>
+    <text x="70" y="414">✅ Mix shared steps with your own steps</text>
+    <text x="70" y="444">✅ Job keeps its own runs-on</text>
+  </g>
+  <rect x="480" y="326" width="370" height="140" rx="12" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.5"/>
+  <g font-size="14" fill="#4c1d95">
+    <text x="500" y="354">✅ Same CI pipeline in 5 microservice repos</text>
+    <text x="500" y="384">✅ One standard deploy process for all teams</text>
+    <text x="500" y="414">✅ Needs secrets / environments / many jobs</text>
+    <text x="500" y="444">✅ Fix it once → every repo gets the fix</text>
+  </g>
+
+  <rect x="30" y="486" width="840" height="54" rx="12" fill="#134e4a"/>
+  <text x="450" y="512" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">Both work in the same repo AND across repos:</text>
+  <text x="450" y="532" text-anchor="middle" font-size="15" font-weight="700" fill="#5eead4" font-family="Consolas, Menlo, monospace">uses: my-org/shared-repo/path@v1</text>
+</svg>
