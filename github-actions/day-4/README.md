@@ -522,22 +522,34 @@ split the pipeline into two files:
 #### Step 3 — Main File: `.github/actions/devsecops-pipeline/action.yml`
 
 ```yaml
-name: 'Secure DevSecOps Pipeline'
-description: 'Install, test, deploy and rollback steps — written once, called from any workflow'
+name: 'Secure DevSecOps Pipeline Steps'
+description: 'Setup Node, install, test, deploy and rollback — called from any workflow'
+
+inputs:
+  node-version: # the caller can choose the Node version
+    description: 'Node.js version to install'
+    required: false
+    default: '20'
 
 runs:
-  using: composite # makes this a composite action (only steps, no on:/jobs:/runs-on:)
+  using: 'composite' # makes this a composite action (only steps, no on:/jobs:/runs-on:)
   steps:
+    - name: Setup Node.js (with npm cache)
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm' # built-in cache, no separate actions/cache step needed
+
     - name: Install Dependencies
-      run: echo "code build is done"
+      run: npm ci
       shell: bash # every run: step in a composite needs a shell
 
     - name: Test
-      run: echo "code is tested!"
+      run: echo "code is tested"
       shell: bash
 
     - name: Deploy
-      run: echo "my code is deployed"
+      run: echo "code is deployed"
       shell: bash
 
     - name: Rollback
@@ -549,52 +561,69 @@ runs:
 #### Step 4 — Caller File: `.github/workflows/run-devsecops.yml`
 
 ```yaml
-name: Run DevSecOps Composite
+name: Continuous Integration
 
 on:
   push:
-    branches:
-      - master
-      - main
-  workflow_dispatch:
+    branches: [main]
 
 jobs:
-  build:
-    name: BUILD-JOB
-    runs-on: ubuntu-slim
-
+  build-and-test:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Code # must be first, so the main file exists on the runner
         uses: actions/checkout@v4
 
-      - name: Secure DevSecOps Pipeline # calls install → test → deploy → rollback
-        uses: ./.github/actions/devsecops-pipeline
+      - name: Initialize Environment # runs everything in action.yml
+        id: setup
+        uses: ./.github/actions/devsecops-pipeline # FOLDER path, not .../action.yml
+        with:
+          node-version: '22' # sent to inputs.node-version in action.yml
+
+      - name: Run Tests # my own step, after the composite
+        run: npm test
 ```
 
 ```
-run-devsecops.yml:  checkout ──► uses: ./.github/actions/devsecops-pipeline
+run-devsecops.yml:  checkout ──► uses: ./.github/actions/devsecops-pipeline (node 22)
                                               │
                                               ▼  (runs in the background)
-                      action.yml:  Install → Test → Deploy → (Rollback only if something failed)
+           action.yml:  Setup Node → npm ci → Test → Deploy → (Rollback only if something failed)
+                                              │
+                                              ▼
+run-devsecops.yml:  Run Tests (npm test)
 ```
 
 #### Step 5 — Run It
 
 1. Paste Step 3 into `action.yml` and Step 4 into `run-devsecops.yml`.
-2. Commit and push to `main` (or use **Run workflow** in the Actions tab).
-3. Open **Actions** → **Run DevSecOps Composite** → **BUILD-JOB** → expand **Secure DevSecOps
-   Pipeline**. You'll see `code build is done`, `code is tested!`, `my code is deployed`, and
-   **Rollback skipped** (because nothing failed).
+2. Commit and push to `main`.
+3. Open **Actions** → **Continuous Integration** → **build-and-test** → expand **Initialize
+   Environment**. You'll see Setup Node, `npm ci`, `code is tested`, `code is deployed`, and
+   **Rollback skipped** (because nothing failed). Then **Run Tests** runs `npm test`.
 4. **Test the rollback:** change the Test step to `run: exit 1`, push again → Test fails ❌, Deploy is
    skipped, and **Rollback runs** ✅.
 
-**Common mistakes:**
+#### Mistakes I Made in My First Version (and the Fix)
 
-- Putting `on:`, `jobs:` or `runs-on:` in `action.yml` → error. The main file holds **steps only**.
-- Forgetting `shell: bash` on a `run:` step → error: `Required property is missing: shell`.
-- Calling the main file **before** checkout → error: `Can't find 'action.yml'`.
-- Calling it by the file name (`.../action.yml`) → use the **folder** path:
-  `./.github/actions/devsecops-pipeline`.
+| #   | My first version                                        | Problem                                                                                                            | Fix                                                             |
+| --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| 1   | `uses: ./.github/actions/setup-node-project/action.yml` | Pointed at the **file** → `Can't find 'action.yml'`                                                                | Point at the **folder**: `./.github/actions/devsecops-pipeline` |
+| 2   | Folder `setup-node-project` in the caller               | Didn't match the folder where `action.yml` really is                                                               | Same folder name in both places                                 |
+| 3   | Rollback step had no `shell:`                           | `Required property is missing: shell`                                                                              | Add `shell: bash` to **every** `run:` step                      |
+| 4   | `run: echo "code is deployed` (no closing `"`)          | YAML is fine, but **bash** fails: `unexpected EOF while looking for matching '"'` → Deploy fails and Rollback runs | Close the quote                                                 |
+| 5   | Checkout **inside** the composite                       | Pointless — the caller must check out **before** GitHub can even find `action.yml`                                 | Checkout only in the caller                                     |
+| 6   | Caller sent `node-version: '22'`, but no `inputs:`      | Warning `Unexpected input 'node-version'`, and Node 22 is never installed                                          | Add `inputs:` + `actions/setup-node` step                       |
+| 7   | Step named `Build` ran `npm install`                    | That installs packages, it doesn't build                                                                           | Name it **Install Dependencies**, use `npm ci`                  |
+| 8   | Separate `actions/cache` step                           | Extra code — `setup-node` already caches                                                                           | `cache: 'npm'` on `setup-node`                                  |
+| 9   | No `description:`                                       | GitHub docs list it as required in `action.yml`                                                                    | Add one line                                                    |
+
+**Rules to remember:**
+
+- `action.yml` holds **steps only** — no `on:`, `jobs:` or `runs-on:`.
+- Every `run:` step in a composite needs **`shell: bash`** (in a normal workflow it's optional).
+- **Checkout first** in the caller, then `uses:` the **folder** path.
+- Values sent with `with:` must be declared under **`inputs:`** in `action.yml`.
 
 ## 5. Reusable Workflow
 
