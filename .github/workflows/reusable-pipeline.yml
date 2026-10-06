@@ -1,0 +1,41 @@
+name: Reusable Pipeline
+
+on:
+  workflow_call: # makes this workflow callable by other workflows
+    inputs:
+      environment:
+        description: 'Where to deploy'
+        type: string
+        default: 'dev'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: npm install
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        run: echo "code is tested"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        run: echo "code is deployed to ${{ inputs.environment }}"
+
+  rollback:
+    needs: deploy
+    if: failure() # runs only if build, test or deploy failed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rollback
+        run: echo "rollback is done"

@@ -1,0 +1,12 @@
+name: Call Reusable Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/reusable-pipeline.yml # the whole FILE path, at job level
+    with:
+      environment: 'dev' # sent to inputs.environment
