@@ -19,6 +19,7 @@
 - [4. Composite Action](#4-composite-action)
   - [Practice — Turn My DevSecOps Pipeline into a Composite](#practice--turn-my-devsecops-pipeline-into-a-composite)
 - [5. Reusable Workflow](#5-reusable-workflow)
+  - [Practice — Reusable Workflow Lab](#practice--reusable-workflow-lab)
 - [6. Composite vs Reusable](#6-composite-vs-reusable)
 - [7. When to Use What](#7-when-to-use-what)
   - [Common Mix-Up](#common-mix-up)
@@ -672,6 +673,141 @@ jobs:
 - The calling job has **no `runs-on` and no `steps`** — the reusable workflow defines them.
 - Supports **inputs** (`with:`) and **secrets** (`secrets:` or `secrets: inherit`).
 - Every job inside shows up **separately in the logs**.
+
+### Practice — Reusable Workflow Lab
+
+**Goal:** write a whole pipeline of **jobs** (build → test → deploy → rollback) **once** in a reusable
+workflow, and run it by **calling** it from another workflow.
+
+✅ **This lab needs only 2 files**, both **directly** in `.github/workflows/`:
+
+| File                                      | Name                     | What goes in it                                               |
+| ----------------------------------------- | ------------------------ | ------------------------------------------------------------- |
+| `.github/workflows/reusable-pipeline.yml` | **Reusable file** (jobs) | `on: workflow_call` + the jobs: build, test, deploy, rollback |
+| `.github/workflows/call-reusable.yml`     | **Caller file**          | `on: push` + **one job** that calls the reusable file         |
+
+**Folder structure:**
+
+```
+.github/
+└── workflows/
+    ├── call-reusable.yml       ← CALLER: jobs → pipeline → uses: ./.github/workflows/reusable-pipeline.yml
+    └── reusable-pipeline.yml   ← REUSABLE: on: workflow_call + build, test, deploy, rollback jobs
+```
+
+⚠️ **A reusable workflow must sit directly in `.github/workflows/`** — subfolders are **not**
+supported (unlike a composite `action.yml`, which can live in any folder).
+
+#### Step 1 — Reusable File: `.github/workflows/reusable-pipeline.yml`
+
+```yaml
+name: Reusable Pipeline
+
+on:
+  workflow_call: # makes this workflow callable by other workflows
+    inputs:
+      environment:
+        description: 'Where to deploy'
+        type: string
+        default: 'dev'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: npm install
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        run: echo "code is tested"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        run: echo "code is deployed to ${{ inputs.environment }}"
+
+  rollback:
+    needs: deploy
+    if: failure() # runs only if build, test or deploy failed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rollback
+        run: echo "rollback is done"
+```
+
+#### Step 2 — Caller File: `.github/workflows/call-reusable.yml`
+
+```yaml
+name: Call Reusable Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/reusable-pipeline.yml # the whole FILE path, at job level
+    with:
+      environment: 'dev' # sent to inputs.environment
+```
+
+No `runs-on`, no `steps`, no checkout in the caller — the reusable file has all of that.
+
+```
+call-reusable.yml:  jobs → pipeline → uses: ./.github/workflows/reusable-pipeline.yml (environment: dev)
+                                              │
+                                              ▼
+reusable-pipeline.yml:  build ──► test ──► deploy ──► (rollback only if something failed)
+                        (each job on its own runner)
+```
+
+#### Step 3 — Run It
+
+1. Paste Step 1 into `reusable-pipeline.yml` and Step 2 into `call-reusable.yml`.
+2. Commit and push to `main`.
+3. Open **Actions** → **Call Reusable Pipeline**. You'll see **4 separate jobs**: `pipeline / build`,
+   `pipeline / test`, `pipeline / deploy` (`code is deployed to dev`) and `pipeline / rollback`
+   (**skipped**, because nothing failed).
+4. **Test the rollback:** change the Test step to `run: exit 1`, push again → test fails ❌, deploy is
+   skipped, and **rollback runs** ✅.
+5. **Try the input:** change `environment: 'dev'` to `'staging'` → deploy prints
+   `code is deployed to staging`.
+
+`reusable-pipeline.yml` never runs **by itself** — it has no `push` trigger, only `workflow_call`. It
+runs only when a caller uses it.
+
+#### My Composite Lab vs My Reusable Lab
+
+|                        | Composite lab                                       | Reusable lab                                             |
+| ---------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| Reused file            | `securepipeline/action.yml`                         | `reusable-pipeline.yml`                                  |
+| Key line               | `runs: using: 'composite'`                          | `on: workflow_call:`                                     |
+| Contains               | **Steps**                                           | **Jobs** (each with `runs-on` + steps)                   |
+| Caller uses it         | Inside **`steps:`**                                 | Directly under **`jobs:`**                               |
+| `uses:` points to      | The **folder** `./.github/workflows/securepipeline` | The **file** `./.github/workflows/reusable-pipeline.yml` |
+| Caller needs checkout? | ✅ Yes, first                                       | ❌ No                                                    |
+| `run:` needs `shell:`? | ✅ Yes                                              | ❌ No                                                    |
+| In the Actions tab     | 1 step ("Initialize Environment")                   | 4 separate jobs                                          |
+
+**Common mistakes:**
+
+- Putting `runs-on` or `steps` in the caller job next to `uses:` → error. The caller job only has
+  `uses:` + `with:` (+ `secrets:`).
+- Calling it inside `steps:` like a composite → error. It goes **directly under `jobs:`**.
+- Forgetting `on: workflow_call` in the reusable file → `is not a reusable workflow`.
+- Sending a `with:` value that isn't declared under `inputs:` → error (for reusable workflows it's an
+  error, not just a warning).
+- Putting the reusable file in a subfolder of `.github/workflows/` → not found.
 
 ## 6. Composite vs Reusable
 
