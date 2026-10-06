@@ -358,12 +358,12 @@ jobs:
 **Goal:** take my normal pipeline, move its steps into **one main file** (the composite action), and
 run them by **calling** that file from another workflow.
 
-✅ **This lab needs only 2 files:** `action.yml` (main code block) and `devci.yml` (the caller).
+✅ **This lab needs only 2 files:** `action.yml` (main code block) and `dev-ci.yml` (the caller).
 
 | File                                          | Name                     | What goes in it                                           |
 | --------------------------------------------- | ------------------------ | --------------------------------------------------------- |
 | `.github/workflows/securepipeline/action.yml` | **Main file** (steps)    | Install, Test, Deploy, Rollback — the steps only          |
-| `.github/workflows/devci.yml`                 | **Caller file** (runner) | `on:`, `jobs:`, `runs-on:`, checkout + call the main file |
+| `.github/workflows/dev-ci.yml`                | **Caller file** (runner) | `on:`, `jobs:`, `runs-on:`, checkout + call the main file |
 
 **Folder structure:**
 
@@ -371,7 +371,7 @@ run them by **calling** that file from another workflow.
 .github/
 └── workflows/
     ├── ci.yml
-    ├── devci.yml            ← CALLER: checkout + uses: ./.github/workflows/securepipeline
+    ├── dev-ci.yml            ← CALLER: checkout + uses: ./.github/workflows/securepipeline
     ├── self-hosted.yml
     └── securepipeline/
         └── action.yml       ← MAIN FILE: the steps (composite action)
@@ -425,12 +425,12 @@ jobs:
 A workflow file **can't** be called as a composite. A composite file can only hold **steps**, so I
 split the pipeline into two files:
 
-| Part of the pipeline                  | Goes to            | Why                                   |
-| ------------------------------------- | ------------------ | ------------------------------------- |
-| `on:` (push, workflow_dispatch)       | Caller `devci.yml` | Only workflows have triggers          |
-| `jobs:`, `name: BUILD-JOB`, `runs-on` | Caller `devci.yml` | Only workflows have jobs and runners  |
-| Checkout Code                         | Caller `devci.yml` | Must run first so `action.yml` exists |
-| Install, Test, Deploy, Rollback       | Main `action.yml`  | These are the reusable steps          |
+| Part of the pipeline                  | Goes to             | Why                                   |
+| ------------------------------------- | ------------------- | ------------------------------------- |
+| `on:` (push, workflow_dispatch)       | Caller `dev-ci.yml` | Only workflows have triggers          |
+| `jobs:`, `name: BUILD-JOB`, `runs-on` | Caller `dev-ci.yml` | Only workflows have jobs and runners  |
+| Checkout Code                         | Caller `dev-ci.yml` | Must run first so `action.yml` exists |
+| Install, Test, Deploy, Rollback       | Main `action.yml`   | These are the reusable steps          |
 
 #### Step 3 — Main File: `.github/workflows/securepipeline/action.yml`
 
@@ -467,7 +467,7 @@ runs:
       shell: bash # fixed: every run: step in a composite needs a shell
 ```
 
-#### Step 4 — Caller File: `.github/workflows/devci.yml`
+#### Step 4 — Caller File: `.github/workflows/dev-ci.yml`
 
 ```yaml
 name: Continuous Integration
@@ -493,18 +493,18 @@ jobs:
 ```
 
 ```
-devci.yml:  Checkout Code ──► uses: ./.github/workflows/securepipeline
+dev-ci.yml:  Checkout Code ──► uses: ./.github/workflows/securepipeline
                                           │
                                           ▼  (runs in the background)
          action.yml:  Checkout → Cache → Build → test → deploy → (Rollback only if something failed)
                                           │
                                           ▼
-devci.yml:  Run Tests (npm test)
+dev-ci.yml:  Run Tests (npm test)
 ```
 
 #### Step 5 — Run It
 
-1. Paste Step 3 into `securepipeline/action.yml` and Step 4 into `devci.yml`.
+1. Paste Step 3 into `securepipeline/action.yml` and Step 4 into `dev-ci.yml`.
 2. Commit and push to `main`.
 3. Open **Actions** → **Continuous Integration** → **build-and-test** → expand **Initialize
    Environment**. You'll see Checkout, Cache, Build (`npm install`), `code is tested`,
@@ -527,7 +527,7 @@ devci.yml:  Run Tests (npm test)
 - `action.yml` holds **steps only** — no `on:`, `jobs:` or `runs-on:`.
 - Every `run:` step in a composite needs **`shell: bash`** (in a normal workflow it's optional).
 - **Checkout first** in the caller, then `uses:` the **folder** path.
-- The caller (`devci.yml`) must sit directly in `.github/workflows/`, not in a subfolder.
+- The caller (`dev-ci.yml`) must sit directly in `.github/workflows/`, not in a subfolder.
 
 **Later improvements (optional):** remove the Checkout from `action.yml` (the caller already did
 it), use `actions/setup-node` with `cache: 'npm'` instead of a separate cache step, and use `npm ci`
