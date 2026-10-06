@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: self-hosted # or [self-hosted, label1] to pick a runner by label
+    runs-on: ubuntu-latest # or [self-hosted, label1] to pick a runner by label
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
