@@ -15,6 +15,7 @@
 - [2. Sequential Builds](#2-sequential-builds)
 - [3. Parallel vs Sequential Builds](#3-parallel-vs-sequential-builds)
   - [Mixing Both](#mixing-both)
+  - [Scenarios — How I Made CI/CD Faster](#scenarios--how-i-made-cicd-faster)
 - [4. Composite Action](#4-composite-action)
 - [5. Reusable Workflow](#5-reusable-workflow)
 - [6. Composite vs Reusable](#6-composite-vs-reusable)
@@ -140,6 +141,150 @@ jobs:
 push ───┼── test ──────┼──► deploy
         └── security ──┘
 ```
+
+### Scenarios — How I Made CI/CD Faster
+
+**The rule:** jobs that run **one after another** take the time of **all jobs added up**. Jobs that
+run **in parallel** take the time of the **slowest job** only.
+
+#### Real result from this repo — Matrix tests: 120 s → 32 s
+
+On Day 2 I ran the tests on **2 OS × 3 Node versions = 6 jobs**.
+
+| How the 6 test jobs ran | Time      |
+| ----------------------- | --------- |
+| One after another       | 120 s     |
+| In parallel (matrix)    | **32 s**  |
+| **Saved**               | **~88 s** |
+
+#### Scenario 1 — Small Node.js app: saved ~55 seconds per push
+
+**Problem:** I chained every job with `needs:`, so each job waited for the one before, even when it
+didn't need its result.
+
+```yaml
+# BEFORE — everything sequential
+jobs:
+  lint: # 30 s
+  test:
+    needs: lint # 45 s — waits for lint for no reason
+  security:
+    needs: test # 25 s — npm audit, waits for test for no reason
+  build:
+    needs: security # 20 s
+```
+
+```
+lint 30s ──► test 45s ──► security 25s ──► build 20s       = 120 s
+```
+
+**Question I asked:** _"Does test really need lint's result? Does security need test's result?"_ →
+**No.** They only read the source code. Only `build` must wait, because we should never build code
+that failed the checks.
+
+```yaml
+# AFTER — independent checks in parallel, build waits for all
+jobs:
+  lint: # 30 s ┐
+  test: # 45 s ├─ run together
+  security: # 25 s ┘
+  build:
+    needs: [lint, test, security] # 20 s
+```
+
+```
+lint     30s ─┐
+test     45s ─┼──► build 20s        = 45 s (slowest) + 20 s = 65 s
+security 25s ─┘
+```
+
+| Before | After    | Saved                    |
+| ------ | -------- | ------------------------ |
+| 120 s  | **65 s** | **55 s per push (~45%)** |
+
+#### Scenario 2 — Large microservice: saved ~22 minutes per run
+
+![How parallel builds saved 22 minutes](./images/time-saved-scenario.svg)
+
+**Problem:** a big microservice had a **40-minute** pipeline. Developers pushed code and waited
+almost an hour for feedback, and hotfixes were slow to reach production.
+
+| Job               | Time   | Does it need another job's result? |
+| ----------------- | ------ | ---------------------------------- |
+| lint              | 2 min  | No                                 |
+| unit tests        | 6 min  | No                                 |
+| integration tests | 14 min | No                                 |
+| security scan     | 8 min  | No                                 |
+| docker build      | 6 min  | No                                 |
+| deploy            | 4 min  | **Yes — needs all of the above**   |
+
+**Before (all sequential):** 2 + 6 + 14 + 8 + 6 + 4 = **40 min**
+
+**After:** the 5 independent jobs run in parallel, and only `deploy` uses `needs:`.
+
+```yaml
+jobs:
+  lint:
+  unit-tests:
+  integration-tests:
+  security-scan:
+  docker-build:
+  deploy:
+    needs: [lint, unit-tests, integration-tests, security-scan, docker-build]
+```
+
+**After:** slowest job (integration, 14 min) + deploy (4 min) = **18 min**
+
+| Before | After      | Saved                     |
+| ------ | ---------- | ------------------------- |
+| 40 min | **18 min** | **22 min per run (~55%)** |
+
+**Business impact:** the team pushes ~30 times a day → 30 × 22 min = **~11 hours less waiting every
+day**. Faster feedback, faster hotfixes, happier developers.
+
+**Going further:** integration tests (14 min) were now the slowest job. I split them into **3
+parallel shards** with a matrix (~5 min each). The slowest job became the security scan (8 min), so
+the total dropped to 8 + 4 = **~12 min**.
+
+```yaml
+integration-tests:
+  runs-on: ubuntu-latest
+  strategy:
+    matrix:
+      shard: [1, 2, 3]
+  steps:
+    - run: npm run test:integration -- --shard=${{ matrix.shard }}/3
+```
+
+#### When Parallel Does NOT Help
+
+- **The job really needs another job's output** → keep `needs:` (e.g. deploy needs the build
+  artifact). Correct order matters more than speed.
+- **Very tiny jobs:** each job gets a **new runner**, and starting it + checkout + `npm ci` costs
+  ~15–30 s. Splitting a 5-second task into its own job can make the pipeline **slower**. Keep tiny
+  tasks as steps in one job.
+- **Parallel saves waiting time, not billed minutes.** 5 jobs × their minutes are still charged —
+  usually a bit more because each job repeats its setup. Use **cache** to keep setup fast.
+- **Limits:** the number of jobs that can run at once depends on your plan and runners. Too many
+  jobs just wait in the queue.
+
+#### How to Answer in an Interview (STAR)
+
+> **Situation:** Our microservice pipeline took **40 minutes**. Every job was chained with `needs:`,
+> so developers waited almost an hour for feedback.
+>
+> **Task:** Reduce the pipeline time without skipping any checks.
+>
+> **Action:** I checked which jobs actually depended on each other. Lint, unit tests, integration
+> tests, security scan and Docker build only needed the source code, so I removed the unnecessary
+> `needs:` and ran them **in parallel**. Only deploy kept `needs:` on all of them. Then I split the
+> slowest job, integration tests, into 3 shards with a matrix, and added npm caching.
+>
+> **Result:** The pipeline went from **40 minutes to ~12 minutes** — about **70% faster** — with the
+> same checks and the same safety. Developers got feedback in minutes instead of nearly an hour.
+
+**Tip:** the numbers above are example numbers for the story. Use your **real numbers** from the
+**Actions** tab, which shows the duration of every job and the total time of each run.
 
 ## 4. Composite Action
 
