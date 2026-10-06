@@ -536,72 +536,18 @@ dev-ci.yml:  Run Tests (npm test)
 it), use `actions/setup-node` with `cache: 'npm'` instead of a separate cache step, and use `npm ci`
 instead of `npm install`.
 
-#### Problem I Faced — Runs Stuck in "Queued" (Self-Hosted Runner Deleted)
+#### Problem I Faced — Runs Stuck in "Queued"
 
-**Symptom:** after every push, the Actions tab showed a new **Secure DevSecOps Pipeline** run stuck
-in **Queued** — 15+ runs piled up, even for pushes that only changed my notes. The job log said:
+**Problem:** after every push, `ci.yml` runs got stuck in **Queued** with
+`Waiting for a runner to pick up this job...`
 
-```
-Requested labels: self-hosted
-Job defined at: .../.github/workflows/ci.yml@refs/heads/main
-Waiting for a runner to pick up this job...
-```
+**Cause:** `ci.yml` had `runs-on: self-hosted`, but I had deleted my self-hosted runner. Every
+workflow whose trigger matches runs on each push, so it kept queuing.
 
-**Cause:**
+**Fix:** in `ci.yml`, changed `runs-on: self-hosted` → `runs-on: ubuntu-latest`.
 
-- `ci.yml` still had `runs-on: self-hosted`, but I had **deleted my EC2 self-hosted runner** after
-  Day 3. No runner → the job waits forever (GitHub cancels it after 24 hours).
-- GitHub runs **every** workflow in `.github/workflows/` whose trigger matches. `ci.yml` has
-  `on: push: branches: [main]`, so it started on **every** push — it doesn't matter which file I was
-  working on.
-
-**Fix — `.github/workflows/ci.yml`:** changed `runs-on: self-hosted` to `runs-on: ubuntu-latest`.
-
-```yaml
-name: Secure DevSecOps Pipeline
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest # or [self-hosted, label1] to pick a runner by label
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20' # Node.js version to install
-          cache: 'npm' # caches npm packages for faster runs
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Test
-        run: npm test
-
-      - name: Build
-        run: npm run build
-```
-
-**Also:** `self-hosted.yml` has the same `runs-on: self-hosted` + push trigger → make it manual-only
-(`on: workflow_dispatch:`) or delete it. Old queued runs: **Actions** → run → **Cancel workflow**.
-
-**Ways to control when a workflow runs:**
-
-| Option          | In the workflow file                  | Effect                                  |
-| --------------- | ------------------------------------- | --------------------------------------- |
-| Manual only     | `on: workflow_dispatch:` (no `push:`) | Runs only when I click **Run workflow** |
-| Only some files | `push:` + `paths: ['src/**']`         | Runs only when those files change       |
-| Skip some files | `push:` + `paths-ignore: ['**.md']`   | Notes-only pushes don't start a build   |
-
-**Interview one-liner:** Every workflow whose trigger matches the event runs independently, so I
-control them with branch and `paths` filters or `workflow_dispatch`, and I make sure `runs-on` points
-to a runner that actually exists.
+**Interview one-liner:** Jobs stay queued when no runner matches `runs-on`, so make sure it points to
+a runner that exists.
 
 ## 5. Reusable Workflow
 
