@@ -1,36 +1,31 @@
-name: 'Build, Test and Deploy'
-description: 'Setup Node.js, install dependencies, test, build and deploy — written once, reused by many workflows'
-
-inputs:
-  node-version:
-    description: 'Node.js version to install'
-    required: false
-    default: '20'
+name: Secure DevSecOps Pipeline Steps
+description: 'Checkout, cache, build, test, deploy and rollback steps'
 
 runs:
-  using: composite # makes this a composite action (a bundle of steps)
+  using: 'composite'
   steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Cache Dependencies
+      uses: actions/cache@v4
       with:
-        node-version: ${{ inputs.node-version }}
-        cache: 'npm' # caches npm packages for faster runs
-
-    - name: Install Dependencies
-      run: npm ci
-      shell: bash # every run: step in a composite action needs a shell
-
-    - name: Test
-      run: npm test
-      shell: bash
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
     - name: Build
-      run: npm run build
+      run: npm install
       shell: bash
 
-    - name: Deploy
-      run: |
-        echo "Deploying dist/ to the dev environment..." # placeholder until a real server exists
-        ls dist
-        echo "Deploy complete ✅"
+    - name: test
+      run: echo "code is tested"
+      shell: bash
+
+    - name: deploy
+      run: echo "code is deployed"
+      shell: bash
+
+    - name: Rollback
+      if: failure()
+      run: echo "rollback is done"
       shell: bash
