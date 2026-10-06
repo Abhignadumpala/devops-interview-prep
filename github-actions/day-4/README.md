@@ -459,8 +459,8 @@ there), like the deploy in `ci.yml`. Later it can be replaced with a real deploy
 > `if: github.ref == 'refs/heads/main'`, so it only runs on `main` and can use an environment with
 > approvals. Here it's a step inside the composite action to keep the example simple.
 
-> **Update:** later I emptied `dev.yml` and reused it as the caller for the practice below
-> (`securepipeline/action.yml`).
+> **Update:** later I emptied `dev.yml` and replaced it with `devci.yml`, the caller for the
+> practice below (`securepipeline/action.yml`).
 
 **Benefit:** if 5 workflows need these steps and I change the Node version or add a step, I change
 **one file** (`action.yml`), not 5.
@@ -473,7 +473,7 @@ run them by **calling** that file from another workflow.
 | File                                          | Name                     | What goes in it                                           |
 | --------------------------------------------- | ------------------------ | --------------------------------------------------------- |
 | `.github/workflows/securepipeline/action.yml` | **Main file** (steps)    | Install, Test, Deploy, Rollback — the steps only          |
-| `.github/workflows/dev.yml`                   | **Caller file** (runner) | `on:`, `jobs:`, `runs-on:`, checkout + call the main file |
+| `.github/workflows/devci.yml`                 | **Caller file** (runner) | `on:`, `jobs:`, `runs-on:`, checkout + call the main file |
 
 **Folder structure:**
 
@@ -481,7 +481,7 @@ run them by **calling** that file from another workflow.
 .github/
 └── workflows/
     ├── ci.yml
-    ├── dev.yml              ← CALLER: checkout + uses: ./.github/workflows/securepipeline
+    ├── devci.yml            ← CALLER: checkout + uses: ./.github/workflows/securepipeline
     ├── self-hosted.yml
     └── securepipeline/
         └── action.yml       ← MAIN FILE: the steps (composite action)
@@ -532,53 +532,49 @@ jobs:
 A workflow file **can't** be called as a composite. A composite file can only hold **steps**, so I
 split the pipeline into two files:
 
-| Part of the pipeline                  | Goes to           | Why                                   |
-| ------------------------------------- | ----------------- | ------------------------------------- |
-| `on:` (push, workflow_dispatch)       | Caller `dev.yml`  | Only workflows have triggers          |
-| `jobs:`, `name: BUILD-JOB`, `runs-on` | Caller `dev.yml`  | Only workflows have jobs and runners  |
-| Checkout Code                         | Caller `dev.yml`  | Must run first so `action.yml` exists |
-| Install, Test, Deploy, Rollback       | Main `action.yml` | These are the reusable steps          |
+| Part of the pipeline                  | Goes to            | Why                                   |
+| ------------------------------------- | ------------------ | ------------------------------------- |
+| `on:` (push, workflow_dispatch)       | Caller `devci.yml` | Only workflows have triggers          |
+| `jobs:`, `name: BUILD-JOB`, `runs-on` | Caller `devci.yml` | Only workflows have jobs and runners  |
+| Checkout Code                         | Caller `devci.yml` | Must run first so `action.yml` exists |
+| Install, Test, Deploy, Rollback       | Main `action.yml`  | These are the reusable steps          |
 
 #### Step 3 — Main File: `.github/workflows/securepipeline/action.yml`
 
 ```yaml
-name: 'Secure DevSecOps Pipeline Steps'
-description: 'Setup Node, install, test, deploy and rollback — called from any workflow'
-
-inputs:
-  node-version: # the caller can choose the Node version
-    description: 'Node.js version to install'
-    required: false
-    default: '20'
+name: Secure DevSecOps Pipeline Steps
 
 runs:
-  using: 'composite' # makes this a composite action (only steps, no on:/jobs:/runs-on:)
+  using: 'composite'
   steps:
-    - name: Setup Node.js (with npm cache)
-      uses: actions/setup-node@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Cache Dependencies
+      uses: actions/cache@v4
       with:
-        node-version: ${{ inputs.node-version }}
-        cache: 'npm' # built-in cache, no separate actions/cache step needed
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
-    - name: Install Dependencies
-      run: npm ci
-      shell: bash # every run: step in a composite needs a shell
+    - name: Build
+      run: npm install
+      shell: bash
 
-    - name: Test
+    - name: test
       run: echo "code is tested"
       shell: bash
 
-    - name: Deploy
-      run: echo "code is deployed"
+    - name: deploy
+      run: echo "code is deployed" # fixed: added the closing "
       shell: bash
 
     - name: Rollback
-      if: failure() # runs only if a step above failed
+      if: failure()
       run: echo "rollback is done"
-      shell: bash
+      shell: bash # fixed: every run: step in a composite needs a shell
 ```
 
-#### Step 4 — Caller File: `.github/workflows/dev.yml`
+#### Step 4 — Caller File: `.github/workflows/devci.yml`
 
 ```yaml
 name: Continuous Integration
@@ -591,59 +587,58 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code # must be first, so the main file exists on the runner
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Initialize Environment # runs everything in action.yml
+      - name: Initialize Environment
         id: setup
-        uses: ./.github/workflows/securepipeline # FOLDER path, not .../action.yml
-        with:
-          node-version: '22' # sent to inputs.node-version in action.yml
+        uses: ./.github/workflows/securepipeline # fixed: FOLDER path (no /action.yml), my real folder
 
-      - name: Run Tests # my own step, after the composite
+      - name: Run Tests
         run: npm test
+        shell: bash
 ```
 
 ```
-dev.yml:  checkout ──► uses: ./.github/workflows/securepipeline (node 22)
-                                              │
-                                              ▼  (runs in the background)
-           action.yml:  Setup Node → npm ci → Test → Deploy → (Rollback only if something failed)
-                                              │
-                                              ▼
-dev.yml:  Run Tests (npm test)
+devci.yml:  Checkout Code ──► uses: ./.github/workflows/securepipeline
+                                          │
+                                          ▼  (runs in the background)
+         action.yml:  Checkout → Cache → Build → test → deploy → (Rollback only if something failed)
+                                          │
+                                          ▼
+devci.yml:  Run Tests (npm test)
 ```
 
 #### Step 5 — Run It
 
-1. Paste Step 3 into `action.yml` and Step 4 into `dev.yml`.
+1. Paste Step 3 into `securepipeline/action.yml` and Step 4 into `devci.yml`.
 2. Commit and push to `main`.
 3. Open **Actions** → **Continuous Integration** → **build-and-test** → expand **Initialize
-   Environment**. You'll see Setup Node, `npm ci`, `code is tested`, `code is deployed`, and
-   **Rollback skipped** (because nothing failed). Then **Run Tests** runs `npm test`.
-4. **Test the rollback:** change the Test step to `run: exit 1`, push again → Test fails ❌, Deploy is
+   Environment**. You'll see Checkout, Cache, Build (`npm install`), `code is tested`,
+   `code is deployed`, and **Rollback skipped** (because nothing failed). Then **Run Tests** runs
+   `npm test`.
+4. **Test the rollback:** change the test step to `run: exit 1`, push again → test fails ❌, deploy is
    skipped, and **Rollback runs** ✅.
 
-#### Mistakes I Made in My First Version (and the Fix)
+#### What I Fixed in My First Version
 
-| #   | My first version                                        | Problem                                                                                                            | Fix                                                           |
-| --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
-| 1   | `uses: ./.github/actions/setup-node-project/action.yml` | Pointed at the **file** → `Can't find 'action.yml'`                                                                | Point at the **folder**: `./.github/workflows/securepipeline` |
-| 2   | Folder `setup-node-project` in the caller               | Didn't match the folder where `action.yml` really is                                                               | Same folder name in both places                               |
-| 3   | Rollback step had no `shell:`                           | `Required property is missing: shell`                                                                              | Add `shell: bash` to **every** `run:` step                    |
-| 4   | `run: echo "code is deployed` (no closing `"`)          | YAML is fine, but **bash** fails: `unexpected EOF while looking for matching '"'` → Deploy fails and Rollback runs | Close the quote                                               |
-| 5   | Checkout **inside** the composite                       | Pointless — the caller must check out **before** GitHub can even find `action.yml`                                 | Checkout only in the caller                                   |
-| 6   | Caller sent `node-version: '22'`, but no `inputs:`      | Warning `Unexpected input 'node-version'`, and Node 22 is never installed                                          | Add `inputs:` + `actions/setup-node` step                     |
-| 7   | Step named `Build` ran `npm install`                    | That installs packages, it doesn't build                                                                           | Name it **Install Dependencies**, use `npm ci`                |
-| 8   | Separate `actions/cache` step                           | Extra code — `setup-node` already caches                                                                           | `cache: 'npm'` on `setup-node`                                |
-| 9   | No `description:`                                       | GitHub docs list it as required in `action.yml`                                                                    | Add one line                                                  |
+| #   | My first version                                        | Problem                                                                             | Fix                                        |
+| --- | ------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------ |
+| 1   | `uses: ./.github/actions/setup-node-project/action.yml` | Pointed at the **file** and a folder that doesn't exist → `Can't find 'action.yml'` | `uses: ./.github/workflows/securepipeline` |
+| 2   | `run: echo "code is deployed` (no closing `"`)          | YAML is fine, but **bash** fails: `unexpected EOF while looking for matching '"'`   | Close the quote                            |
+| 3   | Rollback step had no `shell:`                           | `Required property is missing: shell`                                               | Add `shell: bash`                          |
+| 4   | `with: node-version: '22'` in the caller                | `action.yml` has no `inputs:`, so GitHub warns `Unexpected input` and ignores it    | Removed it                                 |
 
 **Rules to remember:**
 
 - `action.yml` holds **steps only** — no `on:`, `jobs:` or `runs-on:`.
 - Every `run:` step in a composite needs **`shell: bash`** (in a normal workflow it's optional).
 - **Checkout first** in the caller, then `uses:` the **folder** path.
-- Values sent with `with:` must be declared under **`inputs:`** in `action.yml`.
+- The caller (`devci.yml`) must sit directly in `.github/workflows/`, not in a subfolder.
+
+**Later improvements (optional):** remove the Checkout from `action.yml` (the caller already did
+it), use `actions/setup-node` with `cache: 'npm'` instead of a separate cache step, and use `npm ci`
+instead of `npm install`.
 
 ## 5. Reusable Workflow
 
