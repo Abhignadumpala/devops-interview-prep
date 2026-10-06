@@ -536,19 +536,6 @@ dev-ci.yml:  Run Tests (npm test)
 it), use `actions/setup-node` with `cache: 'npm'` instead of a separate cache step, and use `npm ci`
 instead of `npm install`.
 
-#### Problem I Faced — Runs Stuck in "Queued"
-
-**Problem:** after every push, `ci.yml` runs got stuck in **Queued** with
-`Waiting for a runner to pick up this job...`
-
-**Cause:** `ci.yml` had `runs-on: self-hosted`, but I had deleted my self-hosted runner. Every
-workflow whose trigger matches runs on each push, so it kept queuing.
-
-**Fix:** in `ci.yml`, changed `runs-on: self-hosted` → `runs-on: ubuntu-latest`.
-
-**Interview one-liner:** Jobs stay queued when no runner matches `runs-on`, so make sure it points to
-a runner that exists.
-
 ## 5. Reusable Workflow
 
 A **reusable workflow** is a **whole workflow** (with jobs, runners and steps) that **another
