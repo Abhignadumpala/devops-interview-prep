@@ -1,0 +1,21 @@
+name: Dev Build (Composite Action)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read # read-only access to the repo
+
+jobs:
+  dev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository # must come first, so the action file exists on the runner
+        uses: actions/checkout@v4
+
+      - name: Build and Test # setup Node → npm ci → test → build, all from action.yml
+        uses: ./.github/actions/build-and-test
+        with:
+          node-version: '20'

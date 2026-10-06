@@ -1,0 +1,29 @@
+name: 'Build and Test'
+description: 'Setup Node.js, install dependencies, test and build — written once, reused by many workflows'
+
+inputs:
+  node-version:
+    description: 'Node.js version to install'
+    required: false
+    default: '20'
+
+runs:
+  using: composite # makes this a composite action (a bundle of steps)
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm' # caches npm packages for faster runs
+
+    - name: Install Dependencies
+      run: npm ci
+      shell: bash # every run: step in a composite action needs a shell
+
+    - name: Test
+      run: npm test
+      shell: bash
+
+    - name: Build
+      run: npm run build
+      shell: bash

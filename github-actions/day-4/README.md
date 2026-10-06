@@ -17,6 +17,7 @@
   - [Mixing Both](#mixing-both)
   - [Scenarios — How I Made CI/CD Faster](#scenarios--how-i-made-cicd-faster)
 - [4. Composite Action](#4-composite-action)
+  - [My Code — Composite Action in This Repo](#my-code--composite-action-in-this-repo)
 - [5. Reusable Workflow](#5-reusable-workflow)
 - [6. Composite vs Reusable](#6-composite-vs-reusable)
 - [7. When to Use What](#7-when-to-use-what)
@@ -351,6 +352,98 @@ jobs:
 - Every `run:` step needs `shell:` (e.g. `shell: bash`).
 - For a local action (`./.github/...`) you must run **`actions/checkout` first**.
 - It can't read `secrets` directly — pass them in as **inputs**.
+
+### My Code — Composite Action in This Repo
+
+**In short:** I wrote the setup Node → install → test → build steps **once** in `action.yml`. My
+`dev.yml` workflow only has **checkout** + **one line** that calls those steps by their **path**.
+When it runs, all 4 steps run on the runner, even though `dev.yml` doesn't list them.
+
+```
+.github/
+├── actions/
+│   └── build-and-test/
+│       └── action.yml   ← the steps, written ONCE (setup Node, npm ci, test, build)
+└── workflows/
+    └── dev.yml          ← checkout + "uses: ./.github/actions/build-and-test"
+```
+
+⚠️ The shared steps live in an **`action.yml`** file, **not** in a workflow like `ci.yml`. A
+workflow file can't be used as a set of steps. Calling a whole workflow file is a **reusable
+workflow** (section 5).
+
+**File: `.github/actions/build-and-test/action.yml`** (the steps, written once)
+
+```yaml
+name: 'Build and Test'
+description: 'Setup Node.js, install dependencies, test and build'
+
+inputs:
+  node-version:
+    description: 'Node.js version to install'
+    required: false
+    default: '20'
+
+runs:
+  using: composite # makes this a composite action (a bundle of steps)
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm ci
+      shell: bash # every run: step in a composite action needs a shell
+
+    - name: Test
+      run: npm test
+      shell: bash
+
+    - name: Build
+      run: npm run build
+      shell: bash
+```
+
+**File: `.github/workflows/dev.yml`** (calls the steps)
+
+```yaml
+name: Dev Build (Composite Action)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository # must come first, so the action file exists on the runner
+        uses: actions/checkout@v4
+
+      - name: Build and Test # setup Node → npm ci → test → build, all from action.yml
+        uses: ./.github/actions/build-and-test
+        with:
+          node-version: '20'
+```
+
+```
+dev.yml:  checkout ──► uses: ./.github/actions/build-and-test
+                                    │
+                                    ▼  (runs in the background)
+              action.yml:  setup Node → npm ci → test → build ✅
+```
+
+**Where to see it:** **Actions** tab → **Dev Build (Composite Action)** → job `dev` → open the
+**Build and Test** step. It expands to show setup Node, `npm ci`, test and build running inside.
+
+**Benefit:** if 5 workflows need these steps and I change the Node version or add a step, I change
+**one file** (`action.yml`), not 5.
 
 ## 5. Reusable Workflow
 
