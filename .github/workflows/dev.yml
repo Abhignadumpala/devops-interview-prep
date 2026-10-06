@@ -15,7 +15,7 @@ jobs:
       - name: Checkout Repository # must come first, so the action file exists on the runner
         uses: actions/checkout@v4
 
-      - name: Build and Test # setup Node → npm ci → test → build, all from action.yml
-        uses: ./.github/actions/build-and-test
+      - name: Build, Test and Deploy # setup Node → npm ci → test → build → deploy, all from action.yml
+        uses: ./.github/actions/build-test-deploy
         with:
           node-version: '20'

@@ -1,5 +1,5 @@
-name: 'Build and Test'
-description: 'Setup Node.js, install dependencies, test and build — written once, reused by many workflows'
+name: 'Build, Test and Deploy'
+description: 'Setup Node.js, install dependencies, test, build and deploy — written once, reused by many workflows'
 
 inputs:
   node-version:
@@ -26,4 +26,11 @@ runs:
 
     - name: Build
       run: npm run build
+      shell: bash
+
+    - name: Deploy
+      run: |
+        echo "Deploying dist/ to the dev environment..." # placeholder until a real server exists
+        ls dist
+        echo "Deploy complete ✅"
       shell: bash

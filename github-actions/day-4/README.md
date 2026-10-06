@@ -355,28 +355,28 @@ jobs:
 
 ### My Code — Composite Action in This Repo
 
-**In short:** I wrote the setup Node → install → test → build steps **once** in `action.yml`. My
+**In short:** I wrote the setup Node → install → test → build → deploy steps **once** in `action.yml`. My
 `dev.yml` workflow only has **checkout** + **one line** that calls those steps by their **path**.
-When it runs, all 4 steps run on the runner, even though `dev.yml` doesn't list them.
+When it runs, all 5 steps run on the runner, even though `dev.yml` doesn't list them.
 
 ```
 .github/
 ├── actions/
-│   └── build-and-test/
-│       └── action.yml   ← the steps, written ONCE (setup Node, npm ci, test, build)
+│   └── build-test-deploy/
+│       └── action.yml   ← the steps, written ONCE (setup Node, npm ci, test, build, deploy)
 └── workflows/
-    └── dev.yml          ← checkout + "uses: ./.github/actions/build-and-test"
+    └── dev.yml          ← checkout + "uses: ./.github/actions/build-test-deploy"
 ```
 
 ⚠️ The shared steps live in an **`action.yml`** file, **not** in a workflow like `ci.yml`. A
 workflow file can't be used as a set of steps. Calling a whole workflow file is a **reusable
 workflow** (section 5).
 
-**File: `.github/actions/build-and-test/action.yml`** (the steps, written once)
+**File: `.github/actions/build-test-deploy/action.yml`** (the steps, written once)
 
 ```yaml
-name: 'Build and Test'
-description: 'Setup Node.js, install dependencies, test and build'
+name: 'Build, Test and Deploy'
+description: 'Setup Node.js, install dependencies, test, build and deploy'
 
 inputs:
   node-version:
@@ -404,6 +404,13 @@ runs:
     - name: Build
       run: npm run build
       shell: bash
+
+    - name: Deploy
+      run: |
+        echo "Deploying dist/ to the dev environment..." # placeholder until a real server exists
+        ls dist
+        echo "Deploy complete ✅"
+      shell: bash
 ```
 
 **File: `.github/workflows/dev.yml`** (calls the steps)
@@ -426,21 +433,30 @@ jobs:
       - name: Checkout Repository # must come first, so the action file exists on the runner
         uses: actions/checkout@v4
 
-      - name: Build and Test # setup Node → npm ci → test → build, all from action.yml
-        uses: ./.github/actions/build-and-test
+      - name: Build, Test and Deploy # setup Node → npm ci → test → build → deploy, all from action.yml
+        uses: ./.github/actions/build-test-deploy
         with:
           node-version: '20'
 ```
 
 ```
-dev.yml:  checkout ──► uses: ./.github/actions/build-and-test
+dev.yml:  checkout ──► uses: ./.github/actions/build-test-deploy
                                     │
                                     ▼  (runs in the background)
-              action.yml:  setup Node → npm ci → test → build ✅
+              action.yml:  setup Node → npm ci → test → build → deploy ✅
 ```
 
 **Where to see it:** **Actions** tab → **Dev Build (Composite Action)** → job `dev` → open the
-**Build and Test** step. It expands to show setup Node, `npm ci`, test and build running inside.
+**Build, Test and Deploy** step. It expands to show setup Node, `npm ci`, test, build and deploy
+running inside.
+
+**Deploy step:** for now it's a **placeholder** (`echo` + `ls dist` to show the build output is
+there), like the deploy in `ci.yml`. Later it can be replaced with a real deploy, e.g. copying
+`dist/` to an EC2 server or pushing a Docker image.
+
+> **Note:** in a real pipeline, **deploy is usually a separate job** with `needs:` and
+> `if: github.ref == 'refs/heads/main'`, so it only runs on `main` and can use an environment with
+> approvals. Here it's a step inside the composite action to keep the example simple.
 
 **Benefit:** if 5 workflows need these steps and I change the Node version or add a step, I change
 **one file** (`action.yml`), not 5.
