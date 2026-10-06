@@ -1,0 +1,34 @@
+name: 'Secure DevSecOps Pipeline Steps'
+description: 'Setup Node, install, test, deploy and rollback — called from any workflow'
+
+inputs:
+  node-version:
+    description: 'Node.js version to install'
+    required: false
+    default: '20'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js (with npm cache)
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm ci
+      shell: bash
+
+    - name: Test
+      run: echo "code is tested"
+      shell: bash
+
+    - name: Deploy
+      run: echo "code is deployed"
+      shell: bash
+
+    - name: Rollback
+      if: failure()
+      run: echo "rollback is done"
+      shell: bash

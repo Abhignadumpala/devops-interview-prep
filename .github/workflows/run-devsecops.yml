@@ -1,0 +1,21 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code # must be first
+        uses: actions/checkout@v4
+
+      - name: Initialize Environment # runs everything in action.yml
+        id: setup
+        uses: ./.github/actions/devsecops-pipeline # folder path, not the file
+        with:
+          node-version: '22'
+
+      - name: Run Tests
+        run: npm test
