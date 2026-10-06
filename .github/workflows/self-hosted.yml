@@ -2,7 +2,7 @@ name: Self-Hosted Runner Build
 
 on:
   push:
-    branches: [main]
+    branches: [staging1]
   workflow_dispatch:
 
 permissions:
