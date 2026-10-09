@@ -154,6 +154,15 @@ Select prometheus-role → Update IAM role
 Put the Node Exporter script in the **launch template user data** → every VM the ASG creates gets
 Node Exporter **automatically**.
 
+**Also install Node Exporter on the monitoring server** and allow port **9100** in `monitoring-sg`.
+Service discovery finds **every EC2 in the region — including the monitoring server** — and without
+Node Exporter that server **cannot be monitored** (its target shows **DOWN**).
+
+| Server                       | Node Exporter | Port 9100 allowed in |
+| ---------------------------- | ------------- | -------------------- |
+| Worker VMs (Amazon app)      | ✅            | Worker SG            |
+| prometheus-monitoring-server | ✅            | `monitoring-sg`      |
+
 ### Step 4 — Configure Prometheus
 
 ```bash
