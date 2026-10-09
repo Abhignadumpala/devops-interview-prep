@@ -15,6 +15,7 @@
 - [1. What are Parameters?](#1-what-are-parameters)
   - [Why & When We Use Them](#why--when-we-use-them)
   - [Benefits](#benefits)
+  - [Example — Node.js CI with Input Parameters](#example--nodejs-ci-with-input-parameters)
 - [2. Inputs](#2-inputs)
   - [2.1 Manual Run Inputs — `workflow_dispatch`](#21-manual-run-inputs--workflow_dispatch)
   - [2.2 Reusable Workflow Inputs — `workflow_call`](#22-reusable-workflow-inputs--workflow_call)
@@ -35,8 +36,9 @@
 
 ## 1. What are Parameters?
 
-**Parameters** = values we pass **into** or get **out of** a workflow, job or action, so the same
-pipeline can work with different data **without changing the code**.
+**Parameters** are nothing but **inputs**. Whenever we want to pass any input into our pipeline, we
+use the **`inputs:` block**. The same pipeline can then work with different values **without
+changing the code**.
 
 | Parameter            | In short                                                     | Example                |
 | -------------------- | ------------------------------------------------------------ | ---------------------- |
@@ -70,6 +72,66 @@ Think of a workflow like a **function**:
 - **Easy to maintain** — fix once in the shared pipeline, every caller gets the fix.
 
 > **Input = data IN. Output = data OUT.**
+
+### Example — Node.js CI with Input Parameters
+
+```yaml
+name: Node.js CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      deploy_tests:
+        description: 'Run integration tests?'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  ci:
+    name: Build, Lint and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: echo "ci is done"
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Run tests
+        if: ${{ inputs.deploy_tests }}
+        run: npm run test:ci
+
+      - name: Build application
+        run: npm run build
+```
+
+| Input          | Type      | What it does                                                    |
+| -------------- | --------- | --------------------------------------------------------------- |
+| `environment`  | `choice`  | Dropdown in the Actions tab: development / staging / production |
+| `deploy_tests` | `boolean` | Checkbox — `Run tests` step runs only if it's `true` (`if:`)    |
 
 ## 2. Inputs
 
