@@ -1,4 +1,4 @@
-# Day 5 — Input & Output Parameters
+# Day 5 — Input & Output Parameters, GitHub Copilot
 
 [← Day 4](../day-4/README.md) · [All notes](../README.md)
 
@@ -7,6 +7,8 @@
 - **Outputs:** values passed **out of** a step, job, reusable workflow or action (like a function's
   return value).
 - **Secrets:** sensitive inputs (passwords, tokens) — passed separately and hidden in logs.
+- **GitHub Copilot:** an AI coding assistant that helps generate, understand, troubleshoot, and
+  improve code and automation.
 
 <!-- toc -->
 
@@ -31,6 +33,7 @@
 - [5. How Data Flows](#5-how-data-flows)
 - [6. Inputs vs Outputs vs Env vs Secrets](#6-inputs-vs-outputs-vs-env-vs-secrets)
 - [7. Common Mistakes](#7-common-mistakes)
+- [8. GitHub Copilot](#8-github-copilot)
 - [Interview One-Liners](#interview-one-liners)
 
 <!-- tocstop -->
@@ -447,6 +450,29 @@ runs:
 | Using `::set-output`                     | Use **`$GITHUB_OUTPUT`**                           |
 | Sending a big file as an output          | Outputs are small strings — use **artifacts**      |
 
+## 8. GitHub Copilot
+
+**GitHub Copilot** = an AI coding assistant that helps generate, understand, troubleshoot, and
+improve code and automation.
+
+**In DevOps / GitHub Actions, Copilot helps with:**
+
+| Use                     | Example                                             |
+| ----------------------- | --------------------------------------------------- |
+| Writing YAML            | "Write a workflow with a `workflow_dispatch` input" |
+| Understanding workflows | "Explain what this workflow does"                   |
+| Creating scripts        | Bash / shell scripts for build and deploy           |
+| Troubleshooting errors  | Paste a failed log → ask why it failed              |
+| Explaining commands     | "What does `npm ci` do?"                            |
+| Improving code          | Make a script shorter, safer or faster              |
+| Generating tests        | Unit tests for a function                           |
+
+**Interview definition:** GitHub Copilot is an AI coding assistant that helps developers and DevOps
+engineers generate, understand, troubleshoot, and improve code and automation such as GitHub
+Actions workflows.
+
+> **Copilot = AI assistant for coding and automation.**
+
 ## Interview One-Liners
 
 - **Parameters** let us pass data into and out of workflows/jobs so one pipeline works with
@@ -460,3 +486,5 @@ runs:
   files go through **artifacts**.
 - **Secrets** are passed with `secrets:` or `secrets: inherit`, never with `with:`, and are masked in
   logs.
+- **GitHub Copilot** is an AI coding assistant that helps generate, understand, troubleshoot, and
+  improve code and automation such as GitHub Actions workflows.
