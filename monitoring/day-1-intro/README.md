@@ -1,6 +1,6 @@
 # Day 1 — Intro to Monitoring
 
-[← All notes](../README.md)
+[← All notes](../README.md) · [Day 2 →](../day-2-service-discovery/README.md)
 
 ## What is Monitoring?
 
