@@ -370,8 +370,20 @@ Amazon VM (Node Exporter :9100) ──► target in prometheus.yml ──► res
 
 ### Part 9 — See the Data with PromQL Queries
 
+Now **Node Exporter is sending data to the Prometheus server**. To **see** that data, we run
+**queries**.
+
 In Prometheus (`:9090`) → type the query in the search box → **Execute** → see **Table** or
 **Graph**.
+
+**First query — `up`** = shows the **number of servers running**.
+
+```
+up{instance="<amazon-vm-ip>:9100", job="node_exporter_metrics"}   1   ← running
+up{instance="localhost:9090",      job="prometheus_metrics"}      1   ← running
+```
+
+`1` = server is **up**, `0` = server is **down**.
 
 | To show                                  | Query                                              |
 | ---------------------------------------- | -------------------------------------------------- |
