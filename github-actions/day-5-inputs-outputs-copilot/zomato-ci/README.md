@@ -9,6 +9,7 @@ build → push to DockerHub → smoke test.
 
 ## Table of Contents
 
+- [Overall Summary — CI vs CD](#overall-summary--ci-vs-cd)
 - [1. Pipeline Flow](#1-pipeline-flow)
 - [2. Full Pipeline](#2-full-pipeline)
 - [3. Explanation — Top Section](#3-explanation--top-section)
@@ -23,6 +24,28 @@ build → push to DockerHub → smoke test.
 - [Interview One-Liners](#interview-one-liners)
 
 <!-- tocstop -->
+
+## Overall Summary — CI vs CD
+
+1. **Developer** writes the Zomato code and **pushes it to Git** (GitHub).
+2. We write a **Dockerfile** for the app.
+3. **CI:** the pipeline builds a **Docker image** from that Dockerfile, scans it and **pushes** it to
+   DockerHub.
+4. **CD:** the image is deployed to **Kubernetes** — Kubernetes **pulls** the image from DockerHub
+   and runs it as pods.
+
+```
+                 ┌──────────────── CI (this pipeline) ────────────────┐   ┌──────── CD ────────┐
+Developer ──► Git push ──► build + test + scan ──► Dockerfile ──► Docker image ──► DockerHub ──► Kubernetes
+ (code)        (GitHub)                                (build)        (push)          (pull + run pods)
+```
+
+| Part   | What happens                                         | Ends with             |
+| ------ | ---------------------------------------------------- | --------------------- |
+| **CI** | Code → build → test → scan → Docker image → push     | Image in DockerHub    |
+| **CD** | Image pulled from DockerHub → deployed on Kubernetes | App running for users |
+
+> **CI = build the image. CD = run the image on Kubernetes.**
 
 ## 1. Pipeline Flow
 
@@ -420,3 +443,5 @@ Runs **after** build (`needs: build`).
 - **hadolint** lints the Dockerfile for formatting, syntax and security issues.
 - **Buildx** is the advanced Docker builder that builds images faster using caching.
 - Tagging the image with **`github.sha`** gives every build a unique, traceable version.
+- **Zomato flow:** code → Git → Dockerfile → Docker image → DockerHub is **CI**; Kubernetes pulling
+  and running that image is **CD**.
