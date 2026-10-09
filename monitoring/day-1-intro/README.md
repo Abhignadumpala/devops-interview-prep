@@ -70,33 +70,91 @@ Servers 1, 2, 3 and 5 have Node Exporter → **monitored**. Server 4 doesn't →
 
 > **First step:** install Node Exporter on **every server you want to monitor**.
 
-### Lab — Worker Node with Node Exporter
+## Lab — Monitor an EC2 Server
 
 ```
-1. Create EC2 worker node + sample Amazon app
-2. Install Node Exporter
-3. Allow port 9100 → Prometheus can collect metrics
+┌─ Worker node (EC2) ──────────┐          ┌─ prometheus-monitoring-server (EC2) ─┐
+│ Amazon sample app   :80      │  metrics │ Prometheus  :9090  (stores in TSDB)  │
+│ Node Exporter       :9100    │ ───────► │ Grafana     :3000  (dashboards)      │
+└──────────────────────────────┘   (pull) └──────────────────────────────────────┘
 ```
 
-**1. Create the EC2 worker node with the sample Amazon application**
+| Server                           | Installed                  | Security group ports                     |
+| -------------------------------- | -------------------------- | ---------------------------------------- |
+| **Worker node**                  | Amazon app + Node Exporter | 22, **80**, **9100**                     |
+| **prometheus-monitoring-server** | Prometheus + Grafana       | 22, **9090**, **3000** (`monitoring-sg`) |
 
-Launch an Ubuntu EC2 instance (the **worker node**) and deploy the sample **Amazon application**
-code on it. This is the server we want to monitor.
+### Part 1 — Worker Node: Amazon App
 
-**2. SSH into the server and switch to root**
+**1. Launch an EC2 (Ubuntu)** → under **Advanced details → User data**, paste this. It installs
+nginx and serves a sample Amazon page when the server boots.
 
 ```bash
-ssh -i <key.pem> ubuntu@<server-ip>
+#!/bin/bash
+apt update -y
+apt install -y nginx
+
+cat <<'EOF' > /var/www/html/index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Amazon Clone - Demo</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #eaeded; }
+    header { background: #131921; color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 20px; }
+    .logo { font-size: 26px; font-weight: bold; }
+    .logo span { color: #ff9900; }
+    .search { flex: 1; display: flex; }
+    .search input { flex: 1; padding: 10px; border: none; border-radius: 4px 0 0 4px; }
+    .search button { background: #febd69; border: none; padding: 0 16px; border-radius: 0 4px 4px 0; }
+    nav { background: #232f3e; color: #fff; padding: 8px 20px; font-size: 14px; }
+    .banner { background: linear-gradient(90deg, #ff9900, #febd69); text-align: center; padding: 40px; font-size: 28px; font-weight: bold; }
+    .products { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; padding: 20px; }
+    .card { background: #fff; padding: 20px; border-radius: 6px; text-align: center; }
+    .card .img { font-size: 60px; }
+    .price { color: #b12704; font-size: 20px; font-weight: bold; }
+    .card button { background: #ffd814; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; }
+    footer { background: #131921; color: #ccc; text-align: center; padding: 16px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">amazon<span>.clone</span></div>
+    <div class="search"><input placeholder="Search products"><button>🔍</button></div>
+    <div>🛒 Cart</div>
+  </header>
+  <nav>All · Today's Deals · Electronics · Books · Fashion · Home</nav>
+  <div class="banner">Great Indian Sale — Up to 70% off</div>
+  <div class="products">
+    <div class="card"><div class="img">📱</div><h3>Smartphone</h3><p class="price">₹14,999</p><button>Add to Cart</button></div>
+    <div class="card"><div class="img">💻</div><h3>Laptop</h3><p class="price">₹54,999</p><button>Add to Cart</button></div>
+    <div class="card"><div class="img">🎧</div><h3>Headphones</h3><p class="price">₹1,999</p><button>Add to Cart</button></div>
+    <div class="card"><div class="img">⌚</div><h3>Smart Watch</h3><p class="price">₹3,499</p><button>Add to Cart</button></div>
+  </div>
+  <footer>Demo page for DevOps monitoring practice — served from EC2</footer>
+</body>
+</html>
+EOF
+
+systemctl enable nginx
+systemctl restart nginx
+```
+
+**2. Security group** → allow **22** (SSH) and **80** (HTTP).
+
+**3. Check** → open `http://<worker-ip>` → the Amazon page shows.
+
+### Part 2 — Worker Node: Install Node Exporter
+
+To collect **CPU, RAM, disk** metrics from the worker, install Node Exporter on it.
+
+```bash
+ssh -i <key.pem> ubuntu@<worker-ip>
 sudo -i
+vim node-exporter # paste the script below, save (Esc → :wq)
+sh node-exporter
 ```
-
-**3. Create the script file**
-
-```bash
-vim node-exporter
-```
-
-**4. Paste this code, save (`Esc` → `:wq`)**
 
 ```bash
 # download and extract
@@ -132,20 +190,6 @@ sudo systemctl daemon-reload && sudo systemctl enable node_exporter
 sudo systemctl start node_exporter.service && sudo systemctl status node_exporter.service --no-pager
 ```
 
-**5. Run the script**
-
-```bash
-sh node-exporter
-```
-
-**6. Allow port 9100**
-
-On AWS: **EC2 → Security Group → Inbound rules → Add rule → Custom TCP, port `9100`** → Save.
-
-**7. Check**
-
-Open `http://<server-ip>:9100/metrics` in the browser → you should see the metrics.
-
 | Script step              | What it does                           |
 | ------------------------ | -------------------------------------- |
 | `wget` + `tar`           | Download and extract Node Exporter     |
@@ -153,6 +197,134 @@ Open `http://<server-ip>:9100/metrics` in the browser → you should see the met
 | `useradd -rs /bin/false` | Create a system user that can't log in |
 | `node_exporter.service`  | Run it as a service (starts on boot)   |
 | `systemctl enable/start` | Start it now and on every reboot       |
+
+**Allow port 9100** in the worker's security group → check `http://<worker-ip>:9100/metrics`.
+
+### Part 3 — Why Prometheus?
+
+**Problem:** Node Exporter only **exposes** metrics — it has **no database** to store them.
+
+**Fix:** Prometheus **pulls** the metrics and **stores them on disk** in its **TSDB (Time Series
+Database)**. So we need a separate **monitoring server**.
+
+```
+Node Exporter (no DB) ──metrics──► Prometheus (stores in TSDB) ──► Grafana (shows)
+```
+
+### Part 4 — Create the Monitoring Server
+
+| Setting        | Value                                      |
+| -------------- | ------------------------------------------ |
+| Name           | `prometheus-monitoring-server`             |
+| OS             | Ubuntu                                     |
+| Security group | `monitoring-sg` → allow **22, 9090, 3000** |
+
+| Port     | For        |
+| -------- | ---------- |
+| **9090** | Prometheus |
+| **3000** | Grafana    |
+
+### Part 5 — Install Prometheus
+
+SSH into the monitoring server, switch to root:
+
+```bash
+vim monitoring.sh # paste the script below, save
+sh monitoring.sh
+```
+
+```bash
+# download and extract Prometheus
+wget https://github.com/prometheus/prometheus/releases/download/v2.43.0/prometheus-2.43.0.linux-amd64.tar.gz
+tar -xf prometheus-2.43.0.linux-amd64.tar.gz
+sudo mv prometheus-2.43.0.linux-amd64/prometheus prometheus-2.43.0.linux-amd64/promtool /usr/local/bin
+
+# create directories for config and data
+sudo mkdir /etc/prometheus /var/lib/prometheus
+sudo mv prometheus-2.43.0.linux-amd64/console_libraries /etc/prometheus
+ls /etc/prometheus
+sudo rm -rvf prometheus-2.43.0.linux-amd64*
+
+# config: what to monitor (replace <worker-ip>)
+sudo cat <<EOF | sudo tee /etc/prometheus/prometheus.yml
+global:
+  scrape_interval: 10s
+
+scrape_configs:
+  - job_name: 'prometheus_metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['localhost:9090']
+  - job_name: 'node_exporter_metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['<worker-ip>:9100']
+EOF
+
+# create a user and give it the folders
+sudo useradd -rs /bin/false prometheus
+sudo chown -R prometheus: /etc/prometheus /var/lib/prometheus
+sudo ls -l /etc/prometheus/
+
+# create the systemd service
+sudo cat <<EOF | sudo tee /etc/systemd/system/prometheus.service
+[Unit]
+Description=Prometheus
+After=network.target
+
+[Service]
+User=prometheus
+Group=prometheus
+Type=simple
+ExecStart=/usr/local/bin/prometheus \
+    --config.file /etc/prometheus/prometheus.yml \
+    --storage.tsdb.path /var/lib/prometheus/ \
+    --web.console.templates=/etc/prometheus/consoles \
+    --web.console.libraries=/etc/prometheus/console_libraries
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# start Prometheus
+sudo ls -l /etc/systemd/system/prometheus.service
+sudo systemctl daemon-reload && sudo systemctl enable prometheus
+sudo systemctl start prometheus && sudo systemctl status prometheus --no-pager
+```
+
+| Part                     | What it does                                     |
+| ------------------------ | ------------------------------------------------ |
+| `prometheus`, `promtool` | Prometheus server + config checker               |
+| `/etc/prometheus`        | Config files                                     |
+| `/var/lib/prometheus`    | **TSDB data** (metrics stored on disk)           |
+| `prometheus.yml`         | **targets** = which servers to scrape, every 5 s |
+| `prometheus.service`     | Runs Prometheus as a service                     |
+
+### Part 6 — Install Grafana
+
+```bash
+vim grafana.sh # paste the script below, save
+sh grafana.sh
+```
+
+```bash
+sudo apt-get install -y adduser libfontconfig1
+wget https://dl.grafana.com/enterprise/release/grafana-enterprise_9.4.7_amd64.deb
+sudo dpkg -i grafana-enterprise_9.4.7_amd64.deb
+sudo /bin/systemctl daemon-reload
+sudo /bin/systemctl enable grafana-server
+sudo /bin/systemctl start grafana-server
+sudo /bin/systemctl status grafana-server --no-pager
+```
+
+### Part 7 — Open in Browser
+
+| Open                              | You see                                    |
+| --------------------------------- | ------------------------------------------ |
+| `http://<worker-ip>`              | Amazon sample app                          |
+| `http://<worker-ip>:9100/metrics` | Raw metrics from Node Exporter             |
+| `http://<monitoring-ip>:9090`     | Prometheus → **Status → Targets** = **UP** |
+| `http://<monitoring-ip>:3000`     | Grafana login (`admin` / `admin`)          |
 
 ## Interview One-Liner
 
