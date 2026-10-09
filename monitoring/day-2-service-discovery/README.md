@@ -182,6 +182,18 @@ scrape_configs:
 | `port: 9100`      | Scrape Node Exporter on each VM                     |
 | `relabel_configs` | Rename labels — here, show the **private IP**       |
 
+**In simple:** we use service discovery for region **us-east-1** on port **9100**. Every EC2 in
+us-east-1 has a **private IP**, so **all EC2s in that region are found and added** as targets.
+`relabel_configs` takes each VM's **private IP** (`__meta_ec2_private_ip`) and shows it as the
+**instance** name, so we can tell the VMs apart.
+
+```
+us-east-1: VM-1 (10.0.1.11), VM-2 (10.0.1.12), VM-3 (10.0.1.13)
+                │ ec2_sd_configs finds all of them
+                ▼
+targets: 10.0.1.11:9100, 10.0.1.12:9100, 10.0.1.13:9100   (instance = private IP)
+```
+
 **Only monitor VMs with a tag** (e.g. `Name=amazon-prod`):
 
 ```yaml
@@ -193,18 +205,37 @@ ec2_sd_configs:
         values: [amazon-prod]
 ```
 
-### Step 5 — Restart Prometheus
+### Step 5 — Restart Prometheus and Check
+
+> After **any config change**, restart the service.
 
 ```bash
-systemctl daemon-reload
 systemctl restart prometheus
+systemctl daemon-reload
+systemctl status prometheus # must show: active (running)
 ```
 
-**Check:** Prometheus → **Status → Targets** → `ec2-discovery` lists **all VMs automatically**.
-New VM from the ASG → appears **without editing the file again**.
+**Check:** Prometheus → **Status → Targets** → `ec2-discovery` now shows **multiple targets instead
+of 1** — all VMs added **automatically**. A new VM from the ASG appears **without editing the file
+again**.
 
 > Prometheus uses the **private IP**, so the workers' security group must allow **9100** from the
 > monitoring server.
+
+## Interview Question — Issues I Faced in Prometheus
+
+**Q: What issues did you face in Prometheus?**
+
+**Problem:** after setting up EC2 service discovery, **no VMs were listed** in **Status → Targets**.
+
+**Cause:** in `ec2_sd_configs` I gave a **different region** — not the region where my VMs were
+running. Prometheus looked in the wrong region and found nothing.
+
+**Fix:** changed `region` to the **correct region** (`us-east-1`) → restarted Prometheus → all
+target VMs were **listed correctly**.
+
+> **Lesson:** service discovery only finds VMs in the region you give — always match `region` to
+> where the VMs run.
 
 ## Interview One-Liner
 
