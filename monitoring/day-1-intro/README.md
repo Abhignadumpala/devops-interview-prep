@@ -70,22 +70,33 @@ Servers 1, 2, 3 and 5 have Node Exporter → **monitored**. Server 4 doesn't →
 
 > **First step:** install Node Exporter on **every server you want to monitor**.
 
-### Install Node Exporter
+### Lab — Worker Node with Node Exporter
 
-**1. SSH into the server and switch to root**
+```
+1. Create EC2 worker node + sample Amazon app
+2. Install Node Exporter
+3. Allow port 9100 → Prometheus can collect metrics
+```
+
+**1. Create the EC2 worker node with the sample Amazon application**
+
+Launch an Ubuntu EC2 instance (the **worker node**) and deploy the sample **Amazon application**
+code on it. This is the server we want to monitor.
+
+**2. SSH into the server and switch to root**
 
 ```bash
 ssh -i <key.pem> ubuntu@<server-ip>
 sudo -i
 ```
 
-**2. Create the script file**
+**3. Create the script file**
 
 ```bash
 vim node-exporter
 ```
 
-**3. Paste this code, save (`Esc` → `:wq`)**
+**4. Paste this code, save (`Esc` → `:wq`)**
 
 ```bash
 # download and extract
@@ -121,17 +132,17 @@ sudo systemctl daemon-reload && sudo systemctl enable node_exporter
 sudo systemctl start node_exporter.service && sudo systemctl status node_exporter.service --no-pager
 ```
 
-**4. Run the script**
+**5. Run the script**
 
 ```bash
 sh node-exporter
 ```
 
-**5. Allow port 9100**
+**6. Allow port 9100**
 
 On AWS: **EC2 → Security Group → Inbound rules → Add rule → Custom TCP, port `9100`** → Save.
 
-**6. Check**
+**7. Check**
 
 Open `http://<server-ip>:9100/metrics` in the browser → you should see the metrics.
 
