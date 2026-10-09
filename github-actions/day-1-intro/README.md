@@ -1,6 +1,6 @@
 # Day 1 — Intro, Workflows, Triggers, Node.js, Artifacts, CodeQL
 
-[← All notes](../README.md) · [Day 2 →](../day-2/README.md)
+[← All notes](../README.md) · [Day 2 →](../day-2-cache-matrix/README.md)
 
 - **Intro:** what CI/CD is and how GitHub Actions automates build, test, and deploy.
 - **Workflows:** wrote my first workflow file in `.github/workflows/`.
@@ -101,7 +101,7 @@ jobs:
 ```
 
 - **Artifact:** a file or folder saved from a run. Here: name **`app-build`**, folder
-  **`dist/`**. Full details are in [Day 2 → Artifact](../day-2/README.md#artifact--name-path-and-where-to-find-it).
+  **`dist/`**. Full details are in [Day 2 → Artifact](../day-2-cache-matrix/README.md#artifact--name-path-and-where-to-find-it).
 - Download it from the run page (**Artifacts**
   section), or pass it to a later job with `actions/download-artifact`.
 - **CodeQL:** GitHub's security scanner (**SAST**). It finds problems like user input reaching a

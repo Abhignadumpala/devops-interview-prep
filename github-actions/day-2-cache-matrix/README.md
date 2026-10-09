@@ -1,6 +1,6 @@
 # Day 2 — Cache, Dependabot, Matrix Jobs, Conditions, Status Check
 
-[← Day 1](../day-1/README.md) · [All notes](../README.md) · [Day 3 →](../day-3/README.md)
+[← Day 1](../day-1-intro/README.md) · [All notes](../README.md) · [Day 3 →](../day-3-codeql-self-hosted-runners/README.md)
 
 - **Cache:** saved npm packages between runs, so `npm ci` is faster.
 - **Jobs with `needs:`:** split the pipeline into lint → test → build → deploy.

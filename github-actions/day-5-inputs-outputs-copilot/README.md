@@ -1,6 +1,6 @@
 # Day 5 — Input & Output Parameters, GitHub Copilot, Zomato CI
 
-[← Day 4](../day-4/README.md) · [All notes](../README.md)
+[← Day 4](../day-4-parallel-composite-reusable/README.md) · [All notes](../README.md)
 
 - **Inputs:** values passed **into** a workflow, reusable workflow or action (like function
   arguments).

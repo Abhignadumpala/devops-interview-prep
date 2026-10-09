@@ -432,8 +432,9 @@ The pipeline will be built step by step:
 | 8    | Security: SAST         | CodeQL                           | ⏳ In Day 1 notes, not in ci.yml |
 | 9    | Security: dependencies | `npm audit` / Dependabot         | ⏳ To add                        |
 
-Daily notes: [Day 1](./github-actions/day-1/README.md) · [Day 2](./github-actions/day-2/README.md) ·
-[Day 3](./github-actions/day-3/README.md) · [Day 4](./github-actions/day-4/README.md)
+Daily notes: [Day 1](./github-actions/day-1-intro/README.md) · [Day 2](./github-actions/day-2-cache-matrix/README.md) ·
+[Day 3](./github-actions/day-3-codeql-self-hosted-runners/README.md) · [Day 4](./github-actions/day-4-parallel-composite-reusable/README.md)
+· [Day 5](./github-actions/day-5-inputs-outputs-copilot/README.md)
 
 ## Run Locally
 

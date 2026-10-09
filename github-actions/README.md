@@ -2,9 +2,9 @@
 
 Sources: [GitHub Docs](https://docs.github.com/en/actions/get-started/understand-github-actions) ·
 Practice: [interview-questions.md](./interview-questions.md) ·
-Daily notes: [Day 1](./day-1/README.md) · [Day 2](./day-2/README.md) · [Day 3](./day-3/README.md) ·
-[Day 4](./day-4/README.md) · [Day 5](./day-5/README.md) ·
-Projects: [Zomato CI](./day-5/zomato-ci/README.md)
+Daily notes: [Day 1](./day-1-intro/README.md) · [Day 2](./day-2-cache-matrix/README.md) · [Day 3](./day-3-codeql-self-hosted-runners/README.md) ·
+[Day 4](./day-4-parallel-composite-reusable/README.md) · [Day 5](./day-5-inputs-outputs-copilot/README.md) ·
+Projects: [Zomato CI](./day-5-inputs-outputs-copilot/zomato-ci/README.md)
 
 <!-- toc -->
 
