@@ -449,6 +449,18 @@ Select data source: Prometheus → Import
 - You now see **live data** — CPU, memory, RAM, disk, network, even **how many processes are
   running** — each in its **own panel**.
 
+**Other dashboard IDs to try** — import any you like the same way:
+
+| ID                            |
+| ----------------------------- |
+| **1860** (Node Exporter Full) |
+| 10180                         |
+| 14731                         |
+| 11074                         |
+| 8919                          |
+
+> By default, imported dashboards go into the **General** folder.
+
 ### Part 13 — Test with Load (`stress`)
 
 On the **Amazon VM (worker)**, add load **on purpose** and watch the dashboard:
@@ -459,6 +471,35 @@ apt update && apt install stress -y && stress -c 10 # 10 CPU workers
 
 - CPU panel goes **up** in Grafana — values keep changing **automatically**.
 - Stop with `Ctrl + C` → CPU comes back **down**.
+
+### Part 14 — Share Dashboards with Users (Roles)
+
+In real time, other people in the organisation also need to see the dashboards. We create a
+**user** for them.
+
+**Create a user**
+
+```
+Login as admin → Administration → Users → New user
+   ▼
+Name: abhi, username, email, password → Create user
+```
+
+By default the new user gets the **Viewer** role → can **see** dashboards but **cannot edit**.
+
+**Give edit access**
+
+```
+Login as admin → Administration → Users → abhi → Change role → Editor → Save
+   ▼
+Log out → login as abhi → can now edit the dashboard ✅
+```
+
+| Role       | Can do                                            |
+| ---------- | ------------------------------------------------- |
+| **Viewer** | Only **see** dashboards (default for new users)   |
+| **Editor** | See + **create and edit** dashboards              |
+| **Admin**  | Everything — manage users, data sources, settings |
 
 ### Full Flow
 
@@ -483,3 +524,6 @@ query its metrics with PromQL (e.g. `up`, `node_memory_Active_bytes`).
 
 Grafana connects to Prometheus as a **data source** and shows its metrics as live dashboards, so we
 don't have to run PromQL queries by hand — e.g. dashboard **1860 (Node Exporter Full)**.
+
+New Grafana users get the **Viewer** role by default (see only); an admin can change it to
+**Editor** (edit) or **Admin** (manage everything).
