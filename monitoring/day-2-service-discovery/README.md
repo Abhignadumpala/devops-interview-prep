@@ -438,22 +438,43 @@ Prometheus (Firing) ──► Alertmanager :9093 (alert listed) ──► Slack 
 In real time, **team members** must get alerts **immediately** → we send them to a **Slack
 channel**.
 
-**A. Create a Slack webhook** (a URL that lets Alertmanager post messages into a channel)
+**A. Create a Slack channel and add the team**
+
+```
+Slack → devops workspace → Channels → + Create channel → name: #alertchannel → Create
+   ▼
+Add people → add your team members
+```
+
+Everyone in this channel gets the alerts.
+
+**B. Create a Slack app with an incoming webhook**
+
+**Webhook** = a URL that lets Alertmanager **post messages** into the channel.
 
 ```
 https://api.slack.com/apps → Create New App → From scratch (blank app)
    ▼
+App name: alert-manager · Workspace: devops (where alerts should go) → Create App
+   ▼
 Incoming Webhooks → turn the toggle ON
    ▼
-Add New Webhook → select channel (e.g. #alertchannel) → Allow
+Add New Webhook → select channel #alertchannel → Allow
    ▼
-Copy the Webhook URL
+Copy the Webhook URL → paste it in alertmanager.yml (next step)
 ```
+
+| Setting   | Value                      |
+| --------- | -------------------------- |
+| App name  | `alert-manager`            |
+| Workspace | `devops`                   |
+| Feature   | Incoming Webhooks → **ON** |
+| Channel   | `#alertchannel`            |
 
 > The **webhook URL is a secret** — anyone who has it can post to your channel. **Never push it to
 > GitHub.**
 
-**B. Add Slack to Alertmanager**
+**C. Add Slack to Alertmanager**
 
 ```bash
 vim /etc/alertmanager/alertmanager.yml
@@ -490,14 +511,14 @@ receivers: # HOW to send it
 `severity: warning` comes from the **rules file** (`labels: severity: warning`) → that's how the
 alert is matched to Slack.
 
-**C. Restart both services**
+**D. Restart both services**
 
 ```bash
 systemctl restart prometheus.service
 systemctl restart alertmanager.service
 ```
 
-**D. Test** — add load on the web server:
+**E. Test** — add load on the web server:
 
 ```bash
 apt update && apt install stress -y && stress -c 10
