@@ -119,13 +119,13 @@ Auto Scaling Group ──creates──► VM 1, VM 2, VM 3 … (tag: Name=amazon
 
 ### Steps
 
-| #   | Step                                                                       | Where             |
-| --- | -------------------------------------------------------------------------- | ----------------- |
-| 1   | Create IAM role **prometheus-role** (EC2 read-only)                        | IAM               |
-| 2   | Attach the role to the **monitoring server**                               | EC2               |
-| 3   | Install **Node Exporter on all nodes** (ASG + launch template / user data) | Worker VMs        |
-| 4   | Add `ec2_sd_configs` to `prometheus.yml`                                   | Monitoring server |
-| 5   | Restart Prometheus                                                         | Monitoring server |
+| #   | Step                                                                                           | Where                          |
+| --- | ---------------------------------------------------------------------------------------------- | ------------------------------ |
+| 1   | Create IAM role **prometheus-role** (EC2 read-only)                                            | IAM                            |
+| 2   | Attach the role to the **monitoring server**                                                   | EC2                            |
+| 3   | Install **Node Exporter on all nodes** (ASG + launch template / user data) + monitoring server | Worker VMs + monitoring server |
+| 4   | Add `ec2_sd_configs` to `prometheus.yml`                                                       | Monitoring server              |
+| 5   | Restart Prometheus                                                                             | Monitoring server              |
 
 ### Step 1 — Create the IAM Role
 
