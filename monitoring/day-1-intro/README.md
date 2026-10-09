@@ -326,6 +326,66 @@ sudo /bin/systemctl status grafana-server --no-pager
 | `http://<monitoring-ip>:9090`     | Prometheus → **Status → Targets** = **UP** |
 | `http://<monitoring-ip>:3000`     | Grafana login (`admin` / `admin`)          |
 
+> **Grafana default login:** username `admin`, password `admin` (it asks you to set a new one).
+
+### Recap — Who Does What
+
+| Tool              | Job                                               | Has a database? |
+| ----------------- | ------------------------------------------------- | --------------- |
+| **Node Exporter** | Collects metrics on the server we monitor         | ❌ No           |
+| **Prometheus**    | Pulls and **saves** metrics in a **TSDB** on disk | ✅ Yes          |
+| **Grafana**       | Shows the saved metrics as dashboards             | Uses Prometheus |
+
+**Next problem:** how does Prometheus know **which server** to collect from? → add it as a
+**target**.
+
+### Part 8 — Connect the Worker to Prometheus (Targets)
+
+On the **monitoring server**, open the Prometheus config:
+
+```bash
+vim /etc/prometheus/prometheus.yml
+```
+
+Under `targets`, add the **IP of the server you are monitoring** (the Amazon VM) with port **9100**:
+
+```yaml
+- job_name: "node_exporter_metrics"
+  scrape_interval: 5s
+  static_configs:
+    - targets: ["<amazon-vm-ip>:9100"] # add more: ['ip1:9100', 'ip2:9100']
+```
+
+> **NOTE: After modifying the config of any service, we need to restart it.**
+
+```bash
+systemctl restart prometheus.service
+```
+
+**Check:** `http://<monitoring-ip>:9090` → **Status → Targets** → Amazon VM shows **UP** ✅.
+
+```
+Amazon VM (Node Exporter :9100) ──► target in prometheus.yml ──► restart ──► UP in Prometheus
+```
+
+### Part 9 — See the Data with PromQL Queries
+
+In Prometheus (`:9090`) → type the query in the search box → **Execute** → see **Table** or
+**Graph**.
+
+| To show                                  | Query                                              |
+| ---------------------------------------- | -------------------------------------------------- |
+| Which servers are running (1=up, 0=down) | `up`                                               |
+| Total requests to the server             | `promhttp_metric_handler_requests_total`           |
+| Requests in the last 1 minute            | `promhttp_metric_handler_requests_total[1m]`       |
+| Requests **per second** (rate)           | `rate(promhttp_metric_handler_requests_total[1m])` |
+| Memory                                   | `node_memory_Active_bytes`                         |
+| CPU                                      | `node_cpu_seconds_total`                           |
+| Disk                                     | `node_disk_info`                                   |
+
+- `[1m]` = values from the **last 1 minute**.
+- `rate(...)` = how fast it is increasing **per second**.
+
 ## Interview One-Liner
 
 Monitoring is analysing the performance of servers and applications using metrics like CPU, memory
@@ -336,3 +396,6 @@ database, queries them with PromQL and sends alerts through Alertmanager (port 9
 
 Node Exporter is an agent installed on each server that exposes its CPU, RAM, disk and network
 metrics on port 9100 for Prometheus to collect.
+
+To monitor a server, add its `IP:9100` as a target in `prometheus.yml`, restart Prometheus, and
+query its metrics with PromQL (e.g. `up`, `node_memory_Active_bytes`).
