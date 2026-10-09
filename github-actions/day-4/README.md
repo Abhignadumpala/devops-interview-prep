@@ -1,6 +1,6 @@
 # Day 4 — Parallel & Sequential Builds, Composite Actions vs Reusable Workflows
 
-[← Day 3](../day-3/README.md) · [All notes](../README.md)
+[← Day 3](../day-3/README.md) · [All notes](../README.md) · [Day 5 →](../day-5/README.md)
 
 - **Parallel builds:** independent jobs (build, test, security) run at the same time.
 - **Sequential builds:** used `needs:` to run jobs in order: build → test → deploy.
