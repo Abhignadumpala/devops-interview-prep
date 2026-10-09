@@ -1,6 +1,9 @@
-# Day 2 — Service Discovery
+# Day 2 — Service Discovery, Alertmanager
 
 [← Day 1](../day-1-intro/README.md) · [All notes](../README.md)
+
+- **Service discovery:** Prometheus finds EC2 servers to monitor **automatically** (by region/tags).
+- **Alertmanager:** sends **email / Slack** alerts when a rule is hit, e.g. CPU > 90% (port 9093).
 
 ## What is Service Discovery?
 
@@ -231,11 +234,161 @@ again**.
 > Prometheus uses the **private IP**, so the workers' security group must allow **9100** from the
 > monitoring server.
 
+## Alertmanager
+
+**Alertmanager** = sends **alerts** (email, Slack…) when a **condition** we give is true — e.g.
+**CPU > 90%** → trigger an alarm.
+
+| Field          | Value                            |
+| -------------- | -------------------------------- |
+| **Purpose**    | Send alerts when a rule fires    |
+| **Sends to**   | Email, Slack, PagerDuty, mobile  |
+| **Port**       | **9093**                         |
+| **Install on** | **prometheus-monitoring-server** |
+
+```
+Node Exporter ──metrics──► Prometheus ──checks rule (CPU > 50%)──► fires ──► Alertmanager :9093 ──► Email / Slack
+```
+
+**Who does what:**
+
+- **Prometheus** checks the **rules** (the conditions).
+- **Alertmanager** **sends** the alert (email, Slack).
+
+### Steps
+
+| #   | Step                                                      | Where             |
+| --- | --------------------------------------------------------- | ----------------- |
+| 1   | Install **Prometheus + Alertmanager**, open port **9093** | Monitoring server |
+| 2   | Install **Node Exporter**                                 | Web server(s)     |
+| 3   | Create `rules/` folder + write the **rules file**         | Monitoring server |
+| 4   | Tell Prometheus about the rules file in `prometheus.yml`  | Monitoring server |
+| 5   | Restart + check rules and alerts                          | Prometheus UI     |
+
+### Step 1 — Install Alertmanager
+
+On the monitoring server, then **allow port 9093** in `monitoring-sg`.
+
+```bash
+wget https://github.com/prometheus/alertmanager/releases/download/v0.25.0/alertmanager-0.25.0.linux-amd64.tar.gz
+tar -xf alertmanager-0.25.0.linux-amd64.tar.gz
+cd alertmanager-0.25.0.linux-amd64
+./alertmanager --config.file=alertmanager.yml &
+```
+
+Check: `http://<monitoring-ip>:9093` → Alertmanager UI.
+
+### Step 2 — Node Exporter on the Web Server
+
+Same script as Day 1 (already done if service discovery is set up).
+
+### Step 3 — Write the Rules File
+
+```bash
+mkdir /etc/prometheus/rules
+vim /etc/prometheus/rules/cpu_alert.yml
+```
+
+```yaml
+groups:
+  - name: cpu-alerts # group name
+    rules:
+      - alert: HighCPUUsage # alert name
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 50
+        for: 1m # condition must stay true for 1 minute
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.instance }}"
+          description: "CPU usage > 50% on {{ $labels.instance }}"
+```
+
+| Field         | Meaning                                                 |
+| ------------- | ------------------------------------------------------- |
+| `name`        | Group of rules → **cpu-alerts**                         |
+| `alert`       | Alert name → **HighCPUUsage**                           |
+| `expr`        | Condition → CPU used = 100 − idle % → **> 50%**         |
+| `for: 1m`     | Wait **1 minute** — if CPU is **still high**, then fire |
+| `severity`    | How serious → `warning`                                 |
+| `annotations` | Message → "High CPU on **&lt;server IP&gt;**"           |
+
+**In simple:** if CPU is **> 50% for 1 minute** (still the same or increasing after waiting), the
+alert fires: **"High CPU on &lt;server&gt;"**.
+
+> We use **50%** to test easily with `stress`; in real time it's usually **90%**.
+
+### Step 4 — Tell Prometheus About the Rules File
+
+Writing the rules file is **not enough** — **how does Prometheus know about it?** We add its path
+under **`rule_files`** in `prometheus.yml`.
+
+```bash
+vim /etc/prometheus/prometheus.yml
+```
+
+```yaml
+global:
+  scrape_interval: 15s # collect metrics every 15 s
+  evaluation_interval: 15s # check the rules every 15 s
+
+rule_files:
+  - "rules/cpu_alert.yml" # path is relative to /etc/prometheus/
+
+alerting: # where to send fired alerts
+  alertmanagers:
+    - static_configs:
+        - targets: ["localhost:9093"]
+
+scrape_configs:
+  - job_name: "ec2-discovery"
+    ec2_sd_configs:
+      - region: us-east-1
+        port: 9100
+    relabel_configs:
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: instance
+```
+
+| Block                 | Tells Prometheus                      |
+| --------------------- | ------------------------------------- |
+| `evaluation_interval` | How often to check the rules          |
+| `rule_files`          | **Where the rules file is**           |
+| `alerting`            | **Where Alertmanager is** (port 9093) |
+| `scrape_configs`      | Which servers to collect metrics from |
+
+### Step 5 — Restart and Check
+
+```bash
+promtool check config /etc/prometheus/prometheus.yml # checks config + rules files
+systemctl restart prometheus
+systemctl status prometheus # active (running)
+```
+
+| Check in Prometheus (`:9090`) | You see                                            |
+| ----------------------------- | -------------------------------------------------- |
+| **Status → Rules**            | **All rules loaded** on this server (`cpu-alerts`) |
+| **Alerts**                    | `HighCPUUsage` → **Inactive / Pending / Firing**   |
+
+**Test:** run `stress -c 10` on the web server → alert goes **Pending** (waiting 1 min) →
+**Firing** → shows in Alertmanager `:9093`.
+
+| State        | Meaning                                       |
+| ------------ | --------------------------------------------- |
+| **Inactive** | Condition false — all good                    |
+| **Pending**  | Condition true, waiting for `for: 1m`         |
+| **Firing**   | Still true after 1 min → sent to Alertmanager |
+
+### References
+
+- [Alertmanager configuration (routes)](https://prometheus.io/docs/alerting/latest/configuration/#route)
+- [Alerting rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
+- [Slack / PagerDuty / Gmail integration guide](https://grafana.com/blog/step-by-step-guide-to-setting-up-prometheus-alertmanager-with-slack-pagerduty-and-gmail/)
+
 ## Interview Question — Issues I Faced in Prometheus
 
 **Q: What issues did you face in Prometheus?**
 
-**Problem:** after setting up EC2 service discovery, **no VMs were listed** in **Status → Targets**.
+**Problem 1:** after setting up EC2 service discovery, **no VMs were listed** in **Status → Targets**.
 
 **Cause:** in `ec2_sd_configs` I gave a **different region** — not the region where my VMs were
 running. Prometheus looked in the wrong region and found nothing.
@@ -246,6 +399,14 @@ target VMs were **listed correctly**.
 > **Lesson:** service discovery only finds VMs in the region you give — always match `region` to
 > where the VMs run.
 
+**Problem 2:** the alert rule **did not show** in **Status → Rules**.
+
+**Cause:** I put the rules file path in the **wrong place** — Prometheus didn't know where the rules
+file was.
+
+**Fix:** added the correct path under **`rule_files`** in `prometheus.yml` (`rules/cpu_alert.yml`,
+relative to `/etc/prometheus/`) → `promtool check config` → restart → rule loaded.
+
 ## Interview One-Liner
 
 Service discovery lets Prometheus automatically find and update its monitoring targets from
@@ -254,3 +415,6 @@ platforms like AWS or Kubernetes, so we don't have to add server IPs by hand.
 For EC2 service discovery, give the Prometheus server an IAM role with EC2 read-only access and
 add `ec2_sd_configs` to `prometheus.yml` — it then finds every EC2 (filtered by tags) on port 9100
 automatically.
+
+Alertmanager (port 9093) sends email/Slack alerts when a Prometheus alerting rule fires; Prometheus
+finds the rules through `rule_files` and Alertmanager through `alerting` in `prometheus.yml`.
