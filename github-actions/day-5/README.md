@@ -16,6 +16,7 @@
   - [Why & When We Use Them](#why--when-we-use-them)
   - [Benefits](#benefits)
   - [Example — Node.js CI with Input Parameters](#example--nodejs-ci-with-input-parameters)
+  - [Run Workflow Options](#run-workflow-options)
 - [2. Inputs](#2-inputs)
   - [2.1 Manual Run Inputs — `workflow_dispatch`](#21-manual-run-inputs--workflow_dispatch)
   - [2.2 Reusable Workflow Inputs — `workflow_call`](#22-reusable-workflow-inputs--workflow_call)
@@ -132,6 +133,34 @@ jobs:
 | -------------- | --------- | --------------------------------------------------------------- |
 | `environment`  | `choice`  | Dropdown in the Actions tab: development / staging / production |
 | `deploy_tests` | `boolean` | Checkbox — `Run tests` step runs only if it's `true` (`if:`)    |
+
+### Run Workflow Options
+
+With `workflow_dispatch`, the **Actions tab → Run workflow** button opens a form. We choose **from
+which branch** the workflow runs and **to where (which environment)** we pass the inputs.
+
+```
+┌─ Run workflow ───────────────────────────┐
+│ Use workflow from                        │
+│ [ Branch: main          ▼ ]  ← branch    │
+│                                          │
+│ Target environment *                     │
+│ [ development           ▼ ]  ← choice    │
+│   development / staging / production     │
+│                                          │
+│ [✓] Run integration tests?   ← boolean   │
+│                                          │
+│            [ Run workflow ]              │
+└──────────────────────────────────────────┘
+```
+
+| Option                 | Comes from                  | Example       |
+| ---------------------- | --------------------------- | ------------- |
+| **Use workflow from**  | Always there (branch / tag) | `main`, `dev` |
+| **Target environment** | `environment` input         | `development` |
+| **Run tests?**         | `deploy_tests` input        | ✓ = `true`    |
+
+> **Branch = which code runs. Inputs = how it runs.**
 
 ## 2. Inputs
 
