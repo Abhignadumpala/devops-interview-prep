@@ -101,7 +101,116 @@ Every new VM = install Node Exporter + **edit `prometheus.yml`** + **restart** +
 hand. With auto scaling creating VMs automatically, we can't keep up → **service discovery** solves
 the Prometheus part.
 
+## EC2-Based Service Discovery
+
+When an **Auto Scaling Group** creates many VMs, adding each one to monitoring **by hand is
+practically impossible**.
+
+**Purpose of service discovery:** **discover the servers** and make sure they are **added to
+monitoring automatically** — based on their **tags**.
+
+```
+Auto Scaling Group ──creates──► VM 1, VM 2, VM 3 … (tag: Name=amazon-prod, Node Exporter :9100)
+                                        ▲
+                                        │ "which EC2s are running?" (EC2 read permission)
+                                        │
+                     prometheus-monitoring-server (IAM role: prometheus-role)
+```
+
+### Steps
+
+| #   | Step                                                                       | Where             |
+| --- | -------------------------------------------------------------------------- | ----------------- |
+| 1   | Create IAM role **prometheus-role** (EC2 read-only)                        | IAM               |
+| 2   | Attach the role to the **monitoring server**                               | EC2               |
+| 3   | Install **Node Exporter on all nodes** (ASG + launch template / user data) | Worker VMs        |
+| 4   | Add `ec2_sd_configs` to `prometheus.yml`                                   | Monitoring server |
+| 5   | Restart Prometheus                                                         | Monitoring server |
+
+### Step 1 — Create the IAM Role
+
+Prometheus needs **permission to read EC2** to know which servers exist.
+
+```
+IAM → Roles → Create role
+   ▼
+Trusted entity: AWS service → EC2
+   ▼
+Permission: AmazonEC2ReadOnlyAccess
+   ▼
+Role name: prometheus-role → Create
+```
+
+### Step 2 — Attach the Role to the Monitoring Server
+
+```
+EC2 → select prometheus-monitoring-server → Actions → Security → Modify IAM role
+   ▼
+Select prometheus-role → Update IAM role
+```
+
+### Step 3 — Node Exporter on All Nodes
+
+Put the Node Exporter script in the **launch template user data** → every VM the ASG creates gets
+Node Exporter **automatically**.
+
+### Step 4 — Configure Prometheus
+
+```bash
+vim /etc/prometheus/prometheus.yml
+```
+
+Add this job under `scrape_configs:`
+
+```yaml
+scrape_configs:
+  - job_name: "ec2-discovery"
+
+    ec2_sd_configs:
+      - region: us-east-1 # region where the VMs run
+        port: 9100 # Node Exporter port
+
+    relabel_configs:
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: instance # show the VM's private IP as the instance name
+```
+
+| Line              | Meaning                                             |
+| ----------------- | --------------------------------------------------- |
+| `ec2_sd_configs`  | Find targets from **AWS EC2** (not a fixed IP list) |
+| `region`          | Which AWS region to look in                         |
+| `port: 9100`      | Scrape Node Exporter on each VM                     |
+| `relabel_configs` | Rename labels — here, show the **private IP**       |
+
+**Only monitor VMs with a tag** (e.g. `Name=amazon-prod`):
+
+```yaml
+ec2_sd_configs:
+  - region: us-east-1
+    port: 9100
+    filters:
+      - name: tag:Name
+        values: [amazon-prod]
+```
+
+### Step 5 — Restart Prometheus
+
+```bash
+systemctl daemon-reload
+systemctl restart prometheus
+```
+
+**Check:** Prometheus → **Status → Targets** → `ec2-discovery` lists **all VMs automatically**.
+New VM from the ASG → appears **without editing the file again**.
+
+> Prometheus uses the **private IP**, so the workers' security group must allow **9100** from the
+> monitoring server.
+
 ## Interview One-Liner
 
 Service discovery lets Prometheus automatically find and update its monitoring targets from
 platforms like AWS or Kubernetes, so we don't have to add server IPs by hand.
+
+For EC2 service discovery, give the Prometheus server an IAM role with EC2 read-only access and
+add `ec2_sd_configs` to `prometheus.yml` — it then finds every EC2 (filtered by tags) on port 9100
+automatically.
