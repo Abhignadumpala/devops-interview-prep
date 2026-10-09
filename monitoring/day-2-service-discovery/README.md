@@ -474,7 +474,14 @@ Copy the Webhook URL → paste it in alertmanager.yml (next step)
 > The **webhook URL is a secret** — anyone who has it can post to your channel. **Never push it to
 > GitHub.**
 
-**C. Add Slack to Alertmanager**
+**C. Give the webhook to Alertmanager**
+
+Copy the webhook URL from Slack → paste it into **`api_url`** in the Alertmanager config. This is
+how Alertmanager knows **which Slack channel** to send alerts to.
+
+```
+Slack webhook URL ──copy──► alertmanager.yml → api_url: "<webhook-url>"
+```
 
 ```bash
 vim /etc/alertmanager/alertmanager.yml
