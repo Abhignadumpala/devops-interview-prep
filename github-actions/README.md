@@ -1,6 +1,6 @@
 # GitHub Actions — Basics
 
-Sources: [GitHub Docs](https://docs.github.com/en/actions/get-started/understand-github-actions) ·
+[← All topics](../README.md) · Sources: [GitHub Docs](https://docs.github.com/en/actions/get-started/understand-github-actions) ·
 Practice: [interview-questions.md](./interview-questions.md) ·
 Daily notes: [Day 1](./day-1-intro/README.md) · [Day 2](./day-2-cache-matrix/README.md) · [Day 3](./day-3-codeql-self-hosted-runners/README.md) ·
 [Day 4](./day-4-parallel-composite-reusable/README.md) · [Day 5](./day-5-inputs-outputs-copilot/README.md) ·
