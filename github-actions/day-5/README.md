@@ -12,7 +12,9 @@
 
 ## Table of Contents
 
-- [1. Why Inputs & Outputs?](#1-why-inputs--outputs)
+- [1. What are Parameters?](#1-what-are-parameters)
+  - [Why & When We Use Them](#why--when-we-use-them)
+  - [Benefits](#benefits)
 - [2. Inputs](#2-inputs)
   - [2.1 Manual Run Inputs — `workflow_dispatch`](#21-manual-run-inputs--workflow_dispatch)
   - [2.2 Reusable Workflow Inputs — `workflow_call`](#22-reusable-workflow-inputs--workflow_call)
@@ -31,7 +33,15 @@
 
 <!-- tocstop -->
 
-## 1. Why Inputs & Outputs?
+## 1. What are Parameters?
+
+**Parameters** = values we pass **into** or get **out of** a workflow, job or action, so the same
+pipeline can work with different data **without changing the code**.
+
+| Parameter            | In short                                                     | Example                |
+| -------------------- | ------------------------------------------------------------ | ---------------------- |
+| **Input parameter**  | A value we **give to** a workflow/job/action before it runs  | `environment: prod`    |
+| **Output parameter** | A value a step/job **produces** for the next step/job to use | `image-tag: app:1.2.3` |
 
 Think of a workflow like a **function**:
 
@@ -41,11 +51,25 @@ Think of a workflow like a **function**:
  (environment=dev)                     (version=1.2.3)
 ```
 
-| Without them                                          | With them                            |
-| ----------------------------------------------------- | ------------------------------------ |
-| Hard-code `dev` / `prod` in every file                | Pass the environment as an **input** |
-| Copy the same pipeline for each environment           | One pipeline, different **inputs**   |
-| Jobs can't share values (each runs on its own runner) | Jobs share values using **outputs**  |
+### Why & When We Use Them
+
+| Scenario                                            | Parameter used                        |
+| --------------------------------------------------- | ------------------------------------- |
+| Deploy the same pipeline to dev / staging / prod    | **Input** — `environment`             |
+| Choose Node version or run tests only (dry run)     | **Input** — `node-version`, `dry-run` |
+| Manual run with a form in the Actions tab           | **Input** — `workflow_dispatch`       |
+| Build job creates an image tag, deploy job needs it | **Output** — job output + `needs`     |
+| Reusable workflow returns a version to the caller   | **Output** — `workflow_call.outputs`  |
+
+### Benefits
+
+- **Reusable** — one pipeline for many environments/projects, no copy-paste.
+- **No hard-coding** — values change at run time, not in the YAML.
+- **Jobs can share data** — each job runs on its own runner; outputs connect them.
+- **Fewer mistakes** — types, defaults and `choice` lists stop wrong values.
+- **Easy to maintain** — fix once in the shared pipeline, every caller gets the fix.
+
+> **Input = data IN. Output = data OUT.**
 
 ## 2. Inputs
 
@@ -334,6 +358,8 @@ runs:
 
 ## Interview One-Liners
 
+- **Parameters** let us pass data into and out of workflows/jobs so one pipeline works with
+  different values without changing code.
 - **Inputs** pass values into a workflow or action; read them with `${{ inputs.name }}`.
 - **`workflow_dispatch` inputs** create a form for manual runs; **`workflow_call` inputs** are sent
   by a caller workflow with `with:`.
