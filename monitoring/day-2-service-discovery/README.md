@@ -266,6 +266,8 @@ Node Exporter ──metrics──► Prometheus ──checks rule (CPU > 50%)─
 | 5   | Add **`alerting`** — where Alertmanager is                | Monitoring server          |
 | 6   | Restart Prometheus + check status                         | Monitoring server          |
 | 7   | Add load with `stress` → check alerts                     | Web server + Prometheus UI |
+| 8   | Check the alert in **Alertmanager**                       | Alertmanager UI            |
+| 9   | Connect **Slack** → alerts go to the team                 | Slack + monitoring server  |
 
 ### Step 1 — Install Alertmanager
 
@@ -422,6 +424,103 @@ Then check in the **Prometheus console** (`http://<monitoring-ip>:9090`):
 | **Firing**   | Still > 50% after 1 min → sent to Alertmanager |
 
 Stop with `Ctrl + C` → CPU drops → alert goes back to **Inactive**.
+
+### Step 8 — Check in Alertmanager
+
+Open `http://<monitoring-ip>:9093` → the **HighCPUUsage** alert is shown there.
+
+```
+Prometheus (Firing) ──► Alertmanager :9093 (alert listed) ──► Slack (next step)
+```
+
+### Step 9 — Send Alerts to Slack
+
+In real time, **team members** must get alerts **immediately** → we send them to a **Slack
+channel**.
+
+**A. Create a Slack webhook** (a URL that lets Alertmanager post messages into a channel)
+
+```
+https://api.slack.com/apps → Create New App → From scratch (blank app)
+   ▼
+Incoming Webhooks → turn the toggle ON
+   ▼
+Add New Webhook → select channel (e.g. #alertchannel) → Allow
+   ▼
+Copy the Webhook URL
+```
+
+> The **webhook URL is a secret** — anyone who has it can post to your channel. **Never push it to
+> GitHub.**
+
+**B. Add Slack to Alertmanager**
+
+```bash
+vim /etc/alertmanager/alertmanager.yml
+```
+
+```yaml
+global:
+  resolve_timeout: 5m # mark alert "resolved" if not seen for 5 min
+
+route: # WHO gets the alert
+  receiver: "slack-notifications" # default receiver
+  routes:
+    - match:
+        severity: warning # alerts with severity=warning…
+      receiver: "slack-notifications" # …go to Slack
+
+receivers: # HOW to send it
+  - name: "slack-notifications"
+    slack_configs:
+      - api_url: "<your-slack-webhook-url>" # paste the copied webhook URL
+        channel: "#alertchannel"
+        text: |
+          ALERT: {{ .CommonAnnotations.summary }}
+          {{ .CommonAnnotations.description }}
+```
+
+| Block             | In simple                                                  |
+| ----------------- | ---------------------------------------------------------- |
+| `resolve_timeout` | After 5 min without the alert → marked **resolved**        |
+| `route`           | **Which alerts go where** — `severity: warning` → Slack    |
+| `receivers`       | **How to send** — Slack webhook + channel                  |
+| `text`            | The message — uses `summary` + `description` from the rule |
+
+`severity: warning` comes from the **rules file** (`labels: severity: warning`) → that's how the
+alert is matched to Slack.
+
+**C. Restart both services**
+
+```bash
+systemctl restart prometheus.service
+systemctl restart alertmanager.service
+```
+
+**D. Test** — add load on the web server:
+
+```bash
+apt update && apt install stress -y && stress -c 10
+```
+
+After ~1 minute, Slack `#alertchannel` gets:
+
+```
+ALERT: High CPU on 10.0.1.11
+CPU usage > 50% on 10.0.1.11
+```
+
+### Full Alert Flow
+
+```
+Web server CPU > 50% for 1 min
+   ▼
+Prometheus rule HighCPUUsage → Firing
+   ▼
+Alertmanager :9093 → route (severity: warning)
+   ▼
+Slack #alertchannel → team gets the message
+```
 
 ### References
 
