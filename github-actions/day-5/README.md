@@ -1,4 +1,4 @@
-# Day 5 — Input & Output Parameters, GitHub Copilot
+# Day 5 — Input & Output Parameters, GitHub Copilot, Zomato CI
 
 [← Day 4](../day-4/README.md) · [All notes](../README.md)
 
@@ -9,6 +9,8 @@
 - **Secrets:** sensitive inputs (passwords, tokens) — passed separately and hidden in logs.
 - **GitHub Copilot:** an AI coding assistant that helps generate, understand, troubleshoot, and
   improve code and automation.
+- **Zomato CI integration:** enterprise CI pipeline — build, CodeQL, Trivy, hadolint, Docker
+  Buildx, push to DockerHub, smoke test → [Zomato CI notes](./zomato-ci/README.md)
 
 <!-- toc -->
 
