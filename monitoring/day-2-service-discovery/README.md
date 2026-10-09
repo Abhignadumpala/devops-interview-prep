@@ -257,6 +257,143 @@ Node Exporter ──metrics──► Prometheus ──checks rule (CPU > 50%)─
 
 ### Steps
 
+| #   | Step                                                      | Where                      |
+| --- | --------------------------------------------------------- | -------------------------- |
+| 1   | Install **Prometheus + Alertmanager**, open port **9093** | Monitoring server          |
+| 2   | Install **Node Exporter**                                 | Web server(s)              |
+| 3   | Create `rules/` folder + write the **rules file**         | Monitoring server          |
+| 4   | Add **`rule_files`** — where the rules file is            | Monitoring server          |
+| 5   | Add **`alerting`** — where Alertmanager is                | Monitoring server          |
+| 6   | Restart Prometheus + check status                         | Monitoring server          |
+| 7   | Add load with `stress` → check alerts                     | Web server + Prometheus UI |
+
+### Step 1 — Create the IAM Role
+
+Prometheus needs **permission to read EC2** to know which servers exist.
+
+```
+IAM → Roles → Create role
+   ▼
+Trusted entity: AWS service → EC2
+   ▼
+Permission: AmazonEC2ReadOnlyAccess
+   ▼
+Role name: prometheus-role → Create
+```
+
+### Step 2 — Attach the Role to the Monitoring Server
+
+```
+EC2 → select prometheus-monitoring-server → Actions → Security → Modify IAM role
+   ▼
+Select prometheus-role → Update IAM role
+```
+
+### Step 3 — Node Exporter on All Nodes
+
+Put the Node Exporter script in the **launch template user data** → every VM the ASG creates gets
+Node Exporter **automatically**.
+
+**Also install Node Exporter on the monitoring server** and allow port **9100** in `monitoring-sg`.
+Service discovery finds **every EC2 in the region — including the monitoring server** — and without
+Node Exporter that server **cannot be monitored** (its target shows **DOWN**).
+
+| Server                       | Node Exporter | Port 9100 allowed in |
+| ---------------------------- | ------------- | -------------------- |
+| Worker VMs (Amazon app)      | ✅            | Worker SG            |
+| prometheus-monitoring-server | ✅            | `monitoring-sg`      |
+
+### Step 4 — Configure Prometheus
+
+```bash
+vim /etc/prometheus/prometheus.yml
+```
+
+Add this job under `scrape_configs:`
+
+```yaml
+scrape_configs:
+  - job_name: "ec2-discovery"
+
+    ec2_sd_configs:
+      - region: us-east-1 # region where the VMs run
+        port: 9100 # Node Exporter port
+
+    relabel_configs:
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: instance # show the VM's private IP as the instance name
+```
+
+| Line              | Meaning                                             |
+| ----------------- | --------------------------------------------------- |
+| `ec2_sd_configs`  | Find targets from **AWS EC2** (not a fixed IP list) |
+| `region`          | Which AWS region to look in                         |
+| `port: 9100`      | Scrape Node Exporter on each VM                     |
+| `relabel_configs` | Rename labels — here, show the **private IP**       |
+
+**In simple:** we use service discovery for region **us-east-1** on port **9100**. Every EC2 in
+us-east-1 has a **private IP**, so **all EC2s in that region are found and added** as targets.
+`relabel_configs` takes each VM's **private IP** (`__meta_ec2_private_ip`) and shows it as the
+**instance** name, so we can tell the VMs apart.
+
+```
+us-east-1: VM-1 (10.0.1.11), VM-2 (10.0.1.12), VM-3 (10.0.1.13)
+                │ ec2_sd_configs finds all of them
+                ▼
+targets: 10.0.1.11:9100, 10.0.1.12:9100, 10.0.1.13:9100   (instance = private IP)
+```
+
+**Only monitor VMs with a tag** (e.g. `Name=amazon-prod`):
+
+```yaml
+ec2_sd_configs:
+  - region: us-east-1
+    port: 9100
+    filters:
+      - name: tag:Name
+        values: [amazon-prod]
+```
+
+### Step 5 — Restart Prometheus and Check
+
+> After **any config change**, restart the service.
+
+```bash
+systemctl restart prometheus
+systemctl daemon-reload
+systemctl status prometheus # must show: active (running)
+```
+
+**Check:** Prometheus → **Status → Targets** → `ec2-discovery` now shows **multiple targets instead
+of 1** — all VMs added **automatically**. A new VM from the ASG appears **without editing the file
+again**.
+
+> Prometheus uses the **private IP**, so the workers' security group must allow **9100** from the
+> monitoring server.
+
+## Alertmanager
+
+**Alertmanager** = sends **alerts** (email, Slack…) when a **condition** we give is true — e.g.
+**CPU > 90%** → trigger an alarm.
+
+| Field          | Value                            |
+| -------------- | -------------------------------- |
+| **Purpose**    | Send alerts when a rule fires    |
+| **Sends to**   | Email, Slack, PagerDuty, mobile  |
+| **Port**       | **9093**                         |
+| **Install on** | **prometheus-monitoring-server** |
+
+```
+Node Exporter ──metrics──► Prometheus ──checks rule (CPU > 50%)──► fires ──► Alertmanager :9093 ──► Email / Slack
+```
+
+**Who does what:**
+
+- **Prometheus** checks the **rules** (the conditions).
+- **Alertmanager** **sends** the alert (email, Slack).
+
+### Steps
+
 | #   | Step                                                      | Where             |
 | --- | --------------------------------------------------------- | ----------------- |
 | 1   | Install **Prometheus + Alertmanager**, open port **9093** | Monitoring server |
@@ -317,10 +454,10 @@ alert fires: **"High CPU on &lt;server&gt;"**.
 
 > We use **50%** to test easily with `stress`; in real time it's usually **90%**.
 
-### Step 4 — Tell Prometheus About the Rules File
+### Step 4 — Tell Prometheus About the Rules File (`rule_files`)
 
-Writing the rules file is **not enough** — **how does Prometheus know about it?** We add its path
-under **`rule_files`** in `prometheus.yml`.
+Writing the rules file is **not enough** — **how does Prometheus know about it?** In
+`prometheus.yml` we mention **where the rules file comes from** and **its name**.
 
 ```bash
 vim /etc/prometheus/prometheus.yml
@@ -332,14 +469,46 @@ global:
   evaluation_interval: 15s # check the rules every 15 s
 
 rule_files:
-  - "rules/cpu_alert.yml" # path is relative to /etc/prometheus/
+  - "rules/cpu_alert.yml" # folder/file name — relative to /etc/prometheus/
+```
 
-alerting: # where to send fired alerts
+### Step 5 — Tell Prometheus Where Alertmanager Is (`alerting`)
+
+To **send** alerts, Prometheus must know where **Alertmanager** is. Add the `alerting` block in the
+same file:
+
+```yaml
+alerting:
   alertmanagers:
     - static_configs:
-        - targets: ["localhost:9093"]
+        - targets:
+            - "localhost:9093" # localhost = this monitoring server (Alertmanager is installed here)
+```
+
+> **localhost** = the **monitoring server** where Alertmanager is installed.
+
+**Full `prometheus.yml`** (keep your service discovery job too):
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "rules/cpu_alert.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "localhost:9093"
 
 scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets:
+          - "localhost:9090"
+
   - job_name: "ec2-discovery"
     ec2_sd_configs:
       - region: us-east-1
@@ -349,34 +518,45 @@ scrape_configs:
         target_label: instance
 ```
 
-| Block                 | Tells Prometheus                      |
-| --------------------- | ------------------------------------- |
-| `evaluation_interval` | How often to check the rules          |
-| `rule_files`          | **Where the rules file is**           |
-| `alerting`            | **Where Alertmanager is** (port 9093) |
-| `scrape_configs`      | Which servers to collect metrics from |
+| Block                 | Tells Prometheus                       |
+| --------------------- | -------------------------------------- |
+| `evaluation_interval` | How often to check the rules           |
+| `rule_files`          | **Where the rules file is** + its name |
+| `alerting`            | **Where Alertmanager is** (port 9093)  |
+| `scrape_configs`      | Which servers to collect metrics from  |
 
-### Step 5 — Restart and Check
+### Step 6 — Restart and Check Status
 
 ```bash
-promtool check config /etc/prometheus/prometheus.yml # checks config + rules files
-systemctl restart prometheus
-systemctl status prometheus # active (running)
+promtool check config /etc/prometheus/prometheus.yml # optional: checks config + rules
+systemctl restart prometheus.service
+systemctl status prometheus.service # must show: active (running)
 ```
 
-| Check in Prometheus (`:9090`) | You see                                            |
-| ----------------------------- | -------------------------------------------------- |
-| **Status → Rules**            | **All rules loaded** on this server (`cpu-alerts`) |
-| **Alerts**                    | `HighCPUUsage` → **Inactive / Pending / Firing**   |
+### Step 7 — Add Load and Check Alerts
 
-**Test:** run `stress -c 10` on the web server → alert goes **Pending** (waiting 1 min) →
-**Firing** → shows in Alertmanager `:9093`.
+On **any monitored server**, install `stress` and add CPU load:
 
-| State        | Meaning                                       |
-| ------------ | --------------------------------------------- |
-| **Inactive** | Condition false — all good                    |
-| **Pending**  | Condition true, waiting for `for: 1m`         |
-| **Firing**   | Still true after 1 min → sent to Alertmanager |
+```bash
+apt update && apt install stress -y
+stress -c 10 # 10 CPU workers → CPU goes above 50%
+```
+
+Then check in the **Prometheus console** (`http://<monitoring-ip>:9090`):
+
+| Page                 | You see                                        |
+| -------------------- | ---------------------------------------------- |
+| **Status → Rules**   | All rules loaded on this server (`cpu-alerts`) |
+| **Alerts**           | `HighCPUUsage` → **Pending** → **Firing**      |
+| Alertmanager `:9093` | The fired alert arrives here                   |
+
+| State        | Meaning                                        |
+| ------------ | ---------------------------------------------- |
+| **Inactive** | Condition false — all good                     |
+| **Pending**  | CPU > 50%, waiting for `for: 1m`               |
+| **Firing**   | Still > 50% after 1 min → sent to Alertmanager |
+
+Stop with `Ctrl + C` → CPU drops → alert goes back to **Inactive**.
 
 ### References
 
