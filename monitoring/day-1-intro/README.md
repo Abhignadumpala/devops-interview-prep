@@ -398,6 +398,75 @@ up{instance="localhost:9090",      job="prometheus_metrics"}      1   ← runnin
 - `[1m]` = values from the **last 1 minute**.
 - `rate(...)` = how fast it is increasing **per second**.
 
+> **Scrape interval:** by default Prometheus collects new data **every 1 minute**. We can reduce it to
+> **10 s or 15 s** with `scrape_interval` in `prometheus.yml` (we used `10s` / `5s`).
+
+### Part 10 — Why Grafana?
+
+**Problem:** in Prometheus, every time we want to see data we must **run a query**. Doing this again
+and again is **time-taking** and not possible in **real time** — not ideal.
+
+**Fix:** **Grafana** takes whatever data is in Prometheus and shows it as **visual dashboards** that
+update **in real time** — no need to run queries each time.
+
+```
+Prometheus (stores data) ──► Grafana (live dashboards)
+   run queries by hand          see everything visually, auto-updating
+```
+
+> **Purpose of Grafana = create dashboards.**
+
+### Part 11 — Connect Prometheus to Grafana (Data Source)
+
+**Data source** = tells Grafana **where the data is coming from** → here, Prometheus.
+
+```
+Login (admin / admin)
+   ▼
+Connections → Data sources → Add data source → Prometheus
+   ▼
+URL: http://<monitoring-ip>:9090/
+   ▼
+Save & test ✅ → "Data source is working"
+```
+
+Now **Prometheus can communicate with Grafana**.
+
+### Part 12 — Create a Dashboard (Import by ID)
+
+We don't build graphs by hand — we **import a ready-made dashboard** from the official
+[Grafana dashboards](https://grafana.com/grafana/dashboards/) site using its **ID**.
+
+```
+Dashboards → New → Import
+   ▼
+"Import via grafana.com" → ID 1860 → Load
+   ▼
+Select data source: Prometheus → Import
+```
+
+- **1860 = Node Exporter Full** → Grafana downloads this dashboard **automatically** using the ID.
+- You now see **live data** — CPU, memory, RAM, disk, network, even **how many processes are
+  running** — each in its **own panel**.
+
+### Part 13 — Test with Load (`stress`)
+
+On the **Amazon VM (worker)**, add load **on purpose** and watch the dashboard:
+
+```bash
+apt update && apt install stress -y && stress -c 10 # 10 CPU workers
+```
+
+- CPU panel goes **up** in Grafana — values keep changing **automatically**.
+- Stop with `Ctrl + C` → CPU comes back **down**.
+
+### Full Flow
+
+```
+Amazon VM ──► Node Exporter :9100 ──► Prometheus :9090 (TSDB) ──► Grafana :3000 (dashboard 1860)
+ (app)         collects metrics         stores + PromQL              live visual dashboards
+```
+
 ## Interview One-Liner
 
 Monitoring is analysing the performance of servers and applications using metrics like CPU, memory
@@ -411,3 +480,6 @@ metrics on port 9100 for Prometheus to collect.
 
 To monitor a server, add its `IP:9100` as a target in `prometheus.yml`, restart Prometheus, and
 query its metrics with PromQL (e.g. `up`, `node_memory_Active_bytes`).
+
+Grafana connects to Prometheus as a **data source** and shows its metrics as live dashboards, so we
+don't have to run PromQL queries by hand — e.g. dashboard **1860 (Node Exporter Full)**.
