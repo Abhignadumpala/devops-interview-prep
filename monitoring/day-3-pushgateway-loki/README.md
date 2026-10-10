@@ -318,6 +318,116 @@ Worker SG → **Edit inbound rules → Add rule**:
 > To keep it on a dashboard: **Dashboards → New → Add visualization → Loki** → `{job="applogs"}` →
 > visualization **Logs** → Save.
 
+### Step 8 — Live Logs
+
+Explore → Loki → `{job="applogs"}` → click **Live** (top right) → new log lines appear **as users
+open the app**.
+
+**One app log line** (`/var/log/nginx/access.log`):
+
+```
+2.82.252.24 - - [11/Oct/2026:10:15:02 +0000] "GET / HTTP/1.1" 403 153 "-" "Mozilla/5.0 ..."
+│                │                             │              │
+user's IP        time                          request        status code
+```
+
+| Status  | Meaning                                       |
+| ------- | --------------------------------------------- |
+| **200** | OK — user got the page                        |
+| **403** | **Forbidden** — user was **blocked**          |
+| **404** | **Not Found** — page / app not available      |
+| **5xx** | Server error — app is broken                  |
+
+### Step 9 — Find Errors: 404 and 403
+
+In Explore → **Label filters:** `job = applogs` → **+ Operations → Line contains** → type the code → **Run query**.
+
+| Want to see                         | Line contains | LogQL                          |
+| ----------------------------------- | ------------- | ------------------------------ |
+| Who got **404** (page not available) | `404`        | `{job="applogs"} \|= " 404 "`  |
+| Who got **403** (blocked)            | `403`        | `{job="applogs"} \|= " 403 "`  |
+
+> Put **spaces** around the code (`" 403 "`) so it matches the **status**, not a number inside a URL
+> or byte size.
+
+**Test 404:** open `http://<worker-public-ip>/abc` (a page that doesn't exist) → run the 404 query.
+
+### Step 10 — Block Everyone on Purpose (403 Test)
+
+**1. Add `deny all;`** inside the `http { … }` block:
+
+```bash
+vim /etc/nginx/nginx.conf
+```
+
+```nginx
+http {
+    deny all; # ← add: block every user (temporary, for the test)
+    ...
+}
+```
+
+**2. Check and restart:**
+
+```bash
+nginx -t                  # syntax is ok
+systemctl restart nginx
+```
+
+**3. Open the app** `http://<worker-public-ip>` → **403 Forbidden** → the app is blocked for everyone.
+
+**4. Grafana → run** `{job="applogs"} |= " 403 "` → you see every user who got blocked.
+
+**5. Undo** → remove `deny all;` → `nginx -t` → `systemctl restart nginx` → app works again (200).
+
+```
+deny all ──► every request gets 403 ──► access.log ──► Promtail ──► Loki ──► Grafana shows who was blocked
+```
+
+### Step 11 — Who Was Affected? How Many?
+
+**Which IPs got blocked** (and how many times each):
+
+```
+sum by (ip) (count_over_time({job="applogs"} |= " 403 " | pattern "<ip> <_>" [1h]))
+```
+
+**How many different users** were affected:
+
+```
+count(sum by (ip) (count_over_time({job="applogs"} |= " 403 " | pattern "<ip> <_>" [1h])))
+```
+
+**Error % of all requests** (last 5 min):
+
+```
+sum(count_over_time({job="applogs"} |= " 403 " [5m])) / sum(count_over_time({job="applogs"}[5m])) * 100
+```
+
+| Part                     | Meaning                                               |
+| ------------------------ | ----------------------------------------------------- |
+| `\|= " 403 "`            | Keep only blocked requests                            |
+| `pattern "<ip> <_>"`     | Take the **first word** of the line = user's **IP**   |
+| `count_over_time([1h])`  | Count log lines in the last 1 hour                    |
+| `sum by (ip)`            | One row **per IP** → who + how many times             |
+| `count(...)`             | Number of rows = **how many users** affected          |
+
+> Use **Table** view in Explore to read IP → count clearly.
+
+## SLA — Why These Errors Matter
+
+**SLA (Service Level Agreement)** = a promise of how much time the app is **available**.
+**99.9%** → the app must work for **almost everyone, almost all the time**.
+
+| SLA        | Allowed downtime / month | / year     |
+| ---------- | ------------------------ | ---------- |
+| 99%        | ~7.2 hours               | ~3.65 days |
+| **99.9%**  | **~43 minutes**          | ~8.8 hours |
+| 99.99%     | ~4.3 minutes             | ~53 minutes |
+
+**How Loki helps:** 403 / 404 / 5xx logs show **when** the app was unavailable, **how many users**
+were affected and **who** (their IPs) — so we fix it fast and protect the SLA.
+
 ## Promtail on Kubernetes — DaemonSet
 
 **DaemonSet** = a Kubernetes object that runs **one copy of a pod on every node**. New node joins
@@ -345,6 +455,9 @@ Kubernetes cluster
 
 > Grafana RBAC controls user permissions — I create users, group them into teams, and give teams
 > View / Edit / Admin on folders.
+
+> With Loki I find who was affected by an outage — filter app logs for `403` / `404`, pull the
+> client IP with `pattern`, and count unique IPs — to measure impact against a 99.9% SLA.
 
 > Loki collects logs from every server: Promtail (an agent on each VM, a DaemonSet in Kubernetes)
 > pushes logs to Loki on port 3100, and Grafana shows logs next to Prometheus metrics.
