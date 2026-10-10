@@ -409,22 +409,7 @@ systemctl status prometheus --no-pager
 
 ### Part 6 — Install Grafana
 
-Install on the **same `prometheus-monitoring-server`** as Prometheus — **not** a separate server,
-**not** the worker.
-
-```
-prometheus-monitoring-server
-├── Prometheus :9090   (Part 5)
-└── Grafana    :3000   (Part 6)  ← here
-```
-
-| Why same server?                                           |
-| ---------------------------------------------------------- |
-| Grafana reads data from Prometheus → `http://localhost:9090` |
-| `monitoring-sg` already has port **3000** open             |
-| One server = less cost for a lab                           |
-
-Still logged in as root on the monitoring server (if not: `ssh -i <key.pem> ubuntu@<monitoring-public-ip>` → `sudo su -`):
+Install Grafana on the **same monitoring server** (where Prometheus is), as root:
 
 ```bash
 vim grafana.sh # paste the script below, save
