@@ -90,7 +90,10 @@ Servers 1, 2, 3 and 5 have Node Exporter → **monitored**. Server 4 doesn't →
 | ---------- | ---- | -------------------------------------------------------- | ------------------------------ |
 | SSH        | 22   | My IP                                                    | You log in                     |
 | HTTP       | 80   | 0.0.0.0/0 (Anywhere)                                     | Anyone can open the Amazon app |
+| Custom TCP | 9100 | My IP                                                    | See metrics in your browser    |
 | Custom TCP | 9100 | `monitoring-sg` (or Prometheus server's private IP/32)   | Only Prometheus pulls metrics  |
+
+> `monitoring-sg` as source only lets **Prometheus** in, not your browser. Add **My IP** too to open `http://<worker-ip>:9100/metrics`.
 
 **prometheus-monitoring-server SG (`monitoring-sg`)**
 
@@ -267,7 +270,7 @@ mv prometheus-2.43.0.linux-amd64/console_libraries /etc/prometheus
 ls /etc/prometheus
 rm -rvf prometheus-2.43.0.linux-amd64*
 
-# config: what to monitor (replace <worker-ip>)
+# config: what to monitor (replace <worker-private-ip> — SG source rules only match private IPs)
 cat <<EOF > /etc/prometheus/prometheus.yml
 global:
   scrape_interval: 10s
@@ -280,7 +283,7 @@ scrape_configs:
   - job_name: 'node_exporter_metrics'
     scrape_interval: 5s
     static_configs:
-      - targets: ['<worker-ip>:9100']
+      - targets: ['<worker-private-ip>:9100']
 EOF
 
 # create a user and give it the folders
