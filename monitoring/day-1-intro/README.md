@@ -497,7 +497,7 @@ up{instance="localhost:9090",      job="prometheus_metrics"}      1   ← runnin
 | To show                                  | Query                                              |
 | ---------------------------------------- | -------------------------------------------------- |
 | Which servers are running (1=up, 0=down) | `up`                                               |
-| Total requests to the server             | `promhttp_metric_handler_requests_total`           |
+| Times `/metrics` was scraped             | `promhttp_metric_handler_requests_total`           |
 | Requests in the last 1 minute            | `promhttp_metric_handler_requests_total[1m]`       |
 | Requests **per second** (rate)           | `rate(promhttp_metric_handler_requests_total[1m])` |
 | Memory                                   | `node_memory_Active_bytes`                         |
@@ -506,6 +506,42 @@ up{instance="localhost:9090",      job="prometheus_metrics"}      1   ← runnin
 
 - `[1m]` = values from the **last 1 minute**.
 - `rate(...)` = how fast it is increasing **per second**.
+
+**Query — `promhttp_metric_handler_requests_total`** = how many times each target's `/metrics`
+page was requested, split by HTTP status code.
+
+```
+promhttp_metric_handler_requests_total{code="200", instance="172.31.0.57:9100", ...}   58
+promhttp_metric_handler_requests_total{code="200", instance="localhost:9090",   ...}   345
+promhttp_metric_handler_requests_total{code="500", ...}                                0
+promhttp_metric_handler_requests_total{code="503", ...}                                0
+```
+
+| Code | Meaning                 | Want    |
+| ---- | ----------------------- | ------- |
+| 200  | Scrape OK               | Growing |
+| 500  | Internal server error   | 0       |
+| 503  | Service unavailable     | 0       |
+
+**Who made 58 / 345 requests? Not me — Prometheus.** It **pulls** `/metrics` by itself every
+`scrape_interval` (5 s), all the time.
+
+```
+Prometheus ──every 5s──► GET 172.31.0.57:9100/metrics  → worker counter +1
+Prometheus ──every 5s──► GET localhost:9090/metrics    → its own counter +1
+```
+
+| Value | Math                  | Meaning                                    |
+| ----- | --------------------- | ------------------------------------------ |
+| 58    | 58 × 5 s ≈ 5 min      | Worker UP for ~5 min (since SG fix)        |
+| 345   | 345 × 5 s ≈ 29 min    | Prometheus running ~29 min (since restart) |
+
+- Run again after 1 min → worker value **+12** (60 s ÷ 5 s).
+- Opening `/metrics` in your browser adds only **+1**.
+- `_total` = **counter** → only goes up, resets to 0 on restart → use `rate(...)` to see per second
+  (here ≈ **0.2**/s = 1 scrape every 5 s).
+
+> **Pull model:** Prometheus pulls the data; servers don't push it.
 
 > **Scrape interval:** by default Prometheus collects new data **every 1 minute**. We can reduce it to
 > **10 s or 15 s** with `scrape_interval` in `prometheus.yml` (we used `10s` / `5s`).
