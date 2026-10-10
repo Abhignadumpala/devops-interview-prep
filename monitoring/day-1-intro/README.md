@@ -265,6 +265,14 @@ Node Exporter (no DB) ──metrics──► Prometheus (stores in TSDB) ──�
 
 ### Part 5 — Install Prometheus
 
+**Before running:** get the worker's **private IP** and put it in the script in place of
+`<worker-private-ip>`.
+
+| Where to find it      | How                                                    |
+| --------------------- | ------------------------------------------------------ |
+| EC2 console           | Worker instance → **Private IPv4 address**             |
+| On the worker         | `hostname -I` (or prompt `ip-172-31-0-57` → `172.31.0.57`) |
+
 SSH into the monitoring server, switch to root:
 
 ```bash
@@ -340,6 +348,16 @@ systemctl start prometheus && systemctl status prometheus --no-pager
 | `/var/lib/prometheus`    | **TSDB data** (metrics stored on disk)           |
 | `prometheus.yml`         | **targets** = which servers to scrape, every 5 s |
 | `prometheus.service`     | Runs Prometheus as a service                     |
+
+**Forgot to replace the IP?** Fix the config with vim and restart:
+
+```bash
+vim /etc/prometheus/prometheus.yml   # change <worker-private-ip> → 172.31.0.57, save (Esc → :wq)
+systemctl restart prometheus
+systemctl status prometheus --no-pager
+```
+
+> Any change to `prometheus.yml` → **restart Prometheus** to load it.
 
 ### Part 6 — Install Grafana
 
