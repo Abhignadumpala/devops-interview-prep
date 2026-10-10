@@ -271,16 +271,105 @@ Node Exporter ──metrics──► Prometheus ──checks rule (CPU > 50%)─
 
 ### Step 1 — Install Alertmanager
 
-On the monitoring server, then **allow port 9093** in `monitoring-sg`.
+Install on the **same monitoring server** (where Prometheus is), as root. Then **allow port 9093**
+(My IP) in `monitoring-sg`.
 
 ```bash
-wget https://github.com/prometheus/alertmanager/releases/download/v0.25.0/alertmanager-0.25.0.linux-amd64.tar.gz
-tar -xf alertmanager-0.25.0.linux-amd64.tar.gz
-cd alertmanager-0.25.0.linux-amd64
-./alertmanager --config.file=alertmanager.yml &
+ssh -i <key.pem> ubuntu@<monitoring-public-ip>
+sudo su -
+vim alertmanager.sh # paste the script below, save (Esc → :wq)
+sh alertmanager.sh
 ```
 
-Check: `http://<monitoring-ip>:9093` → Alertmanager UI.
+```bash
+#!/bin/bash
+set -e   # stop the script if any command fails
+
+# variables
+VERSION="0.25.0"
+CONFIG_DIR="/etc/alertmanager"
+DATA_DIR="/var/lib/alertmanager"
+
+# download and extract
+cd /tmp
+wget https://github.com/prometheus/alertmanager/releases/download/v${VERSION}/alertmanager-${VERSION}.linux-amd64.tar.gz
+tar -xf alertmanager-${VERSION}.linux-amd64.tar.gz
+
+# move the binaries (alertmanager + amtool)
+mv alertmanager-${VERSION}.linux-amd64/alertmanager /usr/local/bin/
+mv alertmanager-${VERSION}.linux-amd64/amtool /usr/local/bin/
+
+# create a user for the service (no login) — skip if it exists
+id alertmanager || useradd -rs /bin/false alertmanager
+
+# create directories for config and data
+mkdir -p ${CONFIG_DIR} ${DATA_DIR}
+
+# default config (Slack is added later in Step 9)
+cat <<EOF > ${CONFIG_DIR}/alertmanager.yml
+route:
+  receiver: "default"
+
+receivers:
+  - name: "default"
+EOF
+
+# give the folders to the alertmanager user
+chown -R alertmanager: ${CONFIG_DIR} ${DATA_DIR}
+
+# clean up
+rm -rf /tmp/alertmanager-${VERSION}.linux-amd64*
+
+# create the systemd service
+cat <<EOF > /etc/systemd/system/alertmanager.service
+[Unit]
+Description=Alertmanager
+After=network.target
+
+[Service]
+User=alertmanager
+Group=alertmanager
+Type=simple
+ExecStart=/usr/local/bin/alertmanager \
+  --config.file=${CONFIG_DIR}/alertmanager.yml \
+  --storage.path=${DATA_DIR}
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# start Alertmanager
+systemctl daemon-reload
+systemctl enable alertmanager
+systemctl start alertmanager
+systemctl status alertmanager --no-pager
+```
+
+| Script step              | What it does                                       |
+| ------------------------ | -------------------------------------------------- |
+| `set -e`                 | Stop on the first error                            |
+| `VERSION=…`              | Change the version in one place                    |
+| `alertmanager`, `amtool` | Alertmanager server + CLI to check config / alerts |
+| `id … \|\| useradd`      | Create the user only if it doesn't exist           |
+| `/etc/alertmanager`      | Config (`alertmanager.yml`)                        |
+| `/var/lib/alertmanager`  | Data (silences, notification state)                |
+| `Restart=always`         | Auto-restart if it crashes                         |
+
+**Check:**
+
+```bash
+systemctl status alertmanager --no-pager   # active (running)
+curl -s localhost:9093/-/ready             # OK
+```
+
+Browser: `http://<monitoring-public-ip>:9093` → Alertmanager UI.
+
+| Port | Type       | Source | Where           |
+| ---- | ---------- | ------ | --------------- |
+| 9093 | Custom TCP | My IP  | `monitoring-sg` |
+
+> Prometheus → Alertmanager uses `localhost:9093` (same server) → no extra SG rule needed for that.
 
 ### Step 2 — Node Exporter on the Web Server
 
