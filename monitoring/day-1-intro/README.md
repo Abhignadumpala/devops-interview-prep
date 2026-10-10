@@ -174,20 +174,22 @@ vim node-exporter # paste the script below, save (Esc → :wq)
 sh node-exporter
 ```
 
+> `sudo -i` = switch to **root** once, so no `sudo` is needed in the scripts. Type `exit` to go back to `ubuntu`.
+
 ```bash
 # download and extract
 wget https://github.com/prometheus/node_exporter/releases/download/v1.5.0/node_exporter-1.5.0.linux-amd64.tar.gz
 tar -xf node_exporter-1.5.0.linux-amd64.tar.gz
 
 # move the binary and clean up
-sudo mv node_exporter-1.5.0.linux-amd64/node_exporter /usr/local/bin
+mv node_exporter-1.5.0.linux-amd64/node_exporter /usr/local/bin
 rm -rv node_exporter-1.5.0.linux-amd64*
 
 # create a user for the service (no login)
-sudo useradd -rs /bin/false node_exporter
+useradd -rs /bin/false node_exporter
 
 # create the systemd service
-sudo cat <<EOF | sudo tee /etc/systemd/system/node_exporter.service
+cat <<EOF > /etc/systemd/system/node_exporter.service
 [Unit]
 Description=Node Exporter
 After=network.target
@@ -203,9 +205,9 @@ WantedBy=multi-user.target
 EOF
 
 # start the service
-sudo cat /etc/systemd/system/node_exporter.service
-sudo systemctl daemon-reload && sudo systemctl enable node_exporter
-sudo systemctl start node_exporter.service && sudo systemctl status node_exporter.service --no-pager
+cat /etc/systemd/system/node_exporter.service
+systemctl daemon-reload && systemctl enable node_exporter
+systemctl start node_exporter.service && systemctl status node_exporter.service --no-pager
 ```
 
 | Script step              | What it does                           |
@@ -247,6 +249,8 @@ Node Exporter (no DB) ──metrics──► Prometheus (stores in TSDB) ──�
 SSH into the monitoring server, switch to root:
 
 ```bash
+ssh -i <key.pem> ubuntu@<monitoring-ip>
+sudo -i
 vim monitoring.sh # paste the script below, save
 sh monitoring.sh
 ```
@@ -255,16 +259,16 @@ sh monitoring.sh
 # download and extract Prometheus
 wget https://github.com/prometheus/prometheus/releases/download/v2.43.0/prometheus-2.43.0.linux-amd64.tar.gz
 tar -xf prometheus-2.43.0.linux-amd64.tar.gz
-sudo mv prometheus-2.43.0.linux-amd64/prometheus prometheus-2.43.0.linux-amd64/promtool /usr/local/bin
+mv prometheus-2.43.0.linux-amd64/prometheus prometheus-2.43.0.linux-amd64/promtool /usr/local/bin
 
 # create directories for config and data
-sudo mkdir /etc/prometheus /var/lib/prometheus
-sudo mv prometheus-2.43.0.linux-amd64/console_libraries /etc/prometheus
+mkdir /etc/prometheus /var/lib/prometheus
+mv prometheus-2.43.0.linux-amd64/console_libraries /etc/prometheus
 ls /etc/prometheus
-sudo rm -rvf prometheus-2.43.0.linux-amd64*
+rm -rvf prometheus-2.43.0.linux-amd64*
 
 # config: what to monitor (replace <worker-ip>)
-sudo cat <<EOF | sudo tee /etc/prometheus/prometheus.yml
+cat <<EOF > /etc/prometheus/prometheus.yml
 global:
   scrape_interval: 10s
 
@@ -280,12 +284,12 @@ scrape_configs:
 EOF
 
 # create a user and give it the folders
-sudo useradd -rs /bin/false prometheus
-sudo chown -R prometheus: /etc/prometheus /var/lib/prometheus
-sudo ls -l /etc/prometheus/
+useradd -rs /bin/false prometheus
+chown -R prometheus: /etc/prometheus /var/lib/prometheus
+ls -l /etc/prometheus/
 
 # create the systemd service
-sudo cat <<EOF | sudo tee /etc/systemd/system/prometheus.service
+cat <<EOF > /etc/systemd/system/prometheus.service
 [Unit]
 Description=Prometheus
 After=network.target
@@ -305,9 +309,9 @@ WantedBy=multi-user.target
 EOF
 
 # start Prometheus
-sudo ls -l /etc/systemd/system/prometheus.service
-sudo systemctl daemon-reload && sudo systemctl enable prometheus
-sudo systemctl start prometheus && sudo systemctl status prometheus --no-pager
+ls -l /etc/systemd/system/prometheus.service
+systemctl daemon-reload && systemctl enable prometheus
+systemctl start prometheus && systemctl status prometheus --no-pager
 ```
 
 | Part                     | What it does                                     |
@@ -320,19 +324,21 @@ sudo systemctl start prometheus && sudo systemctl status prometheus --no-pager
 
 ### Part 6 — Install Grafana
 
+Same server, still as root:
+
 ```bash
 vim grafana.sh # paste the script below, save
 sh grafana.sh
 ```
 
 ```bash
-sudo apt-get install -y adduser libfontconfig1
+apt-get install -y adduser libfontconfig1
 wget https://dl.grafana.com/enterprise/release/grafana-enterprise_9.4.7_amd64.deb
-sudo dpkg -i grafana-enterprise_9.4.7_amd64.deb
-sudo /bin/systemctl daemon-reload
-sudo /bin/systemctl enable grafana-server
-sudo /bin/systemctl start grafana-server
-sudo /bin/systemctl status grafana-server --no-pager
+dpkg -i grafana-enterprise_9.4.7_amd64.deb
+systemctl daemon-reload
+systemctl enable grafana-server
+systemctl start grafana-server
+systemctl status grafana-server --no-pager
 ```
 
 ### Part 7 — Open in Browser
