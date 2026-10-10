@@ -84,6 +84,24 @@ Servers 1, 2, 3 and 5 have Node Exporter → **monitored**. Server 4 doesn't →
 | **Worker node**                  | Amazon app + Node Exporter | 22, **80**, **9100**                     |
 | **prometheus-monitoring-server** | Prometheus + Grafana       | 22, **9090**, **3000** (`monitoring-sg`) |
 
+**Worker node SG**
+
+| Type       | Port | Source                                                   | Why                            |
+| ---------- | ---- | -------------------------------------------------------- | ------------------------------ |
+| SSH        | 22   | My IP                                                    | You log in                     |
+| HTTP       | 80   | 0.0.0.0/0 (Anywhere)                                     | Anyone can open the Amazon app |
+| Custom TCP | 9100 | `monitoring-sg` (or Prometheus server's private IP/32)   | Only Prometheus pulls metrics  |
+
+**prometheus-monitoring-server SG (`monitoring-sg`)**
+
+| Type       | Port | Source | Why                           |
+| ---------- | ---- | ------ | ----------------------------- |
+| SSH        | 22   | My IP  | You log in                    |
+| Custom TCP | 9090 | My IP  | Prometheus UI in your browser |
+| Custom TCP | 3000 | My IP  | Grafana UI in your browser    |
+
+> Why HTTP for 80 but Custom TCP for 9090? → [Security Group Types — HTTP vs Custom TCP](../../aws/security-group-types/README.md)
+
 ### Part 1 — Worker Node: Amazon App
 
 **1. Launch an EC2 (Ubuntu)** → under **Advanced details → User data**, paste this. It installs
