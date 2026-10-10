@@ -98,7 +98,7 @@ Servers 1, 2, 3 and 5 have Node Exporter → **monitored**. Server 4 doesn't →
 **Why 2 rules for port 9100?** Two different visitors, and one rule allows only one source.
 
 ```
-Your laptop (My IP)  ──► :9100   ← rule 3   (browser: http://<worker-ip>:9100/metrics)
+Your laptop (My IP)  ──► :9100   ← rule 3   (browser: http://<worker-public-ip>:9100/metrics)
 Prometheus server    ──► :9100   ← rule 4   (monitoring-sg)
 ```
 
@@ -120,6 +120,54 @@ Prometheus server    ──► :9100   ← rule 4   (monitoring-sg)
 | 3 | Custom TCP | 3000 | My IP  | Grafana UI in your browser    |
 
 > Why HTTP for 80 but Custom TCP for 9090? → [Security Group Types — HTTP vs Custom TCP](../../aws/security-group-types/README.md)
+
+### Quick Reference — Commands, IPs, Restarts
+
+**Which IP goes where**
+
+| Where you use it                         | IP to use                  | Why                                   |
+| ---------------------------------------- | -------------------------- | ------------------------------------- |
+| `ssh` from your laptop                   | **Public** IP              | Laptop is outside AWS                 |
+| Browser (`:80`, `:9100`, `:9090`, `:3000`) | **Public** IP            | Browser is outside AWS                |
+| `prometheus.yml` → `targets`             | Worker **private** IP      | SG rule `monitoring-sg` matches private IPs only |
+| Grafana → Data source URL                | `http://localhost:9090`    | Grafana and Prometheus on same server |
+
+> Private IP: EC2 console → **Private IPv4 address**, or `hostname -I` on the server.
+> Public IP changes after **stop/start** → check the console again.
+
+**Order of work**
+
+| # | Server     | Do                                            | Command / Where                                  |
+| - | ---------- | --------------------------------------------- | ------------------------------------------------ |
+| 1 | Worker     | Login as root                                 | `ssh -i <key.pem> ubuntu@<worker-public-ip>` → `sudo su -` |
+| 2 | Worker     | Install Node Exporter                         | `vim node-exporter` → `sh node-exporter`         |
+| 3 | Worker     | Check                                         | `curl -s localhost:9100/metrics \| head`         |
+| 4 | AWS        | Create monitoring server + `monitoring-sg`    | 22, 9090, 3000 from My IP                        |
+| 5 | AWS        | Worker SG → add 9100 from `monitoring-sg`     | Rule 4 in the table above                        |
+| 6 | Monitoring | Login as root                                 | `ssh -i <key.pem> ubuntu@<monitoring-public-ip>` → `sudo su -` |
+| 7 | Monitoring | Put worker private IP in script, install      | `vim monitoring.sh` → `sh monitoring.sh`         |
+| 8 | Browser    | Check targets                                 | `http://<monitoring-public-ip>:9090` → Status → Targets = **UP** |
+| 9 | Monitoring | Install Grafana                               | `vim grafana.sh` → `sh grafana.sh`               |
+| 10 | Browser   | Grafana → add data source                     | `http://<monitoring-public-ip>:3000` → URL `http://localhost:9090` |
+
+**When to restart**
+
+| You changed                         | Run                                              |
+| ----------------------------------- | ------------------------------------------------ |
+| `prometheus.yml` (targets, rules)   | `systemctl restart prometheus`                   |
+| A `.service` file                   | `systemctl daemon-reload` → `systemctl restart <name>` |
+| Security group rule                 | Nothing — applies instantly                      |
+| Grafana data source / dashboard     | Nothing — saved in the UI                        |
+
+**Useful commands**
+
+| Command                                         | What it does                       |
+| ----------------------------------------------- | ---------------------------------- |
+| `systemctl status <name> --no-pager`            | Running? (`q` exits the pager)     |
+| `journalctl -u <name> -n 20`                    | Last 20 log lines — why it failed  |
+| `cat /etc/prometheus/prometheus.yml`            | See current targets                |
+| `curl -s ifconfig.me`                           | This server's public IP            |
+| `hostname -I`                                   | This server's private IP           |
 
 ### Part 1 — Worker Node: Amazon App
 
@@ -180,14 +228,14 @@ systemctl restart nginx
 
 **2. Security group** → allow **22** (SSH) and **80** (HTTP).
 
-**3. Check** → open `http://<worker-ip>` → the Amazon page shows.
+**3. Check** → open `http://<worker-public-ip>` → the Amazon page shows.
 
 ### Part 2 — Worker Node: Install Node Exporter
 
 To collect **CPU, RAM, disk** metrics from the worker, install Node Exporter on it.
 
 ```bash
-ssh -i <key.pem> ubuntu@<worker-ip>
+ssh -i <key.pem> ubuntu@<worker-public-ip>
 sudo su -
 vim node-exporter # paste the script below, save (Esc → :wq)
 sh node-exporter
@@ -237,7 +285,7 @@ systemctl start node_exporter.service && systemctl status node_exporter.service 
 | `node_exporter.service`  | Run it as a service (starts on boot)   |
 | `systemctl enable/start` | Start it now and on every reboot       |
 
-**Allow port 9100** in the worker's security group → check `http://<worker-ip>:9100/metrics`.
+**Allow port 9100** in the worker's security group → check `http://<worker-public-ip>:9100/metrics`.
 
 ### Part 3 — Why Prometheus?
 
@@ -276,7 +324,7 @@ Node Exporter (no DB) ──metrics──► Prometheus (stores in TSDB) ──�
 SSH into the monitoring server, switch to root:
 
 ```bash
-ssh -i <key.pem> ubuntu@<monitoring-ip>
+ssh -i <key.pem> ubuntu@<monitoring-public-ip>
 sudo su -
 vim monitoring.sh # paste the script below, save
 sh monitoring.sh
@@ -382,10 +430,10 @@ systemctl status grafana-server --no-pager
 
 | Open                              | You see                                    |
 | --------------------------------- | ------------------------------------------ |
-| `http://<worker-ip>`              | Amazon sample app                          |
-| `http://<worker-ip>:9100/metrics` | Raw metrics from Node Exporter             |
-| `http://<monitoring-ip>:9090`     | Prometheus → **Status → Targets** = **UP** |
-| `http://<monitoring-ip>:3000`     | Grafana login (`admin` / `admin`)          |
+| `http://<worker-public-ip>`              | Amazon sample app                          |
+| `http://<worker-public-ip>:9100/metrics` | Raw metrics from Node Exporter             |
+| `http://<monitoring-public-ip>:9090`     | Prometheus → **Status → Targets** = **UP** |
+| `http://<monitoring-public-ip>:3000`     | Grafana login (`admin` / `admin`)          |
 
 > **Grafana default login:** username `admin`, password `admin` (it asks you to set a new one).
 
@@ -408,13 +456,13 @@ On the **monitoring server**, open the Prometheus config:
 vim /etc/prometheus/prometheus.yml
 ```
 
-Under `targets`, add the **IP of the server you are monitoring** (the Amazon VM) with port **9100**:
+Under `targets`, add the **private IP of the server you are monitoring** (the Amazon VM) with port **9100**:
 
 ```yaml
 - job_name: "node_exporter_metrics"
   scrape_interval: 5s
   static_configs:
-    - targets: ["<amazon-vm-ip>:9100"] # add more: ['ip1:9100', 'ip2:9100']
+    - targets: ["<worker-private-ip>:9100"] # add more: ['ip1:9100', 'ip2:9100']
 ```
 
 > **NOTE: After modifying the config of any service, we need to restart it.**
@@ -423,7 +471,7 @@ Under `targets`, add the **IP of the server you are monitoring** (the Amazon VM)
 systemctl restart prometheus.service
 ```
 
-**Check:** `http://<monitoring-ip>:9090` → **Status → Targets** → Amazon VM shows **UP** ✅.
+**Check:** `http://<monitoring-public-ip>:9090` → **Status → Targets** → Amazon VM shows **UP** ✅.
 
 ```
 Amazon VM (Node Exporter :9100) ──► target in prometheus.yml ──► restart ──► UP in Prometheus
@@ -440,7 +488,7 @@ In Prometheus (`:9090`) → type the query in the search box → **Execute** →
 **First query — `up`** = shows the **number of servers running**.
 
 ```
-up{instance="<amazon-vm-ip>:9100", job="node_exporter_metrics"}   1   ← running
+up{instance="<worker-private-ip>:9100", job="node_exporter_metrics"}   1   ← running
 up{instance="localhost:9090",      job="prometheus_metrics"}      1   ← running
 ```
 
@@ -486,7 +534,7 @@ Login (admin / admin)
    ▼
 Connections → Data sources → Add data source → Prometheus
    ▼
-URL: http://<monitoring-ip>:9090/
+URL: http://localhost:9090   (Grafana + Prometheus on the same server)
    ▼
 Save & test ✅ → "Data source is working"
 ```
