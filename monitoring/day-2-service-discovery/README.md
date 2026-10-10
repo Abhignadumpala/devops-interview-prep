@@ -443,35 +443,40 @@ alerting:
 
 > **localhost** = the **monitoring server** where Alertmanager is installed.
 
-**Full `prometheus.yml`** (keep your service discovery job too):
+**Full `prometheus.yml`** — my lab file (`/etc/prometheus/prometheus.yml` on the monitoring server):
 
 ```yaml
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval: 15s # collect metrics every 15 s
+  evaluation_interval: 15s # check the rules every 15 s
 
 rule_files:
-  - "rules/cpu_alert.yml"
+  - "rules/cpu_alert.yml" # folder/file name — relative to /etc/prometheus/
 
 alerting:
   alertmanagers:
     - static_configs:
         - targets:
-            - "localhost:9093"
+            - "localhost:9093" # Alertmanager on this same monitoring server
 
 scrape_configs:
-  - job_name: "prometheus"
-    static_configs:
-      - targets:
-          - "localhost:9090"
-
   - job_name: "ec2-discovery"
+
     ec2_sd_configs:
-      - region: us-east-1
-        port: 9100
+      - region: us-east-1 # region where the VMs run
+        port: 9100 # Node Exporter port
+
     relabel_configs:
       - source_labels: [__meta_ec2_private_ip]
-        target_label: instance
+        target_label: instance # show the VM's private IP as the instance name
+```
+
+```
+prometheus.yml
+├── global          → how often to scrape + check rules
+├── rule_files      → WHAT to alert on   (rules/cpu_alert.yml)
+├── alerting        → WHERE to send it   (Alertmanager localhost:9093)
+└── scrape_configs  → WHO to collect from (all EC2s found in us-east-1 on :9100)
 ```
 
 | Block                 | Tells Prometheus                       |
