@@ -650,6 +650,128 @@ Slack #alertchannel → team gets the message
 - [Alerting rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
 - [Slack / PagerDuty / Gmail integration guide](https://grafana.com/blog/step-by-step-guide-to-setting-up-prometheus-alertmanager-with-slack-pagerduty-and-gmail/)
 
+## Hands-On — My Lab Run (2026-10-10)
+
+| Server                         | Private IP    | Runs                                   |
+| ------------------------------ | ------------- | -------------------------------------- |
+| Monitoring (`ip-172-31-13-45`) | 172.31.13.45  | Prometheus + Grafana + Alertmanager + Node Exporter |
+| worker1                        | 172.31.0.57   | Amazon app + Node Exporter             |
+| worker2                        | 172.31.4.189  | Amazon app + Node Exporter             |
+| worker3                        | 172.31.14.182 | Amazon app + Node Exporter             |
+
+```
+worker1, worker2, worker3 (:9100) ◄── EC2 SD (IAM role) ── Prometheus :9090 ── rule fires ──► Alertmanager :9093
+                                                               │
+                                                               └──► Grafana :3000
+```
+
+### Part A — Scale Out + EC2 Service Discovery
+
+**1. Create 2 more workers** → worker1 → **Actions → Image and templates → Launch more like this** (×2).
+
+> "Launch more like this" copies **settings** (AMI, type, SG, key, user data) — **not** installed
+> software → install **Node Exporter** on each new VM again.
+
+Set a name on each VM:
+
+```bash
+hostnamectl set-hostname worker3
+exec bash   # prompt shows the new name
+```
+
+**2. Attach the IAM role** → monitoring server → **Actions → Security → Modify IAM role** →
+`prometheus-role` (AmazonEC2ReadOnlyAccess) → **Update IAM role**.
+
+![Attach IAM role](./images/handson/01-iam-role-attach.png)
+
+![IAM role on the monitoring server](./images/handson/02-iam-role-on-instance.png)
+
+**3. Add `ec2-discovery` to `prometheus.yml`** → restart → logs: **"Completed loading of
+configuration file"**.
+
+![Restart Prometheus with EC2 SD](./images/handson/03-prometheus-restart-ec2-sd.png)
+
+**4. Targets → `ec2-discovery (4/4 up)`** — no IPs typed by hand.
+
+![4 targets UP](./images/handson/04-targets-4-up.png)
+
+> EC2 SD finds **all** my VMs in `us-east-1` — also the monitoring server (172.31.13.45) because it
+> has Node Exporter too. How only **my** VMs? Prometheus asks the **AWS API** with the IAM role →
+> AWS returns only **my account's** instances.
+
+### Part B — Alertmanager
+
+**5. Install Alertmanager** (script in Step 1) → `active (running)`.
+
+![Alertmanager install](./images/handson/05-alertmanager-install.png)
+
+**6. Open port 9093** in the monitoring server SG.
+
+![Monitoring SG with 9093](./images/handson/06-monitoring-sg-9093.png)
+
+> I opened 9093 to `0.0.0.0/0` — better: **My IP** only, like 9090 and 3000.
+
+**7. Write the rule** → `mkdir /etc/prometheus/rules` → `vim /etc/prometheus/rules/cpu_alert.yml`
+
+![CPU alert rule](./images/handson/07-cpu-alert-rule.png)
+
+**8. Tell Prometheus** → add `rule_files` …
+
+![rule_files in prometheus.yml](./images/handson/08-prometheus-yml-rule-files.png)
+
+… and `alerting` (where Alertmanager is).
+
+![alerting in prometheus.yml](./images/handson/09-prometheus-yml-alerting.png)
+
+**9. Restart Prometheus** → **"Starting rule manager…"** = rules loaded.
+
+![Restart with rules](./images/handson/10-prometheus-restart-rules.png)
+
+### Part C — Test the Alert
+
+**10. Add load on worker1**
+
+```bash
+stress -c 10 --timeout 180   # no live output — it runs silently; watch the browser
+```
+
+> Want to see CPU live? Open a 2nd SSH tab → `top`.
+
+**11. Prometheus → Alerts** → `HighCPUUsage` **FIRING** on `instance=172.31.0.57`, value **100**.
+
+![Alert firing](./images/handson/11-alert-firing.png)
+
+```
+Inactive (green) ──CPU > 50%──► Pending (yellow) ──true for 1m──► Firing (red) ──► Alertmanager
+```
+
+**12. Grafana** — first it showed **no spike**: I had picked the **monitoring server** (172.31.13.45).
+
+![Grafana wrong instance](./images/handson/12-grafana-wrong-instance.png)
+
+Switched to **Job `ec2-discovery` → Nodename `worker1` → Instance `172.31.0.57`** → spike shows.
+
+![Grafana worker1 under load](./images/handson/13-grafana-worker1-under-load.png)
+
+| Panel (worker1) | Under `stress -c 10` |
+| --------------- | -------------------- |
+| CPU Busy        | **85.7%**            |
+| Sys Load        | **493.5%** (2 cores) |
+| Alert value     | **100** → FIRING     |
+
+> Dashboard **1860** shows **one server at a time**. For all servers on one graph, add a panel with
+> `100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)`.
+
+### Problems I Faced → Fix
+
+| Problem                                          | Cause                                                        | Fix                                                        |
+| ------------------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------- |
+| New VMs had no Node Exporter                     | "Launch more like this" copies settings, not installed software | Installed Node Exporter on each (or bake an AMI)          |
+| `sethostnamectl: command not found`              | Wrong command                                                | `hostnamectl set-hostname worker3`                         |
+| `stress` looked stuck                            | It prints nothing while running                              | Watch Prometheus Alerts / Grafana, or `top` in a 2nd tab   |
+| Grafana showed no data with old settings         | Job changed `node_exporter_metrics` → `ec2-discovery`; instance lost `:9100` (relabel) | Pick Job `ec2-discovery` + new instance in dropdowns |
+| Grafana showed no spike                          | Selected the monitoring server, not worker1                  | Instance → `172.31.0.57`                                   |
+
 ## Interview Question — Issues I Faced in Prometheus
 
 **Q: What issues did you face in Prometheus?**
