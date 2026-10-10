@@ -1,6 +1,6 @@
 # Day 2 — Service Discovery, Alertmanager
 
-[← Day 1](../day-1-intro/README.md) · [All notes](../README.md)
+[← Day 1](../day-1-intro/README.md) · [All notes](../README.md) · [Quick rebuild with user data](../user-data-scripts/README.md)
 
 - **Service discovery:** Prometheus finds EC2 servers to monitor **automatically** (by region/tags).
 - **Alertmanager:** sends **email / Slack** alerts when a rule is hit, e.g. CPU > 90% (port 9093).
