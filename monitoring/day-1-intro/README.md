@@ -653,6 +653,117 @@ Amazon VM ──► Node Exporter :9100 ──► Prometheus :9090 (TSDB) ──
  (app)         collects metrics         stores + PromQL              live visual dashboards
 ```
 
+## Hands-On — My Lab Run (2026-10-10)
+
+| Server                         | Private IP    | Runs                       |
+| ------------------------------ | ------------- | -------------------------- |
+| Worker (`ip-172-31-0-57`)      | 172.31.0.57   | Amazon app + Node Exporter |
+| Monitoring (`ip-172-31-13-45`) | 172.31.13.45  | Prometheus + Grafana       |
+
+### 1. Node Exporter running on the worker
+
+`systemctl status node_exporter` → **active (running)**, listening on `:9100`.
+
+![Node Exporter running](./images/handson/01-node-exporter-running.png)
+
+### 2. Install Prometheus on the monitoring server
+
+`sudo su -` → `vim monitoring.sh` → `sh monitoring.sh`
+
+![Prometheus install](./images/handson/02-prometheus-install.png)
+
+### 3. Put the worker private IP in `prometheus.yml`
+
+The script still had `<worker-private-ip>` → fixed with vim → `172.31.0.57:9100`.
+
+![prometheus.yml with private IP](./images/handson/03-prometheus-yml-private-ip.png)
+
+### 4. Restart Prometheus
+
+`systemctl restart prometheus` → logs show **"Completed loading of configuration file"** and
+**"Server is ready to receive web requests"**.
+
+![Prometheus restart](./images/handson/04-prometheus-restart.png)
+
+### 5. Prometheus UI on `:9090`
+
+![Prometheus UI](./images/handson/05-prometheus-ui.png)
+
+### 6. Targets — both UP
+
+First the worker was **DOWN** (`context deadline exceeded`) → added 9100 from `monitoring-sg` to the
+worker SG → **UP**.
+
+![Targets UP](./images/handson/06-targets-up.png)
+
+### 7. Query `up` → both 1
+
+![Query up](./images/handson/07-query-up.png)
+
+### 8. Query `promhttp_metric_handler_requests_total`
+
+Worker **58** / Prometheus **345** successful scrapes — done by Prometheus every 5 s, not by me.
+
+![Requests total](./images/handson/08-query-requests-total.png)
+
+### 9. Grafana on `:3000` (same monitoring server)
+
+![Grafana home](./images/handson/09-grafana-home.png)
+
+### 10. Add data source → URL `http://localhost:9090`
+
+![Data source URL](./images/handson/10-datasource-url.png)
+
+![Save & test](./images/handson/11-datasource-save-test.png)
+
+**Result:** "Data source is working" ✅
+
+![Data source working](./images/handson/12-datasource-working.png)
+
+### 11. Import dashboard 1860
+
+Dashboards → **New → Import** → `1860` → **Load** → **Import**.
+
+![Import menu](./images/handson/13-dashboard-import-menu.png)
+
+![Import 1860](./images/handson/14-import-1860.png)
+
+### 12. Dashboard — idle worker
+
+Job / Nodename / Instance dropdowns filled **automatically** from Prometheus.
+
+![Dashboard idle](./images/handson/15-dashboard-idle.png)
+
+### 13. Add load on the worker
+
+```bash
+apt update && apt install stress -y && stress -c 10
+```
+
+![stress command](./images/handson/16-stress-command.png)
+
+### 14. Dashboard — under load
+
+![Dashboard under load](./images/handson/17-dashboard-under-load.png)
+
+| Panel     | Idle  | Under `stress -c 10` |
+| --------- | ----- | -------------------- |
+| CPU Busy  | 0.2%  | **33.2%** (rising)   |
+| Sys Load  | 0.0%  | **406.5%**           |
+| RAM Used  | 36.1% | 39.0%                |
+
+> Sys Load > 100% = more work waiting than CPU cores (10 stress workers on **2 cores**).
+
+### Problems I Faced → Fix
+
+| Problem                                         | Cause                                           | Fix                                              |
+| ----------------------------------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| Browser couldn't open `:9100/metrics`           | Worker SG allowed 9100 only from `monitoring-sg` | Added 9100 from **My IP**                        |
+| Target DOWN — `context deadline exceeded`       | Replaced the `monitoring-sg` rule with My IP    | Added 9100 from **`monitoring-sg`** back (2 rules) |
+| Target pointed to `<worker-private-ip>`         | Placeholder not replaced in the script          | `vim prometheus.yml` → real IP → restart         |
+| `Unit prometheus..service not found`            | Typo: `systemctl restart prometheus.`           | `systemctl restart prometheus`                   |
+| Grafana "Invalid URL"                           | URL typed wrong in data source                  | `http://localhost:9090`                          |
+
 ## Interview One-Liner
 
 Monitoring is analysing the performance of servers and applications using metrics like CPU, memory
