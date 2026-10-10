@@ -188,12 +188,12 @@ To collect **CPU, RAM, disk** metrics from the worker, install Node Exporter on 
 
 ```bash
 ssh -i <key.pem> ubuntu@<worker-ip>
-sudo -i
+sudo su -
 vim node-exporter # paste the script below, save (Esc → :wq)
 sh node-exporter
 ```
 
-> `sudo -i` = switch to **root** once, so no `sudo` is needed in the scripts. Type `exit` to go back to `ubuntu`.
+> `sudo su -` = switch to **root** once, so no `sudo` is needed in the scripts. Type `exit` to go back to `ubuntu`.
 
 ```bash
 # download and extract
@@ -269,7 +269,7 @@ SSH into the monitoring server, switch to root:
 
 ```bash
 ssh -i <key.pem> ubuntu@<monitoring-ip>
-sudo -i
+sudo su -
 vim monitoring.sh # paste the script below, save
 sh monitoring.sh
 ```
