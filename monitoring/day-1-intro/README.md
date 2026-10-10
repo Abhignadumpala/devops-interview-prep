@@ -84,24 +84,40 @@ Servers 1, 2, 3 and 5 have Node Exporter → **monitored**. Server 4 doesn't →
 | **Worker node**                  | Amazon app + Node Exporter | 22, **80**, **9100**                     |
 | **prometheus-monitoring-server** | Prometheus + Grafana       | 22, **9090**, **3000** (`monitoring-sg`) |
 
-**Worker node SG**
+**Security group rules — 7 in total**
 
-| Type       | Port | Source                                                   | Why                            |
-| ---------- | ---- | -------------------------------------------------------- | ------------------------------ |
-| SSH        | 22   | My IP                                                    | You log in                     |
-| HTTP       | 80   | 0.0.0.0/0 (Anywhere)                                     | Anyone can open the Amazon app |
-| Custom TCP | 9100 | My IP                                                    | See metrics in your browser    |
-| Custom TCP | 9100 | `monitoring-sg` (or Prometheus server's private IP/32)   | Only Prometheus pulls metrics  |
+**Worker node SG (4 rules)**
 
-> `monitoring-sg` as source only lets **Prometheus** in, not your browser. Add **My IP** too to open `http://<worker-ip>:9100/metrics`.
+| # | Type       | Port | Source                 | Why                            |
+| - | ---------- | ---- | ---------------------- | ------------------------------ |
+| 1 | SSH        | 22   | My IP                  | You log in                     |
+| 2 | HTTP       | 80   | 0.0.0.0/0 (Anywhere)   | Anyone can open the Amazon app |
+| 3 | Custom TCP | 9100 | My IP                  | **You** see metrics in browser |
+| 4 | Custom TCP | 9100 | `monitoring-sg`        | **Prometheus** pulls metrics   |
 
-**prometheus-monitoring-server SG (`monitoring-sg`)**
+**Why 2 rules for port 9100?** Two different visitors, and one rule allows only one source.
 
-| Type       | Port | Source | Why                           |
-| ---------- | ---- | ------ | ----------------------------- |
-| SSH        | 22   | My IP  | You log in                    |
-| Custom TCP | 9090 | My IP  | Prometheus UI in your browser |
-| Custom TCP | 3000 | My IP  | Grafana UI in your browser    |
+```
+Your laptop (My IP)  ──► :9100   ← rule 3   (browser: http://<worker-ip>:9100/metrics)
+Prometheus server    ──► :9100   ← rule 4   (monitoring-sg)
+```
+
+| Remove rule  | Result                                       |
+| ------------ | -------------------------------------------- |
+| 3 (My IP)    | Browser can't open `/metrics`                |
+| 4 (monitoring-sg) | Prometheus target shows **DOWN** → no graphs |
+
+> - Add rule 4 **after Part 4** (that's when `monitoring-sg` exists). Source box → type `sg-` → pick `monitoring-sg`.
+> - SG-as-source works on **private IPs** only → Prometheus scrapes `<worker-private-ip>:9100`.
+> - Rule 3 is for testing. Once the target is **UP**, you can delete it (most secure).
+
+**prometheus-monitoring-server SG — `monitoring-sg` (3 rules)**
+
+| # | Type       | Port | Source | Why                           |
+| - | ---------- | ---- | ------ | ----------------------------- |
+| 1 | SSH        | 22   | My IP  | You log in                    |
+| 2 | Custom TCP | 9090 | My IP  | Prometheus UI in your browser |
+| 3 | Custom TCP | 3000 | My IP  | Grafana UI in your browser    |
 
 > Why HTTP for 80 but Custom TCP for 9090? → [Security Group Types — HTTP vs Custom TCP](../../aws/security-group-types/README.md)
 
