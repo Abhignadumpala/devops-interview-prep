@@ -1,10 +1,26 @@
-# Day 3 — Pushgateway, Grafana RBAC, Loki
+# Day 3 — Pushgateway, Grafana RBAC, Loki, Custom Dashboards
 
 [← Day 2](../day-2-service-discovery/README.md) · [All notes](../README.md)
 
 - **Pushgateway:** captures metrics of **short-living** scripts / jobs / pods (≤ 15 s) — they **push**, Prometheus **pulls** (port 9091).
 - **Grafana RBAC:** control **what each user can do** in Grafana (users, teams, folder permissions).
 - **Loki:** collects **logs** from every server (via **Promtail**) and shows them in Grafana (port 3100).
+- **Custom dashboards:** build our own Grafana panels for **all** machines (CPU, memory, disk).
+
+## Prometheus Architecture
+
+![Prometheus architecture](./images/prometheus-architecture.svg)
+
+| Part                  | Job                                                        |
+| --------------------- | ---------------------------------------------------------- |
+| **Exporters**         | Expose metrics on each server (Node Exporter :9100)        |
+| **Pushgateway**       | Holds metrics **pushed** by short-lived jobs (:9091)       |
+| **Service discovery** | Finds targets automatically (EC2 / Kubernetes)             |
+| **Retrieval**         | Prometheus **pulls** metrics from all targets              |
+| **TSDB**              | Stores the metrics on disk (time series)                   |
+| **Rules**             | Check conditions → fire alerts                             |
+| **Alertmanager**      | Sends alerts → Email / Slack / PagerDuty (:9093)           |
+| **Grafana / UI**      | Query with **PromQL** → dashboards (:3000 / :9090)         |
 
 ## What is Pushgateway?
 
@@ -414,6 +430,20 @@ sum(count_over_time({job="applogs"} |= " 403 " [5m])) / sum(count_over_time({job
 
 > Use **Table** view in Explore to read IP → count clearly.
 
+### Step 12 — Download Logs and Upload to S3
+
+Keep a copy of the logs (e.g. for an incident report) outside the server.
+
+1. Explore → Loki → `{job="applogs"}` → **Run query**.
+2. **Inspect → Data → Download logs** (or **Download** on the logs panel) → `.txt` / `.json`.
+3. Upload to S3 → **S3 console → bucket → Upload**, or with the AWS CLI:
+
+```bash
+aws s3 cp applogs.txt s3://<my-bucket>/loki-logs/
+```
+
+> In real time Loki itself can store its logs **in S3** (cheap, long-term) instead of local disk.
+
 ## SLA — Why These Errors Matter
 
 **SLA (Service Level Agreement)** = a promise of how much time the app is **available**.
@@ -427,6 +457,52 @@ sum(count_over_time({job="applogs"} |= " 403 " [5m])) / sum(count_over_time({job
 
 **How Loki helps:** 403 / 404 / 5xx logs show **when** the app was unavailable, **how many users**
 were affected and **who** (their IPs) — so we fix it fast and protect the SLA.
+
+## Custom Grafana Dashboards
+
+Imported dashboards (like 1860) show **one** server. A **custom** dashboard shows **what we want**,
+for **all** machines at once.
+
+### Steps
+
+1. **Dashboards → New → New Dashboard → Add visualization** → data source **Prometheus**.
+2. **Metric:** pick a metric (e.g. `node_memory_MemAvailable_bytes`).
+3. **Label filters:** `job` = **`ec2-discovery`** → every discovered machine shows (one line each).
+4. **Run queries** → the graph appears.
+5. **Panel options** (right side) → title, colours, unit, thresholds (below).
+6. **Apply** → add more panels → **Save dashboard** (give it a name).
+7. ⭐ **Star** it → it shows on the **Home** dashboard.
+
+### Queries for All Machines
+
+| Panel      | Query (Code mode)                                                                                     | Unit             |
+| ---------- | ----------------------------------------------------------------------------------------------------- | ---------------- |
+| **CPU %**  | `100 - (avg by (instance) (rate(node_cpu_seconds_total{job="ec2-discovery", mode="idle"}[1m])) * 100)` | Percent (0-100)  |
+| **Memory %** | `100 * (1 - node_memory_MemAvailable_bytes{job="ec2-discovery"} / node_memory_MemTotal_bytes{job="ec2-discovery"})` | Percent (0-100) |
+| **Disk %** | `100 * (1 - node_filesystem_avail_bytes{job="ec2-discovery", mountpoint="/"} / node_filesystem_size_bytes{job="ec2-discovery", mountpoint="/"})` | Percent (0-100) |
+| **Up / Down** | `up{job="ec2-discovery"}`                                                                          | 1 = up, 0 = down |
+
+> `{job="ec2-discovery"}` = the **label filter** → all machines found by EC2 service discovery.
+
+### Make It Look Good (Panel Options)
+
+| Option                         | What to set                                       |
+| ------------------------------ | ------------------------------------------------- |
+| **Visualization**              | Time series (graph) · Gauge · Stat · Table         |
+| **Title**                      | e.g. "CPU % — all servers"                        |
+| **Standard options → Unit**    | **Percent (0-100)**                               |
+| **Standard options → Min/Max** | 0 / 100                                           |
+| **Thresholds**                 | Green (base) → **Orange 70** → **Red 90**          |
+| **Color scheme**               | "From thresholds" → the colour changes with the value |
+| **Legend → Values**            | Last, Max                                         |
+
+```
+Custom dashboard "My Servers"
+├── CPU %      (all machines, red > 90)
+├── Memory %   (all machines)
+├── Disk %     (all machines)
+└── Up / Down  (Stat: 1 = green, 0 = red)
+```
 
 ## Promtail on Kubernetes — DaemonSet
 
