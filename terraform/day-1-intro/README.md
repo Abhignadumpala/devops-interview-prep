@@ -4,7 +4,7 @@
 
 ## Traditional IT vs Cloud vs Terraform
 
-![Traditional IT vs Cloud vs Terraform](./images/traditional-it-vs-cloud-vs-terraform.svg)
+![Traditional IT vs Cloud vs Terraform](./images/traditional-it-vs-cloud-vs-terraform.png)
 
 |                    | Traditional IT        | Cloud (console)          | Terraform               |
 | ------------------ | --------------------- | ------------------------ | ----------------------- |
