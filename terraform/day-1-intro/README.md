@@ -2,6 +2,32 @@
 
 [← All notes](../README.md)
 
+## Overview
+
+Before learning Terraform, let's understand **why** we need it — what problems IT teams faced
+before Terraform, and how things changed step by step:
+
+```
+Traditional IT  ──►  Cloud (console)  ──►  Terraform
+weeks to months      minutes, by hand      one command, repeatable
+```
+
+**1. Traditional IT (own data center)**
+To get one server, the company **bought hardware**, waited for delivery, then many teams
+(procurement, network, storage, backup) set it up **by hand**. It took **weeks to months**, cost a
+lot up front, and every server ended up set up a bit differently.
+
+**2. Cloud (AWS, Azure, GCP console)**
+Cloud removed the hardware. Now we **rent servers** and pay only for what we use — a server is ready
+in **minutes**. But we still **click by hand** in the console, again for dev, staging and prod. Miss
+one setting and the servers are different.
+
+**3. Terraform (Infrastructure as Code)**
+We **write the server once as code**, save it in Git, and run one command to create it. Same code →
+same server every time, in every environment. No clicking, no guessing.
+
+> **Traditional IT was slow. Cloud made it fast but manual. Terraform makes it fast AND repeatable.**
+
 ## Traditional IT vs Cloud vs Terraform
 
 ![Traditional IT vs Cloud vs Terraform](./images/traditional-it-vs-cloud-vs-terraform.png)
