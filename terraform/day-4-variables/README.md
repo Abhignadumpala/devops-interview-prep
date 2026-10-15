@@ -2,6 +2,17 @@
 
 [← All notes](../README.md)
 
+## Quick Definitions
+
+**Input variable** = a value **passed in from outside**, so nothing is hardcoded.
+- Same code → different environments (dev / prod).
+
+**Local** = a value **built inside the code**, usually from variables, reused many times.
+- Can't be changed from outside.
+
+**Output** = a value Terraform **shows after apply** (IP, ID).
+- Also how modules pass values to each other.
+
 ## Overview
 
 | Term               | Simple meaning                                               | Reference          |

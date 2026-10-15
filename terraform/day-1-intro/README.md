@@ -74,6 +74,43 @@ cloud for you.
 
 # Part 2 — count, for_each, Lifecycle & More
 
+## Quick Definitions
+
+**count** = meta-argument that tells Terraform **how many copies** of a resource to create from one block.
+- Each copy gets a number `count.index`, starting at 0.
+- **Use when:** identical resources (web-1, web-2, web-3).
+
+**for_each** = meta-argument that creates **one resource for each item** in a map or set.
+- Tracked by **name (key)**, not number. Use `each.key` and `each.value`.
+- **Use when:** each resource has a different name / settings (frontend, user, cart).
+
+**count vs for_each** = count for identical numbered copies; for_each for named resources.
+- count tracks by **position** → remove from middle → others shift and get recreated.
+- for_each tracks by **name** → only the removed one is deleted.
+
+**Parallelism** = how many resources Terraform creates **at the same time**.
+- Default **10**. Change with `terraform apply -parallelism=5`.
+- **Use when:** lower it if the cloud API gives rate-limit errors.
+
+**Current vs desired** = desired is what your **code** says; current is what **actually exists** in the cloud.
+- `plan` shows the difference, `apply` makes current match desired.
+
+**Drift** = real infrastructure is **different from the code** because someone changed it by hand.
+- Detect with `terraform plan`. Fix with `terraform apply`, or update the code to accept the change.
+
+**depends_on** = **force Terraform to create one resource before another**.
+- Terraform usually finds the order itself; use only when there's no direct link.
+- **Use when:** the app must wait for the database.
+
+**Lifecycle rules** = change how Terraform **creates, updates or destroys** a resource.
+- **create_before_destroy** → new first, then delete old (no downtime).
+- **prevent_destroy** → Terraform refuses to delete it (protect prod DB).
+- **ignore_changes** → ignore changes to listed fields (tags changed by another tool).
+
+**-target** = run plan / apply / destroy on **one resource only**.
+- Example: remove 1 VM out of 5 → `terraform destroy -target='aws_instance.web[2]'`.
+- **Use when:** emergencies / testing only — next `apply` recreates it if it's still in the code.
+
 ## count vs for_each — Quick Rule
 
 | Want                                                      | Use        |

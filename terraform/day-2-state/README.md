@@ -2,6 +2,29 @@
 
 [← All notes](../README.md)
 
+## Quick Definitions
+
+**State file** (`terraform.tfstate`) = Terraform's **memory**: a JSON file that records what Terraform created.
+- Maps code to real resources, so Terraform knows what to create, change or destroy.
+- Stores secrets in plain text → **never commit to Git**.
+
+**Local state** = the **default** — the state file is stored on your machine.
+- `terraform.tfstate` = current, `terraform.tfstate.backup` = previous version.
+- **Problem:** can't share, no locking, lost if the laptop is lost.
+
+**Remote state (S3 backend)** = keep the state file in a **shared S3 bucket**.
+- **Use when:** working in a team or running Terraform from CI/CD.
+
+**State locking** = only **one person / pipeline can change the state at a time**.
+- S3 native lock `use_lockfile = true` (new) or DynamoDB table (old).
+
+**-migrate-state vs -reconfigure** = `terraform init` options when changing the backend.
+- **-migrate-state** → copies existing state to the new backend.
+- **-reconfigure** → switches backend **without** copying old state.
+
+**terraform state list** = lists **all resources** in the state.
+**terraform state show** = shows **full details** of one resource (ID, IP, tags).
+
 ## What is the State File?
 
 **State file** (`terraform.tfstate`) = Terraform's **memory**. A JSON file that records **what

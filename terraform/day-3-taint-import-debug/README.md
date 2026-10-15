@@ -2,6 +2,22 @@
 
 [← All notes](../README.md)
 
+## Quick Definitions
+
+**terraform taint** = mark a resource as **broken** so the next `apply` **recreates** it.
+- Deprecated → new way: `terraform apply -replace="aws_instance.web"`.
+- **Use when:** a server is running but broken inside and needs a fresh rebuild.
+
+**terraform plan -out** = **save the plan to a file**, then apply exactly that plan.
+- `terraform plan -out dev` → `terraform apply dev`.
+- **Use when:** CI/CD — plan, get approval, apply exactly what was reviewed.
+
+**terraform import** = bring an **existing resource** (made in the console) **under Terraform control**.
+- Old: `terraform import aws_instance.web i-0abc123`. New: `import {}` block (can generate the code).
+
+**Terraform debugging** = turn on **detailed logs** with `TF_LOG`.
+- Levels: TRACE, DEBUG, INFO, WARN, ERROR. Save to a file with `TF_LOG_PATH`.
+
 ## terraform taint (replace a resource)
 
 **Taint** = mark a resource as **broken** so the next `apply` **destroys and recreates** it — even
