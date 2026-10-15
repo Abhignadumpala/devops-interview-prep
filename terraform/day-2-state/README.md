@@ -16,7 +16,7 @@
 - **Use when:** working in a team or running Terraform from CI/CD.
 
 **State locking** = only **one person / pipeline can change the state at a time**.
-- S3 native lock `use_lockfile = true` (new) or DynamoDB table (old).
+- S3 native lock `use_lockfile = true` (new, recommended) or DynamoDB table (old, **deprecated**).
 
 **-migrate-state vs -reconfigure** = `terraform init` options when changing the backend.
 - **-migrate-state** → copies existing state to the new backend.
@@ -95,7 +95,7 @@ error → no corruption.
 | Locking method                       | How                                        |
 | ------------------------------------ | ------------------------------------------ |
 | **S3 native lock** (Terraform 1.10+) | `use_lockfile = true` → creates a `.tflock` file in S3 |
-| **DynamoDB table** (older way)       | `dynamodb_table = "tf-lock"` → lock row in DynamoDB (now deprecated) |
+| **DynamoDB table** (old way — **deprecated**) | `dynamodb_table = "tf-lock"` → lock row in DynamoDB. Deprecated since Terraform 1.11; use `use_lockfile` instead |
 
 ```
 Dev 1: terraform apply  ──► gets lock  ──► changes ──► releases lock
@@ -141,6 +141,6 @@ $ terraform state show 'aws_instance.app["user"]'
 - **State file** = Terraform's memory; maps code to real resources so it knows what to create, change or destroy.
 - **Default** = local `terraform.tfstate` + `terraform.tfstate.backup` (previous version).
 - **Why remote state?** Team sharing, locking, encryption, no single laptop holding it.
-- **Locking** = only one apply at a time; S3 native `use_lockfile` (new) or DynamoDB (old).
+- **Locking** = only one apply at a time; S3 native `use_lockfile` (new) — DynamoDB locking is **deprecated**.
 - **-migrate-state** copies state to the new backend; **-reconfigure** switches backend without copying.
 - **Never** commit state to Git — it holds secrets in plain text.
