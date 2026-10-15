@@ -63,10 +63,10 @@ variable "env" {
 | **string** | Text                                        | `"t3.micro"`                              |
 | **number** | Whole or decimal number                     | `3`, `8080`                               |
 | **bool**   | true / false                                | `true`                                    |
-| **list**   | Ordered values, **same type**, index from 0 | `["frontend", "user", "cart"]`            |
+| **list**   | Collection of values, **same type only** (all strings or all numbers), index from 0 | `["frontend", "user", "cart"]` or `[80, 443, 8080]` |
 | **map**    | Key = value pairs, **same type** values     | `{ dev = "t3.micro", prod = "t3.large" }` |
 | **object** | Key = value pairs, **different types**, fixed keys | `{ name = "web", port = 80, public = true }` |
-| **tuple**  | Ordered values, **different types**         | `["web", 80, true]`                       |
+| **tuple**  | Collection of values, **different types allowed** (string, number, bool together), index from 0 | `["web", 80, true]` |
 
 ```hcl
 variable "instance_type" {
