@@ -74,75 +74,100 @@ cloud for you.
 
 # Part 2 — count, for_each, Lifecycle & More
 
-## count
+## count vs for_each — Quick Rule
 
-**count** = create **many copies** of the same resource from one block. Each copy gets a number:
-`count.index` (starts at 0).
+| Want                                                      | Use        |
+| --------------------------------------------------------- | ---------- |
+| Same kind of VM, numbered names (web-1, web-2, web-3)     | `count`    |
+| Different names / settings (frontend, user, cart)         | `for_each` |
+
+## count — numbered copies
+
+**count** = make **N copies** of the same block. Each copy gets a number: `count.index`
+(starts at 0).
 
 ```hcl
-variable "components" {
-  default = ["frontend", "user", "cart"]
-}
-
-resource "aws_instance" "app" {
-  count         = length(var.components)   # 3 servers
+resource "aws_instance" "web" {
+  count         = 3
   ami           = "ami-0abc123"
   instance_type = "t3.micro"
-  tags          = { Name = var.components[count.index] }
+  tags = {
+    Name = "web-${count.index + 1}"    # +1 so names start from 1
+  }
 }
 ```
 
-```
-aws_instance.app[0] → frontend
-aws_instance.app[1] → user
-aws_instance.app[2] → cart
-```
+| Terraform address     | count.index | Name tag |
+| --------------------- | ----------- | -------- |
+| `aws_instance.web[0]` | 0           | web-1    |
+| `aws_instance.web[1]` | 1           | web-2    |
+| `aws_instance.web[2]` | 2           | web-3    |
 
-⚠️ **Problem:** remove `"user"` from the middle → `cart` moves from `[2]` to `[1]` → Terraform
-**destroys and recreates** cart. Items are tracked by **position**.
+**Scale:** `count = 5` → adds web-4, web-5. `count = 2` → removes web-3 (always from the **end**).
 
-## for_each
+## for_each — named resources
 
-**for_each** = create many resources from a **map** or **set**. Each one is tracked by its
-**key (name)**, not position. Use `each.key` and `each.value`.
+**for_each** = loop over a **map** (or set). Each resource is tracked by its **name (key)**.
+Use `each.key` and `each.value`.
 
 ```hcl
-variable "servers" {
-  default = {
+resource "aws_instance" "app" {
+  for_each = {
     frontend = "t3.micro"
     user     = "t3.micro"
     cart     = "t3.small"
   }
-}
-
-resource "aws_instance" "app" {
-  for_each      = var.servers
   ami           = "ami-0abc123"
-  instance_type = each.value              # t3.micro / t3.small
-  tags          = { Name = each.key }     # frontend / user / cart
+  instance_type = each.value            # t3.micro / t3.small
+  tags = {
+    Name = each.key                     # frontend / user / cart
+  }
 }
 ```
 
-```
-aws_instance.app["frontend"]
-aws_instance.app["user"]
-aws_instance.app["cart"]
+| Terraform address              | each.key | each.value |
+| ------------------------------ | -------- | ---------- |
+| `aws_instance.app["frontend"]` | frontend | t3.micro   |
+| `aws_instance.app["user"]`     | user     | t3.micro   |
+| `aws_instance.app["cart"]`     | cart     | t3.small   |
+
+## Why not count with a list of names?
+
+You *can*, but it's risky:
+
+```hcl
+count = 3
+tags  = { Name = ["frontend", "user", "cart"][count.index] }
 ```
 
-✅ Remove `user` → only `user` is destroyed. `cart` is untouched.
+Remove `"user"` from the list:
+
+|     | Before   | After                                  |
+| --- | -------- | -------------------------------------- |
+| [0] | frontend | frontend ✅                            |
+| [1] | user     | **cart** ❌ (user renamed to cart)     |
+| [2] | cart     | **destroyed** ❌                       |
+
+count tracks by **position** → items shift → wrong VMs change. for_each tracks by **name** →
+removing `user` deletes **only** user.
 
 ## count vs for_each
 
-|                       | count                          | for_each                          |
-| --------------------- | ------------------------------ | --------------------------------- |
-| **Input**             | A number                       | A map or set of strings           |
-| **Tracked by**        | Index `[0]`, `[1]`             | Key `["user"]`                    |
-| **Access**            | `count.index`                  | `each.key`, `each.value`          |
-| **Remove from middle**| ❌ Others shift → recreated    | ✅ Only that one is removed       |
-| **Best for**          | Identical copies (3 same VMs)  | Different settings per resource   |
-| **On / off switch**   | ✅ `count = var.create ? 1 : 0` | —                                 |
+|                        | count                           | for_each                     |
+| ---------------------- | ------------------------------- | ---------------------------- |
+| **Input**              | A number                        | A map or set of strings      |
+| **Tracked by**         | Index `[0]`, `[1]`              | Key `["user"]`               |
+| **Access**             | `count.index`                   | `each.key`, `each.value`     |
+| **Remove from middle** | ❌ Others shift → recreated     | ✅ Only that one is removed  |
+| **Best for**           | Identical copies (web-1, web-2) | Different names / settings   |
+| **On / off switch**    | ✅ `count = var.create ? 1 : 0` | —                            |
 
-> **Rule:** identical copies → `count`. Named resources with different values → `for_each`.
+| Question                                       | Use                          |
+| ---------------------------------------------- | ---------------------------- |
+| Identical VMs, only number in the name?        | `count`                      |
+| Each VM has its own name / settings?           | `for_each`                   |
+| Will you remove items from the middle later?   | `for_each`                   |
+| Create a resource only if a flag is true?      | `count = var.create ? 1 : 0` |
 
 ## Parallelism
 
@@ -156,6 +181,32 @@ terraform apply -parallelism=20    # faster for big setups
 | Use lower value           | Use higher value            |
 | ------------------------- | --------------------------- |
 | Cloud API rate-limit errors | Many independent resources |
+
+## Current vs Desired Infrastructure
+
+| Term                       | Meaning                                         | Where it lives                |
+| -------------------------- | ----------------------------------------------- | ----------------------------- |
+| **Desired** infrastructure | What you **want** — written in your code        | `.tf` files                   |
+| **Current** infrastructure | What **actually exists** right now in the cloud | AWS (recorded in state file)  |
+
+Terraform's job = make **current = desired**.
+
+```
+Desired (.tf code)          Current (AWS)
+3 servers, t3.micro   vs    2 servers, t3.micro
+            │
+     terraform plan   → "1 to add"   (shows the difference)
+     terraform apply  → creates 1    (now current = desired)
+```
+
+| Situation                          | What `plan` shows      |
+| ---------------------------------- | ---------------------- |
+| In code, not in AWS                | `+` create             |
+| In both, but settings differ       | `~` update / `-/+` replace |
+| In AWS (state), removed from code  | `-` destroy            |
+| Same in both                       | `No changes`           |
+
+> **Drift** (below) = current changed **outside** Terraform, so it no longer matches desired.
 
 ## Terraform Drift
 
@@ -239,7 +290,8 @@ terraform destroy -target='aws_instance.app["cart"]'
 
 ## Interview One-Liners (Part 2)
 
-- **count vs for_each?** count tracks by index, so removing one from the middle recreates others. for_each tracks by key, so only that one changes.
+- **count vs for_each?** count for identical copies like web-1 to web-3; for_each for named resources with different settings like frontend, user, cart. for_each is tracked by key, so removing one doesn't shift or recreate the others.
+- **Current vs desired?** Desired = what the code says; current = what exists in the cloud. `plan` shows the difference, `apply` makes current match desired.
 - **Parallelism** = Terraform builds independent resources at the same time, 10 by default (`-parallelism=N`).
 - **Drift** = real infra changed outside Terraform; `terraform plan` detects it.
 - **depends_on** = force creation order when there's no direct reference.
