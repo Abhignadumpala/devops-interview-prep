@@ -79,6 +79,33 @@ variable "env" {
 | **object** | Key = value pairs, **different types**, fixed keys | `{ name = "web", port = 80, public = true }` |
 | **tuple**  | Collection of values, **different types allowed** (string, number, bool together), index from 0 | `["web", 80, true]` |
 
+### List
+
+A **list** is an ordered collection of values where each element can be accessed by its **index
+(starting at 0)**. All values in a list must be of the **same type** — either all strings, all
+numbers, or all booleans, but **not mixed**.
+
+For example, consider a variable that uses a list of prefixes:
+
+```hcl
+variable "prefix" {
+  type    = list(string)
+  default = ["Mr", "Mrs", "Sir"]
+}
+```
+
+| Index | Value | Access            |
+| ----- | ----- | ----------------- |
+| 0     | Mr    | `var.prefix[0]`   |
+| 1     | Mrs   | `var.prefix[1]`   |
+| 2     | Sir   | `var.prefix[2]`   |
+
+```hcl
+["Mr", "Mrs", "Sir"]   # ✅ all strings
+[80, 443, 8080]        # ✅ all numbers
+["Mr", 80, true]       # ❌ mixed types → not a list (use a tuple)
+```
+
 ```hcl
 variable "instance_type" {
   type    = string
