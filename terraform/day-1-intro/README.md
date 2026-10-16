@@ -20,13 +20,14 @@
 11. [for_each — named resources](#for_each--named-resources)
 12. [Why not count with a list of names?](#why-not-count-with-a-list-of-names)
 13. [count vs for_each](#count-vs-for_each)
-14. [Parallelism](#parallelism)
-15. [Current vs Desired Infrastructure](#current-vs-desired-infrastructure)
-16. [Terraform Drift](#terraform-drift)
-17. [depends_on](#depends_on)
-18. [Lifecycle Rules](#lifecycle-rules)
-19. [-target (act on one resource only)](#-target-act-on-one-resource-only)
-20. [Interview One-Liners (Part 2)](#interview-one-liners-part-2)
+14. [count vs for_each in Real Time](#count-vs-for_each-in-real-time)
+15. [Parallelism](#parallelism)
+16. [Current vs Desired Infrastructure](#current-vs-desired-infrastructure)
+17. [Terraform Drift](#terraform-drift)
+18. [depends_on](#depends_on)
+19. [Lifecycle Rules](#lifecycle-rules)
+20. [-target (act on one resource only)](#-target-act-on-one-resource-only)
+21. [Interview One-Liners (Part 2)](#interview-one-liners-part-2)
 
 ## Overview
 
@@ -360,6 +361,73 @@ removing `user` deletes **only** user.
 | Will you remove items from the middle later?   | `for_each`                   |
 | Create a resource only if a flag is true?      | `count = var.create ? 1 : 0` |
 
+## count vs for_each in Real Time
+
+![Real time: how teams create many servers](./images/realtime.png)
+
+| Situation                                              | Real-time choice                   |
+| ------------------------------------------------------ | ---------------------------------- |
+| Servers with different names / roles (RoboShop components) | **for_each** with a map        |
+| Create something only in some environments             | **count** = 1 or 0 (on/off switch) |
+| Many identical web / app servers                       | **Auto Scaling Group** (ASG)       |
+| One server is broken                                   | **`apply -replace`** (works with both) |
+| Remove one server for good                             | Delete its key (**for_each**)      |
+
+**1. Named servers → for_each (most common)**
+```hcl
+variable "components" {
+  default = {
+    frontend = { instance_type = "t3.micro" }
+    user     = { instance_type = "t3.micro" }
+    cart     = { instance_type = "t3.small" }
+  }
+}
+
+resource "aws_instance" "app" {
+  for_each      = var.components
+  ami           = "ami-0abc123"
+  instance_type = each.value.instance_type
+  tags          = { Name = "roboshop-dev-${each.key}" }
+}
+```
+Add a server = add a key. Remove one for good = delete its key → **only that one** is destroyed.
+
+**2. On/off switch → count**
+```hcl
+resource "aws_instance" "bastion" {
+  count         = var.env == "prod" ? 1 : 0     # 1 = create, 0 = skip
+  ami           = "ami-0abc123"
+  instance_type = "t3.micro"
+}
+```
+
+**3. Many identical servers → Auto Scaling Group (not count)**
+```hcl
+resource "aws_autoscaling_group" "web" {
+  min_size         = 2
+  max_size         = 6
+  desired_capacity = 3
+  # + launch_template, subnets
+}
+```
+Terraform creates **one ASG**; AWS creates the servers and **replaces unhealthy ones by itself**.
+Scale by changing `desired_capacity`.
+
+**4. One server is broken → replace it, don't destroy it**
+```bash
+terraform apply -replace='aws_instance.app["cart"]'   # for_each
+terraform apply -replace='aws_instance.web[1]'        # count works too
+```
+Rebuilds **only that server**. Safe with count too: the index stays the same, so nothing shifts.
+
+| What you want                              | count                              | for_each                        |
+| ------------------------------------------ | ---------------------------------- | ------------------------------- |
+| Rebuild one broken server                  | ✅ `-replace='web[1]'`             | ✅ `-replace='app["cart"]'`     |
+| Add more servers                           | ✅ raise the number                | ✅ add a key                    |
+| **Permanently remove one from the middle** | ❌ others shift, wrong server changes | ✅ delete the key           |
+
+> count's disadvantage shows up in **only one case**: permanently removing a server from the middle.
+
 ## Parallelism
 
 ![Parallelism default 10](./images/parallelism.png)
@@ -520,6 +588,7 @@ terraform destroy -target='aws_instance.app["cart"]'
 
 ## Interview One-Liners (Part 2)
 
+- **Real time?** "I use for_each for named resources so I can remove one without touching the others, count only as an on/off switch, and an Auto Scaling Group for identical fleets. If a single instance breaks, I use `apply -replace` to rebuild just that one."
 - **Disadvantage of count?** It tracks by index, so deleting one server isn't safe: `count = 2` removes the last one, and removing from the middle of a list shifts the rest. Use for_each to delete a specific one.
 - **count vs for_each?** count for identical copies like web-1 to web-3; for_each for named resources with different settings like frontend, user, cart. for_each is tracked by key, so removing one doesn't shift or recreate the others.
 - **Current vs desired?** Desired = what the code says; current = what exists in the cloud. `plan` shows the difference, `apply` makes current match desired.
