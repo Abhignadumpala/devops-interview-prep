@@ -124,6 +124,96 @@ variable "prefix" {
 ["Mr", 80, true]       # ❌ mixed types → not a list (use a tuple)
 ```
 
+### Map vs Object (what are "fixed keys"?)
+
+![Map vs object](./images/map-vs-object.png)
+
+**Fixed keys** = the key names are decided **once, in the variable's `type`**, and every value
+must use **exactly** those names.
+
+Think of an object like a **form with set fields**: you fill in the boxes, but you **can't remove
+a box or add a new one**.
+
+```
+Server form
+  name   : ______   (text)
+  port   : ______   (number)
+  public : ______   (true/false)
+```
+
+**Object: keys are fixed**
+```hcl
+variable "server" {
+  type = object({
+    name   = string     # key 1 is fixed
+    port   = number     # key 2 is fixed
+    public = bool       # key 3 is fixed
+  })
+}
+
+server = { name = "web", port = 80, public = true }   # ✅ correct
+server = { name = "web", port = 80 }                  # ❌ error: "public" is missing
+server = { name = "web", port = 80, public = true, disk = 20 }  # ⚠️ "disk" is dropped (not in the type)
+```
+
+**Map: keys are free** (any names, any number), but all values are the **same type**
+```hcl
+variable "size_per_env" {
+  type = map(string)          # no key names written here
+}
+
+size_per_env = { dev = "t3.micro" }                                       # ✅
+size_per_env = { dev = "t3.micro", test = "t3.small", prod = "t3.large" } # ✅ added new keys
+size_per_env = { dev = "t3.micro", count = 3 }                            # ❌ 3 is not a string
+```
+
+|                 | map                                  | object                               |
+| --------------- | ------------------------------------ | ------------------------------------ |
+| **Keys**        | Free: any names, any number          | **Fixed**: only names in the `type`  |
+| **Value types** | All the same                         | Each key can have its own type       |
+| **Think of it** | A lookup table / list of labels      | A form with set fields (one record)  |
+
+**When to use which (real time)**
+
+| Use a **map** when…                                          | Real-time example                                           |
+| ------------------------------------------------------------ | ----------------------------------------------------------- |
+| You **look up** a value by a name                            | Instance size per env: `var.size_per_env[var.env]`          |
+| Keys can **grow** (new env, new region)                      | AMI per region: `{ us-east-1 = "ami-..", us-west-2 = "ami-.." }` |
+| Every value is the same kind                                 | Common tags: `{ Project = "roboshop", Env = "dev" }`        |
+
+| Use an **object** when…                                      | Real-time example                                           |
+| ------------------------------------------------------------ | ----------------------------------------------------------- |
+| One thing has **several different settings**                 | One server: name (string), port (number), public (bool)     |
+| You want Terraform to **check** all settings are given       | DB config: engine, version, storage, multi_az               |
+| A module needs a **structured input**                        | VPC module input: cidr, azs, enable_nat                     |
+
+**Most common in real projects: map of objects** = free keys (component names) + fixed settings
+for each one. Used with `for_each`:
+
+```hcl
+variable "components" {
+  type = map(object({
+    instance_type = string
+    port          = number
+  }))
+  default = {
+    frontend = { instance_type = "t3.micro", port = 80 }
+    user     = { instance_type = "t3.micro", port = 8080 }
+    cart     = { instance_type = "t3.small", port = 8080 }
+  }
+}
+
+resource "aws_instance" "app" {
+  for_each      = var.components          # keys: frontend, user, cart (free → add more anytime)
+  instance_type = each.value.instance_type  # object fields (fixed → must be given)
+  tags          = { Name = each.key }
+}
+```
+
+> **One-liner:** "A map is a lookup table: any keys, one value type. An object is a fixed
+> structure: set keys, each with its own type. In real projects I use a map of objects with
+> for_each: one entry per component, each with the same set of settings."
+
 ```hcl
 variable "instance_type" {
   type    = string
