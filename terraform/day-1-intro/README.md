@@ -178,6 +178,7 @@ terraform {
 **count** = meta-argument that tells Terraform **how many copies** of a resource to create from one block.
 - Each copy gets a number `count.index`, starting at 0.
 - **Use when:** identical resources (web-1, web-2, web-3).
+- **Disadvantage:** tracked by **index number**, not name → **not safe to delete one server**. `count = 2` always deletes the **last** one (web-3), and removing a name from the middle of a list **shifts** the others, so the wrong servers change or get destroyed. Use `for_each` instead.
 
 **for_each** = meta-argument that creates **one resource for each item** in a map or set.
 - Tracked by **name (key)**, not number. Use `each.key` and `each.value`.
@@ -242,6 +243,34 @@ resource "aws_instance" "web" {
 | `aws_instance.web[2]` | 2           | web-3    |
 
 **Scale:** `count = 5` → adds web-4, web-5. `count = 2` → removes web-3 (always from the **end**).
+
+### Disadvantage of count (deleting one server is not safe)
+
+count tracks servers by **index number** (`[0]`, `[1]`, `[2]`), **not by name**. So you can't safely
+delete one specific server.
+
+**Case 1: you want to delete only web-2 → you set `count = 2`**
+
+| Server | Index | Result                     |
+| ------ | ----- | -------------------------- |
+| web-1  | [0]   | kept                       |
+| web-2  | [1]   | kept 😮 (you wanted this gone) |
+| web-3  | [2]   | **DELETED** ❌ (wrong server) |
+
+count only removes from the **end**. You can't choose which one.
+
+**Case 2: names come from a list, and you remove `"web-2"` from the middle**
+
+| Index | Before | After                                |
+| ----- | ------ | ------------------------------------ |
+| [0]   | web-1  | web-1 ✅                             |
+| [1]   | web-2  | **web-3** ❌ (this server is changed) |
+| [2]   | web-3  | **destroyed** ❌                     |
+
+Everything after the removed item **shifts up one number** → other servers change or get destroyed.
+
+> **Fix:** if you'll ever need to delete **one specific** server, use **`for_each`**. It tracks by
+> **name**, so removing one deletes **only that one**.
 
 ## for_each — named resources
 
@@ -491,6 +520,7 @@ terraform destroy -target='aws_instance.app["cart"]'
 
 ## Interview One-Liners (Part 2)
 
+- **Disadvantage of count?** It tracks by index, so deleting one server isn't safe: `count = 2` removes the last one, and removing from the middle of a list shifts the rest. Use for_each to delete a specific one.
 - **count vs for_each?** count for identical copies like web-1 to web-3; for_each for named resources with different settings like frontend, user, cart. for_each is tracked by key, so removing one doesn't shift or recreate the others.
 - **Current vs desired?** Desired = what the code says; current = what exists in the cloud. `plan` shows the difference, `apply` makes current match desired.
 - **Parallelism** = Terraform builds independent resources at the same time, 10 by default (`-parallelism=N`).
