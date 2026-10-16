@@ -9,7 +9,8 @@
 3. [terraform plan -out (saved plan)](#terraform-plan--out-saved-plan)
 4. [terraform import](#terraform-import)
 5. [Terraform Debugging](#terraform-debugging)
-6. [Interview One-Liners](#interview-one-liners)
+6. [terraform graph](#terraform-graph)
+7. [Interview One-Liners](#interview-one-liners)
 
 ## Quick Definitions
 
@@ -23,6 +24,9 @@
 
 **terraform import** = bring an **existing resource** (made in the console) **under Terraform control**.
 - Old: `terraform import aws_instance.web i-0abc123`. New: `import {}` block (can generate the code).
+
+**terraform graph** = show **which resource depends on which**, as a DOT graph.
+- `terraform graph > graph.dot` → view in Graphviz.
 
 **Terraform debugging** = turn on **detailed logs** with `TF_LOG`.
 - Levels: TRACE, DEBUG, INFO, WARN, ERROR. Save to a file with `TF_LOG_PATH`.
@@ -162,9 +166,30 @@ terraform plan
 | `terraform fmt`      | Fix formatting                             |
 | `terraform console`  | Test expressions, e.g. `local.name`        |
 
+## terraform graph
+
+**terraform graph** = prints the **dependency graph** of your code (which resource needs which) in
+the **DOT language**.
+
+![terraform graph](./images/graph.png)
+
+```bash
+terraform graph > graph.dot                 # run in the project folder (after init)
+dot -Tpng graph.dot -o graph.png            # make a picture (needs Graphviz installed)
+```
+
+No Graphviz? Paste the output into **Graphviz Online** in the browser.
+
+```
+aws_instance.web ──► aws_subnet.public ──► aws_vpc.main
+                 └─► aws_security_group.web ──► aws_vpc.main
+```
+→ VPC is built first, then subnet + SG (in parallel), then the EC2.
+
 ## Interview One-Liners
 
 - **taint** = force recreate a resource; deprecated → use `terraform apply -replace=<address>`.
 - **plan -out** = save the plan and apply exactly that; standard in CI/CD with approval.
 - **import** = bring hand-made resources under Terraform; import block (1.5+) can generate the code.
+- **terraform graph** = dependency graph in DOT format; view it with Graphviz.
 - **Debugging** = `TF_LOG=DEBUG` (or TRACE) + `TF_LOG_PATH` to save logs to a file.

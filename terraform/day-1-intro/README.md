@@ -8,23 +8,25 @@
 2. [Traditional IT vs Cloud vs Terraform](#traditional-it-vs-cloud-vs-terraform)
 3. [What is Terraform?](#what-is-terraform)
 4. [Why Terraform?](#why-terraform)
-5. [Interview One-Liners](#interview-one-liners)
+5. [Terraform Block & Version](#terraform-block--version)
+6. [Providers (multiple + versions)](#providers-multiple--versions)
+7. [Interview One-Liners](#interview-one-liners)
 
 **[Part 2 — count, for_each, Lifecycle & More](#part-2--count-for_each-lifecycle--more)**
 
-6. [Quick Definitions](#quick-definitions)
-7. [count vs for_each — Quick Rule](#count-vs-for_each--quick-rule)
-8. [count — numbered copies](#count--numbered-copies)
-9. [for_each — named resources](#for_each--named-resources)
-10. [Why not count with a list of names?](#why-not-count-with-a-list-of-names)
-11. [count vs for_each](#count-vs-for_each)
-12. [Parallelism](#parallelism)
-13. [Current vs Desired Infrastructure](#current-vs-desired-infrastructure)
-14. [Terraform Drift](#terraform-drift)
-15. [depends_on](#depends_on)
-16. [Lifecycle Rules](#lifecycle-rules)
-17. [-target (act on one resource only)](#-target-act-on-one-resource-only)
-18. [Interview One-Liners (Part 2)](#interview-one-liners-part-2)
+8. [Quick Definitions](#quick-definitions)
+9. [count vs for_each — Quick Rule](#count-vs-for_each--quick-rule)
+10. [count — numbered copies](#count--numbered-copies)
+11. [for_each — named resources](#for_each--named-resources)
+12. [Why not count with a list of names?](#why-not-count-with-a-list-of-names)
+13. [count vs for_each](#count-vs-for_each)
+14. [Parallelism](#parallelism)
+15. [Current vs Desired Infrastructure](#current-vs-desired-infrastructure)
+16. [Terraform Drift](#terraform-drift)
+17. [depends_on](#depends_on)
+18. [Lifecycle Rules](#lifecycle-rules)
+19. [-target (act on one resource only)](#-target-act-on-one-resource-only)
+20. [Interview One-Liners (Part 2)](#interview-one-liners-part-2)
 
 ## Overview
 
@@ -89,12 +91,83 @@ cloud for you.
 | **Multi-cloud**     | One tool for AWS, Azure, GCP                              |
 | **Cost control**    | `terraform destroy` removes everything → no forgotten bills |
 
+## Terraform Block & Version
+
+**terraform block** = global **settings for Terraform itself** (not a resource): required Terraform
+version, required providers, and backend (where state lives).
+
+![terraform block](./images/tfblock.png)
+
+```hcl
+terraform {
+  required_version = ">= 1.8.0"      # CLI must be 1.8.0 or newer
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "< 6.9.0"
+    }
+  }
+}
+```
+
+| Part                 | What it sets                                   |
+| -------------------- | ---------------------------------------------- |
+| `required_version`   | Allowed Terraform CLI version (older CLI → `init` fails) |
+| `required_providers` | Which provider plugins + versions to download  |
+| `backend`            | Where the state file is stored (Day 2)         |
+
+**Check the version** (all four do the same): `terraform -v` · `terraform version` ·
+`terraform -version` · `terraform --version`
+
+## Providers (multiple + versions)
+
+**Provider** = the **plugin** that talks to a cloud's API (AWS, Azure, GCP). One project can install
+**many providers at a time**.
+
+![Multiple providers](./images/providers.png)
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "< 6.9.0"            # below 6.9.0
+    }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "> 4.38.0"           # above 4.38.0
+    }
+    google = {
+      source  = "hashicorp/google"
+      version = "> 6.45, < 6.47.0"   # between the two
+    }
+  }
+}
+```
+
+| Constraint          | Meaning                       |
+| ------------------- | ----------------------------- |
+| `= 6.8.0`           | Exactly this version          |
+| `>= 1.8.0`          | This or newer                 |
+| `< 6.9.0`           | Below this                    |
+| `> 6.45, < 6.47.0`  | A range (both must match)     |
+| `~> 6.0`            | Any 6.x, never 7.0            |
+
+| Command / file             | What it does                                                   |
+| -------------------------- | -------------------------------------------------------------- |
+| `terraform init`           | Downloads the providers                                        |
+| `.terraform.lock.hcl`      | Records the exact versions picked → same versions every run    |
+| `terraform init -upgrade`  | Gets the **newest** versions the rules allow, updates the lock file |
+
 ## Interview One-Liners
 
 - **IaC** = managing infrastructure with code instead of manual steps.
 - **Terraform** = open-source IaC tool by HashiCorp that creates cloud resources from `.tf` code.
 - **Why not the console?** Manual clicks are slow, error-prone and not repeatable. Terraform code is
   automated, repeatable and tracked in Git.
+- **terraform block** = Terraform's own settings: `required_version`, `required_providers`, `backend`.
+- **Provider** = plugin that talks to a cloud API; pin versions in `required_providers`, `init -upgrade` to move to newer allowed versions.
 
 ---
 
@@ -198,6 +271,28 @@ resource "aws_instance" "app" {
 | `aws_instance.app["user"]`     | user     | t3.micro   |
 | `aws_instance.app["cart"]`     | cart     | t3.small   |
 
+### for_each with a list of names: `toset()`
+
+`for_each` accepts only a **map** or a **set**, not a list → wrap the list in `toset()`.
+
+![for_each with toset](./images/foreachset.png)
+
+```hcl
+resource "aws_instance" "one" {
+  for_each      = toset(["dev-server", "test-server", "prod-server"])
+  ami           = "ami-046d18c147c36bef1"
+  instance_type = "t2.micro"
+  tags = {
+    Name = each.key                 # dev-server / test-server / prod-server
+  }
+}
+```
+
+| Input         | `each.key` / `each.value`         | Use when                         |
+| ------------- | --------------------------------- | -------------------------------- |
+| **set** (`toset`) | both = the name               | Same settings, different names   |
+| **map**       | key = name, value = its settings  | Different settings per name      |
+
 ## Why not count with a list of names?
 
 You *can*, but it's risky:
@@ -245,6 +340,7 @@ Terraform creates **independent** resources **at the same time** — by default 
 ```bash
 terraform apply -parallelism=5     # max 5 at a time (fewer API calls)
 terraform apply -parallelism=20    # faster for big setups
+terraform apply -auto-approve -parallelism=15   # -auto-approve = skip the "yes" prompt
 ```
 
 | Use lower value           | Use higher value            |
@@ -347,6 +443,32 @@ resource "aws_instance" "web" {
 Default:               destroy old ──► create new     (downtime)
 create_before_destroy: create new  ──► destroy old    (no downtime)
 ```
+
+### create_before_destroy in action (change the AMI)
+
+Change the **AMI** of a running server → Terraform must **replace** it. Run `terraform apply` and
+watch the order.
+
+![create_before_destroy demo](./images/cbddemo.png)
+
+```hcl
+resource "aws_instance" "one" {
+  ami           = "ami-0208b77a23d891325"   # changed AMI → forces replacement
+  instance_type = "t2.micro"
+  tags = { Name = "web-server" }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+```
+
+| Plan shows                                   | Meaning                          |
+| -------------------------------------------- | -------------------------------- |
+| `-/+ destroy and then create replacement`    | Default → downtime               |
+| `+/- create replacement and then destroy`    | With the rule → no downtime      |
+
+⚠️ For a short time **both** exist → unique names (S3 bucket, SG name) clash. New server = new IP.
 
 ## -target (act on one resource only)
 
