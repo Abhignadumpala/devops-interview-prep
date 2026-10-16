@@ -6,18 +6,23 @@
 
 1. [Quick Definitions](#quick-definitions)
 2. [What is the State File?](#what-is-the-state-file)
-3. [Local State (default)](#local-state-default)
-4. [Remote State (S3 Backend)](#remote-state-s3-backend)
-5. [State Locking](#state-locking)
-6. [Migrating State (init options)](#migrating-state-init-options)
-7. [State Commands](#state-commands)
-8. [Interview One-Liners](#interview-one-liners)
+3. [Backend, Refresh & Backup](#backend-refresh--backup)
+4. [Local State (default)](#local-state-default)
+5. [Remote State (S3 Backend)](#remote-state-s3-backend)
+6. [State Locking](#state-locking)
+7. [Migrating State (init options)](#migrating-state-init-options)
+8. [State Commands](#state-commands)
+9. [Interview One-Liners](#interview-one-liners)
 
 ## Quick Definitions
 
 **State file** (`terraform.tfstate`) = Terraform's **memory**: a JSON file that records what Terraform created.
 - Maps code to real resources, so Terraform knows what to create, change or destroy.
 - Stores secrets in plain text → **never commit to Git**.
+
+**Backend** = **where the state file is stored**. Default = **local** backend (project folder); team = **S3** backend.
+
+**Refresh** = `plan`, `apply` and `destroy` first **check the real infra** and update the state automatically.
 
 **Local state** = the **default** — the state file is stored on your machine.
 - `terraform.tfstate` = current, `terraform.tfstate.backup` = previous version.
@@ -35,6 +40,9 @@
 
 **terraform state list** = lists **all resources** in the state.
 **terraform state show** = shows **full details** of one resource (ID, IP, tags).
+**terraform state mv** = **renames** a resource in the state (after renaming the block in code) → no destroy/recreate.
+**terraform state rm** = **removes** a resource from the state → Terraform forgets it, but it **still exists in AWS**.
+**terraform state pull** = **downloads** the state from the backend (S3) and prints it.
 
 ## What is the State File?
 
@@ -58,9 +66,20 @@ aws_instance.web       id = i-0abc123, ip = ...           EC2 i-0abc123
 
 ⚠️ State stores values in **plain text** (passwords, keys) → **never commit it to Git**.
 
-## Local State (default)
+## Backend, Refresh & Backup
 
-![Local vs remote state](./images/localremote.png)
+![State file basics](./images/statebasics.png)
+
+| Term                       | Meaning                                                                 |
+| -------------------------- | ----------------------------------------------------------------------- |
+| **Backend**                | **Where** the state file is stored. Default = **local** (project folder) |
+| **Format**                 | **JSON**                                                                |
+| **Refresh**                | `plan`, `apply`, `destroy` first check AWS and update the state automatically |
+| `terraform.tfstate.backup` | The **old** state, saved before every change. After a `destroy`, the deleted resource's info is still here |
+
+⚠️ Keep the state **safe & secure**: if it's lost, Terraform **can't track** the infra any more.
+
+## Local State (default)
 
 By default Terraform stores state **on your machine**, in the project folder.
 
@@ -79,6 +98,20 @@ By default Terraform stores state **on your machine**, in the project folder.
 | Secrets on laptop   | Plain-text values sitting locally                         |
 
 ## Remote State (S3 Backend)
+
+![S3 backend](./images/localremote.png)
+
+**Why:** with the local backend **only one person** can use the state. Real teams need a
+**centralised, consistent and secure** place for it → **Amazon S3**.
+
+| Need            | How S3 backend gives it                         |
+| --------------- | ----------------------------------------------- |
+| **Centralised** | One copy for the whole team + CI/CD             |
+| **Consistent**  | Lock → only one apply at a time                 |
+| **Secure**      | `encrypt = true`, bucket versioning, IAM access |
+
+> Older setups used **S3 + DynamoDB** for locking. DynamoDB locking is now **deprecated** →
+> use `use_lockfile = true`.
 
 **Remote backend** = keep the state file in a **shared, central place** like an **S3 bucket**.
 
@@ -140,12 +173,24 @@ When you change the backend (local → S3 or S3 → local), run `terraform init`
 
 ## State Commands
 
-![state list and state show](./images/statecmds.png)
+![terraform state commands](./images/statecmds.png)
 
-| Command                                  | What it does                                   |
-| ---------------------------------------- | ---------------------------------------------- |
-| `terraform state list`                   | Lists **all resources** in the state           |
-| `terraform state show <address>`         | Shows **full details** of one resource         |
+`terraform state` = commands for **advanced state management**. Never edit the JSON by hand: use
+these instead.
+
+| Command                                              | What it does                                              |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| `terraform state list`                               | Lists **all resources** in the state                      |
+| `terraform state show aws_subnet.two`                | Shows **full details** of one resource                    |
+| `terraform state mv aws_subnet.two aws_subnet.three` | **Renames** it in the state (after renaming the block in code) |
+| `terraform state rm aws_subnet.three`                | **Removes** it from the state; resource **stays in AWS**  |
+| `terraform state pull`                               | **Downloads** the state from the backend and prints it    |
+
+| Situation                                     | Without the command                    | With it                          |
+| --------------------------------------------- | -------------------------------------- | -------------------------------- |
+| Renamed `aws_subnet.two` → `three` in code    | Destroys "two", creates "three"        | `state mv` → same subnet, new name |
+| Want Terraform to stop managing a resource    | `destroy` would delete it              | `state rm` → kept in AWS, forgotten |
+| Need a copy of the remote state               | Download from S3 manually              | `state pull > backup.tfstate`    |
 
 ```bash
 $ terraform state list
@@ -164,4 +209,6 @@ $ terraform state show 'aws_instance.app["user"]'
 - **Why remote state?** Team sharing, locking, encryption, no single laptop holding it.
 - **Locking** = only one apply at a time; S3 native `use_lockfile` (new) — DynamoDB locking is **deprecated**.
 - **-migrate-state** copies state to the new backend; **-reconfigure** switches backend without copying.
+- **Backend** = where the state is stored; `plan` / `apply` / `destroy` refresh the state automatically.
+- **state mv** = rename in state (no recreate); **state rm** = forget a resource (stays in AWS); **state pull** = download remote state.
 - **Never** commit state to Git — it holds secrets in plain text.
