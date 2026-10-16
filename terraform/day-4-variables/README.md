@@ -2,6 +2,18 @@
 
 [← All notes](../README.md)
 
+## Table of Contents
+
+1. [Quick Definitions](#quick-definitions)
+2. [Overview](#overview)
+3. [Input Variable vs Local vs Output](#input-variable-vs-local-vs-output)
+4. [Input Variables](#input-variables)
+5. [Data Types](#data-types)
+6. [Locals](#locals)
+7. [Outputs](#outputs)
+8. [Syntax Cheat Sheet](#syntax-cheat-sheet)
+9. [Interview One-Liners](#interview-one-liners)
+
 ## Quick Definitions
 
 **Input variable** = a value **passed in from outside**, so nothing is hardcoded.
@@ -28,6 +40,8 @@ env = dev  ──►  local.name = roboshop-dev  ──►  roboshop-dev-fronten
 
 ## Input Variable vs Local vs Output
 
+![Variable to local to resource to output](./images/varflow.png)
+
 |                    | Input variable                          | Local                              | Output                          |
 | ------------------ | --------------------------------------- | ---------------------------------- | ------------------------------- |
 | **Purpose**        | Values that change per environment      | Avoid repeating the same value     | Show results after apply        |
@@ -47,6 +61,8 @@ env = dev  ──►  local.name = roboshop-dev  ──►  roboshop-dev-fronten
 | Do I need to see / share a result after apply? | Output   |
 
 ## Input Variables
+
+![Variable value priority](./images/passvalues.png)
 
 A value passed **into** Terraform so nothing is hardcoded. Same code → dev, test, prod.
 
@@ -68,6 +84,8 @@ variable "env" {
 | CLI flag     | `terraform apply -var="env=prod"`  |
 
 ## Data Types
+
+![Variable data types](./images/datatypes.png)
 
 | Type       | Short description                           | Example                                   |
 | ---------- | ------------------------------------------- | ----------------------------------------- |
@@ -154,6 +172,8 @@ variable "mixed" {
 
 ## Locals
 
+![Locals build once reuse](./images/locals.png)
+
 A value built **inside** the code, used many times. Change the variable once → every local and
 resource updates automatically.
 
@@ -210,6 +230,8 @@ terraform apply -var="env=prod"    # prod — no code change
 | prod | roboshop-prod | roboshop-prod-frontend, roboshop-prod-user, roboshop-prod-cart |
 
 ## Outputs
+
+![Outputs after apply](./images/outputs.png)
 
 Shows values **after apply** — IPs, IDs, names. Also how modules pass values to each other.
 

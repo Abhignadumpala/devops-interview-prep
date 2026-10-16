@@ -2,6 +2,30 @@
 
 [← All notes](../README.md)
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Traditional IT vs Cloud vs Terraform](#traditional-it-vs-cloud-vs-terraform)
+3. [What is Terraform?](#what-is-terraform)
+4. [Why Terraform?](#why-terraform)
+5. [Interview One-Liners](#interview-one-liners)
+
+**[Part 2 — count, for_each, Lifecycle & More](#part-2--count-for_each-lifecycle--more)**
+
+6. [Quick Definitions](#quick-definitions)
+7. [count vs for_each — Quick Rule](#count-vs-for_each--quick-rule)
+8. [count — numbered copies](#count--numbered-copies)
+9. [for_each — named resources](#for_each--named-resources)
+10. [Why not count with a list of names?](#why-not-count-with-a-list-of-names)
+11. [count vs for_each](#count-vs-for_each)
+12. [Parallelism](#parallelism)
+13. [Current vs Desired Infrastructure](#current-vs-desired-infrastructure)
+14. [Terraform Drift](#terraform-drift)
+15. [depends_on](#depends_on)
+16. [Lifecycle Rules](#lifecycle-rules)
+17. [-target (act on one resource only)](#-target-act-on-one-resource-only)
+18. [Interview One-Liners (Part 2)](#interview-one-liners-part-2)
+
 ## Overview
 
 Before learning Terraform, let's understand **why** we need it — what problems IT teams faced
@@ -40,6 +64,8 @@ same server every time, in every environment. No clicking, no guessing.
 | **Change history** | ❌                    | ❌                       | ✅ in Git               |
 
 ## What is Terraform?
+
+![Terraform workflow: write, init, plan, apply, destroy](./images/workflow.png)
 
 **Terraform** = an open-source **Infrastructure as Code (IaC)** tool by **HashiCorp**. You write
 your infrastructure (servers, VPCs, databases) as **code**, and Terraform **creates it** in the
@@ -120,6 +146,8 @@ cloud for you.
 
 ## count — numbered copies
 
+![count creates numbered copies](./images/count.png)
+
 **count** = make **N copies** of the same block. Each copy gets a number: `count.index`
 (starts at 0).
 
@@ -143,6 +171,8 @@ resource "aws_instance" "web" {
 **Scale:** `count = 5` → adds web-4, web-5. `count = 2` → removes web-3 (always from the **end**).
 
 ## for_each — named resources
+
+![for_each named resources vs count shifting](./images/foreach.png)
 
 **for_each** = loop over a **map** (or set). Each resource is tracked by its **name (key)**.
 Use `each.key` and `each.value`.
@@ -208,6 +238,8 @@ removing `user` deletes **only** user.
 
 ## Parallelism
 
+![Parallelism default 10](./images/parallelism.png)
+
 Terraform creates **independent** resources **at the same time** — by default **10 at once**.
 
 ```bash
@@ -220,6 +252,8 @@ terraform apply -parallelism=20    # faster for big setups
 | Cloud API rate-limit errors | Many independent resources |
 
 ## Current vs Desired Infrastructure
+
+![Desired vs current infrastructure](./images/desired.png)
 
 | Term                       | Meaning                                         | Where it lives                |
 | -------------------------- | ----------------------------------------------- | ----------------------------- |
@@ -247,6 +281,8 @@ Desired (.tf code)          Current (AWS)
 
 ## Terraform Drift
 
+![Terraform drift](./images/drift.png)
+
 **Drift** = real infrastructure is **different** from what Terraform knows (state/code), because
 someone **changed it by hand** in the console.
 
@@ -263,6 +299,8 @@ Code says: t3.micro   ──►   Someone changes it in console to t3.large   �
 > **Prevent drift:** all changes through Terraform, no console clicks.
 
 ## depends_on
+
+![depends_on creation order](./images/dependson.png)
 
 Terraform finds the order **automatically** when one resource **uses** another (e.g. `vpc_id =
 aws_vpc.main.id`). **depends_on** = force an order when there is **no direct link**.
@@ -281,6 +319,8 @@ resource "aws_instance" "app" {
 | Explicit | `depends_on = [...]` (only when needed)  |
 
 ## Lifecycle Rules
+
+![Lifecycle rules](./images/lifecycle.png)
 
 Change Terraform's **default** create / update / destroy behaviour.
 
@@ -309,6 +349,8 @@ create_before_destroy: create new  ──► destroy old    (no downtime)
 ```
 
 ## -target (act on one resource only)
+
+![-target one resource](./images/target.png)
 
 **-target** = run plan / apply / destroy on **one resource** only, not everything.
 

@@ -2,6 +2,15 @@
 
 [← All notes](../README.md)
 
+## Table of Contents
+
+1. [Quick Definitions](#quick-definitions)
+2. [terraform taint (replace a resource)](#terraform-taint-replace-a-resource)
+3. [terraform plan -out (saved plan)](#terraform-plan--out-saved-plan)
+4. [terraform import](#terraform-import)
+5. [Terraform Debugging](#terraform-debugging)
+6. [Interview One-Liners](#interview-one-liners)
+
 ## Quick Definitions
 
 **terraform taint** = mark a resource as **broken** so the next `apply` **recreates** it.
@@ -19,6 +28,8 @@
 - Levels: TRACE, DEBUG, INFO, WARN, ERROR. Save to a file with `TF_LOG_PATH`.
 
 ## terraform taint (replace a resource)
+
+![taint vs apply -replace](./images/replace.png)
 
 **Taint** = mark a resource as **broken** so the next `apply` **destroys and recreates** it — even
 though the code didn't change.
@@ -45,6 +56,8 @@ terraform apply -replace="aws_instance.web"
 
 ## terraform plan -out (saved plan)
 
+![Saved plan workflow](./images/planout.png)
+
 **plan -out** = save the plan to a **file**, then apply **exactly** that plan — nothing more,
 nothing less.
 
@@ -67,6 +80,8 @@ plan -out dev  ──►  review / approve  ──►  apply dev
 ⚠️ The plan file can contain secrets → don't commit it to Git.
 
 ## terraform import
+
+![terraform import](./images/import.png)
 
 **Import** = bring an **existing** resource (created by hand in the console) **under Terraform
 control**, by adding it to the state.
@@ -106,6 +121,8 @@ terraform apply                                    # imported
 
 ## Terraform Debugging
 
+![TF_LOG debugging](./images/debug.png)
+
 Turn on **detailed logs** with the `TF_LOG` environment variable.
 
 | Level   | Shows                                 |
@@ -123,6 +140,19 @@ terraform apply
 
 unset TF_LOG TF_LOG_PATH              # turn logs off
 ```
+
+**Windows (PowerShell)**
+```powershell
+$env:TF_LOG="TRACE"
+$env:TF_LOG_PATH="logs.txt"
+terraform init
+terraform plan
+```
+
+| Set                         | Logs go to             |
+| --------------------------- | ---------------------- |
+| Only `TF_LOG`               | Screen                 |
+| `TF_LOG` + `TF_LOG_PATH`    | File (`logs.txt`)      |
 
 **Other helpful commands**
 

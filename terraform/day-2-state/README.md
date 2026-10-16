@@ -2,6 +2,17 @@
 
 [← All notes](../README.md)
 
+## Table of Contents
+
+1. [Quick Definitions](#quick-definitions)
+2. [What is the State File?](#what-is-the-state-file)
+3. [Local State (default)](#local-state-default)
+4. [Remote State (S3 Backend)](#remote-state-s3-backend)
+5. [State Locking](#state-locking)
+6. [Migrating State (init options)](#migrating-state-init-options)
+7. [State Commands](#state-commands)
+8. [Interview One-Liners](#interview-one-liners)
+
 ## Quick Definitions
 
 **State file** (`terraform.tfstate`) = Terraform's **memory**: a JSON file that records what Terraform created.
@@ -27,6 +38,8 @@
 
 ## What is the State File?
 
+![State file maps code to AWS](./images/statefile.png)
+
 **State file** (`terraform.tfstate`) = Terraform's **memory**. A JSON file that records **what
 Terraform created** and maps your code to the real resources in the cloud.
 
@@ -46,6 +59,8 @@ aws_instance.web       id = i-0abc123, ip = ...           EC2 i-0abc123
 ⚠️ State stores values in **plain text** (passwords, keys) → **never commit it to Git**.
 
 ## Local State (default)
+
+![Local vs remote state](./images/localremote.png)
 
 By default Terraform stores state **on your machine**, in the project folder.
 
@@ -89,6 +104,8 @@ CI/CD ─┘
 
 ## State Locking
 
+![State locking](./images/locking.png)
+
 **Locking** = only **one person / pipeline** can change the state at a time. Others wait or get an
 error → no corruption.
 
@@ -107,6 +124,8 @@ running.
 
 ## Migrating State (init options)
 
+![-migrate-state vs -reconfigure](./images/migrate.png)
+
 When you change the backend (local → S3 or S3 → local), run `terraform init` again.
 
 | Command                          | What it does                                               |
@@ -120,6 +139,8 @@ When you change the backend (local → S3 or S3 → local), run `terraform init`
 3. Use `-reconfigure` when you just want to switch backends and **don't** need the old state copied
 
 ## State Commands
+
+![state list and state show](./images/statecmds.png)
 
 | Command                                  | What it does                                   |
 | ---------------------------------------- | ---------------------------------------------- |
