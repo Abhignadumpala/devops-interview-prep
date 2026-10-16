@@ -124,6 +124,42 @@ variable "prefix" {
 ["Mr", 80, true]       # ❌ mixed types → not a list (use a tuple)
 ```
 
+### List vs Tuple
+
+List and tuple **look the same** (values in `[ ]`, called by index), but they serve a **different
+purpose**.
+
+|                    | list                                              | tuple                                              |
+| ------------------ | ------------------------------------------------- | -------------------------------------------------- |
+| **What we pass**   | **Values only** (no keys)                         | **Values only** (no keys)                          |
+| **Data types**     | **Same type** only: all strings, or all numbers    | **Different types** mixed: string, number, bool    |
+| **How we call it** | By **index number** 0, 1, 2 → `var.prefix[1]`     | By **index number** 0, 1, 2 → `var.mixed[1]`       |
+| **Example**        | `["Mr", "Mrs", "Sir"]`                            | `["web", 80, true]`                                |
+| **Type syntax**    | `list(string)`                                    | `tuple([string, number, bool])`                    |
+
+### Collection Types at a Glance
+
+![list vs tuple, map vs object](./images/collections.png)
+
+|                       | Same data type | Mixed data types |
+| --------------------- | -------------- | ---------------- |
+| **Values only** (index 0, 1, 2) | **list**  | **tuple**        |
+| **Key = value** (call by key)   | **map**   | **object**       |
+
+**Map vs Object**: also look the same (key = value in `{ }`), but serve a different purpose.
+
+|                    | map                                               | object                                             |
+| ------------------ | ------------------------------------------------- | -------------------------------------------------- |
+| **What we pass**   | **Keys and values** both                          | **Keys and values** both                           |
+| **What it is**     | **Key-value pairs**                               | **Group of named attributes**                      |
+| **Data types**     | All values **same type** (usually strings)        | **Mixed**: string, number, bool together           |
+| **Keys**           | Free: any names                                   | Fixed: set in the type                             |
+| **How we call it** | By key → `var.size["prod"]`                       | By attribute → `var.server.port`                   |
+| **Example**        | `{ dev = "t3.micro", prod = "t3.large" }`         | `{ name = "web", port = 80, public = true }`       |
+
+> **Remember:** list / tuple = **values only**, called by **index**. map / object = **key and
+> value**, called by **key**. In each pair: first one = **same type**, second one = **mixed types**.
+
 ### Map vs Object (what are "fixed keys"?)
 
 ![Map vs object](./images/map-vs-object.png)
