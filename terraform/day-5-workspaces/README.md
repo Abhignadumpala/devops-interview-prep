@@ -1,4 +1,4 @@
-# Day 5 — Terraform Workspaces
+# Day 5 — Terraform Workspaces & Passing Variables
 
 [← All notes](../README.md)
 
@@ -11,7 +11,11 @@
 5. [Where the State Lives](#where-the-state-lives)
 6. [terraform.workspace](#terraformworkspace)
 7. [Real-Time Tips](#real-time-tips)
-8. [Interview One-Liners](#interview-one-liners)
+8. [Terraform CLI: -auto-approve and -var](#terraform-cli--auto-approve-and--var)
+9. [tfvars Files](#tfvars-files)
+10. [Environment Variables (TF_VAR_)](#environment-variables-tf_var_)
+11. [Variable Precedence](#variable-precedence)
+12. [Interview One-Liners](#interview-one-liners)
 
 ## Quick Definitions
 
@@ -26,6 +30,14 @@
 **terraform.tfstate.d/** = folder where each workspace's state is kept (local backend).
 
 **terraform.workspace** = built-in value with the **current workspace name** (`dev`, `prod`).
+
+**-var** = pass **one** variable value from the command line.
+
+**tfvars file** = a file that holds **many** variable values (one file per environment).
+
+**TF_VAR_name** = environment variable that sets `variable "name"`.
+
+**Variable precedence** = the priority order Terraform uses when the same variable is set in many places.
 
 ## What are Workspaces?
 
@@ -141,9 +153,9 @@ terraform workspace delete dev
 
 | Rule                                         | Why                                         |
 | -------------------------------------------- | ------------------------------------------- |
+| **Empty** the workspace first (`destroy`)    | Otherwise its resources keep running, untracked |
+| Can't delete the **current** workspace       | Switch to another one, then delete          |
 | Can't delete the `default` workspace         | It always exists                            |
-| Can't delete the **current** workspace       | Switch to another one first                 |
-| Destroy resources before deleting            | Otherwise they're left running, untracked   |
 
 ## Where the State Lives
 
@@ -197,6 +209,128 @@ resource "aws_instance" "one" {
 | Workspaces fit **similar** envs (dev / test)   | Quick copies of the same infra                        |
 | Prod often in a **separate folder / account / backend** | All workspaces share one backend and the same credentials → weaker isolation |
 
+## Terraform CLI: -auto-approve and -var
+
+![Terraform CLI -auto-approve and -var](./images/clivar.png)
+
+| Method | Command | Meaning |
+| ------ | ------- | ------- |
+| **1. Skip the prompt** | `terraform apply -auto-approve`<br>`terraform destroy -auto-approve` | No "yes" question. Values come from defaults / tfvars |
+| **2. Pass a value** | `terraform apply -auto-approve -var="instance_type=t3.micro"`<br>`terraform destroy -auto-approve -var="instance_type=t3.micro"` | Overrides the value for **this run only**. No code change |
+
+```bash
+# more than one -var is allowed
+terraform apply -var="instance_type=t3.micro" -var="name=web"
+```
+
+| You need to pass | Use |
+| ---------------- | --- |
+| **One** (or two) values | `-var="key=value"` |
+| **Many** values | a tfvars file + `-var-file=dev.tfvars` |
+
+> Pass the **same values to destroy** as you used for apply. `-auto-approve` is the official spelling; `--auto-approve` also works.
+
+## tfvars Files
+
+![tfvars files](./images/tfvars.png)
+
+**tfvars** = a file that stores variable **values**. When you have **different configurations** (dev, test, prod), keep each in its own tfvars file and pass it with the apply command.
+
+```hcl
+# variables.tf  → declares the variables (no values needed)
+variable "instance_type" {}
+variable "name" {}
+
+# terraform.tfvars  → the values
+instance_type = "t3.micro"
+name          = "web"
+```
+
+| File name | Loaded automatically? | Use for |
+| --------- | --------------------- | ------- |
+| `terraform.tfvars` | ✅ Yes, **by default** | Default values for this folder |
+| `terraform.tfvars.json` | ✅ Yes | Same thing, written in **JSON** format |
+| `anything.auto.tfvars` | ✅ Yes | Common values shared by every run |
+| `dev.tfvars`, `prod.tfvars` | ❌ No → `-var-file=dev.tfvars` | One file per environment |
+
+```bash
+terraform apply                          # reads terraform.tfvars by itself
+terraform apply -var-file=prod.tfvars    # reads prod.tfvars (plus the auto-loaded files)
+```
+
+**terraform.tfvars.json** example:
+```json
+{
+  "instance_type": "t3.micro",
+  "name": "web"
+}
+```
+
+## Environment Variables (TF_VAR_)
+
+![Environment variables TF_VAR_](./images/envvars.png)
+
+**Environment variable** = a key-value pair set in the **shell where Terraform runs**. Terraform reads `TF_VAR_<name>` as the value of `variable "<name>"`.
+
+| OS | Set | Show | Remove |
+| -- | --- | ---- | ------ |
+| **Linux / Mac** | `export TF_VAR_instance_type="t3.micro"` | `env \| grep TF_VAR` | `unset TF_VAR_instance_type` |
+| **Windows (PowerShell)** | `$env:TF_VAR_instance_type = "t3.micro"` | `dir env:` | `Remove-Item env:TF_VAR_instance_type` |
+
+**Linux / Mac**
+```bash
+export TF_VAR_region=us-east-1
+export TF_VAR_instance_type="t3.micro"
+export TF_VAR_tagmap='{ Environment = "dev", Project = "demo" }'   # a map
+```
+
+**Windows (PowerShell)**
+```powershell
+$env:TF_VAR_instance_type = "t3.micro"
+$env:TF_VAR_instance_count = 1
+$env:TF_VAR_instance_name = "abcd"
+dir env:          # show all env vars
+```
+
+| Point | Meaning |
+| ----- | ------- |
+| Name must match | `TF_VAR_instance_type` → `variable "instance_type"` (case-sensitive) |
+| Lasts for the session | Close the terminal → gone |
+| Real-time use | CI/CD pipelines and secrets you don't want written in files |
+
+## Variable Precedence
+
+![Variable precedence](./images/precedence.png)
+
+**Variable precedence** = the priority order Terraform follows when the same variable is set in many places. **1 = highest**, it wins over everything below.
+
+| Priority | Source | Example |
+| -------- | ------ | ------- |
+| **1** 🏆 | **CLI** `-var` / `-var-file` | `-var="instance_type=t3.large"` |
+| **2** | `*.auto.tfvars` | `common.auto.tfvars` |
+| **3** | `terraform.tfvars.json` | `{ "instance_type": "t2.medium" }` |
+| **4** | `terraform.tfvars` | `instance_type = "t2.medium"` |
+| **5** | **Env variable** | `export TF_VAR_instance_type=t2.small` |
+| **6** | **Default** in `variables.tf` | `default = "t2.micro"` |
+
+**Example:** `instance_type` is set in 4 places.
+```bash
+# variables.tf       default = "t2.micro"
+# env                export TF_VAR_instance_type=t2.small
+# terraform.tfvars   instance_type = "t2.medium"
+terraform apply -var="instance_type=t3.large"
+```
+
+| What you remove | Value used |
+| --------------- | ---------- |
+| Nothing | **t3.large** (CLI wins) |
+| The `-var` | **t2.medium** (terraform.tfvars) |
+| `-var` + terraform.tfvars | **t2.small** (env variable) |
+| All of the above | **t2.micro** (default) |
+| No value anywhere and no default | Terraform **asks** you at the prompt |
+
+> **Easy way to remember:** the closer to the command, the higher the priority → what you type > files > shell > code default.
+
 ## Interview One-Liners
 
 - **Workspace** = same Terraform code, separate state file per environment (dev, test, prod).
@@ -205,3 +339,7 @@ resource "aws_instance" "one" {
 - **Commands** = `workspace new / select / list / show / delete`.
 - **terraform.workspace** = current workspace name, used in resource names and tags.
 - **Risk** = applying in the wrong workspace; always check `terraform workspace show`. Many teams keep prod in a separate backend or account.
+- **-var** = pass one value from the CLI; for many values use a tfvars file with `-var-file`.
+- **terraform.tfvars** = loaded automatically (also `terraform.tfvars.json` and `*.auto.tfvars`); other tfvars files need `-var-file`.
+- **TF_VAR_name** = environment variable that sets `variable "name"`; lasts only for the shell session.
+- **Precedence** (high → low) = CLI `-var`/`-var-file` → `*.auto.tfvars` → `terraform.tfvars.json` → `terraform.tfvars` → `TF_VAR_` → default.
