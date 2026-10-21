@@ -15,7 +15,8 @@
 9. [Public Modules](#public-modules)
 10. [Module Commands](#module-commands)
 11. [Real-Time Tips](#real-time-tips)
-12. [Interview One-Liners](#interview-one-liners)
+12. [Interview Questions](#interview-questions)
+13. [Interview One-Liners](#interview-one-liners)
 
 ## Quick Definitions
 
@@ -361,6 +362,42 @@ terraform state list
 | Output only what callers **need** (IDs, IPs) | Keeps the module's interface small and clear |
 | Check a public module before using it | Look at downloads, last update, open issues and the code |
 | Don't over-nest modules | Hard to debug when there are 4–5 levels |
+
+## Interview Questions
+
+**1. What are the different types of modules? Difference between a local module and a remote module?**
+
+Modules are of two types by where they come from: **local** and **remote**.
+
+- **Local module** = a module **we write ourselves**, kept in our own project folder.
+- **Remote module** = a module **already developed by someone else** (HashiCorp, the community, or another team), downloaded from the Terraform Registry, GitHub, HTTP or S3.
+
+| | Local module | Remote module |
+| - | ------------ | ------------- |
+| Who writes it | **We write it ourselves** | **Already developed by someone else** |
+| Where it lives | Our project folder | Terraform Registry, GitHub/Git, HTTP URL, S3 |
+| `source` example | `"./modules/instance"` | `"terraform-aws-modules/vpc/aws"` |
+| `version` | Not used | `version = "5.13.0"` (Registry) or `?ref=v1.2.0` (Git) |
+| `terraform init` | Not downloaded; used from the folder | Downloaded into `.terraform/modules/` |
+| Control | Full control; we change the code | We use it as it is; changes come with new versions |
+| Use when | Company-specific setup | Common infra (VPC, EKS) that is already built and tested |
+
+```hcl
+# Local module: written by us
+module "instance" {
+  source = "./modules/instance"
+}
+
+# Remote module: already developed by someone else
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "5.13.0"
+}
+```
+
+> **One-liner:** a local module is written by us in our own folder; a remote module is already developed by someone else and downloaded by `terraform init`.
+
+More practice questions → [interview-questions/](interview-questions/README.md)
 
 ## Interview One-Liners
 
