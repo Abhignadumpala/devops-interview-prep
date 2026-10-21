@@ -43,9 +43,23 @@ A **module** is a container for **multiple resources that are used together**. I
 you split the code into **folders**. Each folder does **one job** (VPC, EC2, S3…).
 
 - It divides the code into a **folder structure**.
-- A module is a **group of resources** managed together (e.g. VPC + subnets + route tables).
-- It makes code **easier to read** and **reusable** across your organisation.
-- You can **publish** modules so others can use them.
+- Modules are a **group of multiple resources** that are **managed together** (e.g. VPC + subnets + route tables).
+- This makes your code **easier to read** and **reusable** across your organisation.
+- We can **publish** modules for others to use.
+- Each module is **downloaded separately** by `terraform init`.
+- Downloaded modules are stored in **`.terraform/modules/`** (provider plugins go to `.terraform/providers/`).
+- While using modules, **version is not mandatory** (but always pin it in real time).
+
+**Types**
+- **Root module:** the main directory where Terraform commands are run. All Terraform configuration in it belongs to the root module.
+- **Child modules:** modules that are **called by other modules**.
+
+<details>
+<summary>📸 Class slide: Modules</summary>
+
+![Class slide: Modules](./class-slides/modules.png)
+
+</details>
 
 > **Analogy:** a module is like a **function** in programming. Write it once, call it many times with different inputs, and get outputs back.
 
@@ -219,6 +233,13 @@ module.instance.public_ip   ◀─④── outputs.tf     output "public_ip"
 > **Rule:** a module is a closed box. The only doors are **variables (in)** and **outputs (out)**.
 > A variable with **no default** is **required**. If the root doesn't pass it, `plan` fails.
 
+<details>
+<summary>📸 Class slide: Module Input & Outputs</summary>
+
+![Class slide: Module Input & Outputs](./class-slides/module-inputs-outputs.png)
+
+</details>
+
 ## Module Sources
 
 ![Module sources](./images/sources.png)
@@ -265,6 +286,13 @@ module "vpc" {
 | `version` mandatory? | **No**, but without it you get the **latest** → may break later. Always pin in real time |
 | `version` works for | **Registry** modules only. Git uses `?ref=`, local paths have no version |
 
+<details>
+<summary>📸 Class slide: Module Sources</summary>
+
+![Class slide: Module Sources](./class-slides/module-sources.png)
+
+</details>
+
 ## Public Modules
 
 ![Publishing a public module](./images/public-modules.png)
@@ -294,6 +322,13 @@ module "ec2" {
 | **MAJOR** | Breaking change (inputs renamed/removed) | `1.4.0` → `2.0.0` |
 | **MINOR** | New feature, still compatible | `1.2.0` → `1.3.0` |
 | **PATCH** | Bug fix | `1.2.0` → `1.2.1` |
+
+<details>
+<summary>📸 Class slide: Public Modules</summary>
+
+![Class slide: Public Modules](./class-slides/public-modules.png)
+
+</details>
 
 ## Module Commands
 
