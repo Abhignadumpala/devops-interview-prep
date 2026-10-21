@@ -7,3 +7,4 @@ Daily notes:
 - [Day 3 — Taint, Saved Plans, Import & Debugging](./day-3-taint-import-debug/README.md)
 - [Day 4 — Variables, Outputs & Locals](./day-4-variables/README.md)
 - [Day 5 — Workspaces & Passing Variables](./day-5-workspaces/README.md)
+- [Day 6 — Modules](./day-6-modules/README.md)
