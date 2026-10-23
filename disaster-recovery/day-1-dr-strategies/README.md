@@ -280,18 +280,10 @@ Singapore (warm):   ALB →  2 × t3.medium app servers → DB db.r5.large  (rep
 | Can it serve users right now? | **No**, it must start first | **Yes**, just few users |
 | On disaster | **Start** the app | **Scale up** the app |
 
-#### The colour bar and the analogies
+#### The colour bar and the analogy
 
 - **The bar:** green (left) = cheaper, slower recovery, more data loss → red (right) = costlier, faster recovery, less data loss.
 - **House analogy (in the image):** 1️⃣ insurance papers in a locker (rebuild from scratch) · 2️⃣ an empty flat, with furniture delivered when you call · 3️⃣ a small furnished flat you can move into today · 4️⃣ you already live in two houses.
-- **Restaurant analogy** (disaster = your kitchen burns down):
-
-| # | Strategy | Restaurant version | When the kitchen burns down |
-|---|----------|--------------------|-----------------------------|
-| 1 | Backup & Restore | Only the **recipe book and a photo of the stock list** in a locker | Rent a new place, buy equipment, restock. **Takes a day** |
-| 2 | Pilot Light | Second kitchen **built, fridge stocked and kept fresh**, but **stoves off, no staff** | Turn on the stoves, call staff in. **~30 min** |
-| 3 | Warm Standby | Second **small kitchen open**, 2 cooks already cooking | Call in more cooks for full crowds. **Minutes** |
-| 4 | Active/Active | **Two full restaurants**, both serving every day | Customers go to the other one. **No break** |
 
 #### Real app examples
 
