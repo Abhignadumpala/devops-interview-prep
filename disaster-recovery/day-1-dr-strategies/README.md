@@ -227,8 +227,19 @@ The company names below are only examples of the **type** of app. Netflix has pu
 ### 1. Backup & Restore
 
 ```
-Primary (Mumbai)                       DR (Singapore)
- EC2 + RDS + S3  ── snapshots copied ──▶ snapshots / AMIs / S3 copies   (no servers)
+           Route 53 ──▶ Mumbai only (Singapore has nothing to serve)
+
+  PRIMARY (Mumbai)                      DR (Singapore)
+ ┌──────────────────────┐              ┌──────────────────────────┐
+ │ ALB                  │              │ -                        │
+ │ App servers x4       │ ──AMI──────▶ │ AMI images (stored)      │
+ │ RDS writer           │ ──snapshot─▶ │ DB snapshots (stored)    │
+ │ S3 bucket            │ ──copy─────▶ │ S3 copies (stored)       │
+ └──────────────────────┘              └──────────────────────────┘
+   running: full stack                   running: NOTHING, only backups
+
+ On disaster: terraform apply (VPC, ALB, servers, DB) → restore DB from
+              snapshot → deploy app → switch Route 53 to Singapore
 ```
 
 - Schedule backups (**AWS Backup**), **copy them to the DR region** (and ideally another account).
@@ -241,9 +252,19 @@ Primary (Mumbai)                       DR (Singapore)
 > Named after the small flame in a gas heater: always on, so the full heater lights up quickly.
 
 ```
-Primary (Mumbai)                       DR (Singapore)
- ALB → ASG (4) → RDS writer ─ replication ─▶ RDS read replica   (core data is LIVE)
-                                            ASG desired = 0     (app is OFF)
+           Route 53 ──▶ Mumbai only (Singapore app is OFF)
+
+  PRIMARY (Mumbai)                      DR (Singapore)
+ ┌──────────────────────┐              ┌──────────────────────────┐
+ │ ALB                  │              │ ALB (optional, idle)     │
+ │ App servers x4       │              │ App servers x0  [OFF]    │
+ │ RDS writer           │ ─replicate─▶ │ RDS read replica [LIVE]  │
+ │ S3 bucket            │ ──CRR──────▶ │ S3 bucket (replicated)   │
+ └──────────────────────┘              └──────────────────────────┘
+   running: full stack                   running: ONLY the DB replica
+
+ On disaster: promote replica → writer → ASG 0 → 4 → wait for boot +
+              health checks → switch Route 53 to Singapore
 ```
 
 - The **core** (databases) is always running and replicating. The **app tier** is defined (launch template, ASG, Terraform) but **switched off**.
@@ -253,8 +274,19 @@ Primary (Mumbai)                       DR (Singapore)
 ### 3. Warm Standby
 
 ```
-Primary (Mumbai)                       DR (Singapore)
- ALB → ASG (10) → DB writer ─ replication ─▶ ALB → ASG (2) → DB replica   (small but WORKING)
+           Route 53 ──▶ Mumbai only (Singapore is ready, small)
+
+  PRIMARY (Mumbai)                      DR (Singapore)
+ ┌──────────────────────┐              ┌──────────────────────────┐
+ │ ALB                  │              │ ALB                      │
+ │ App servers x10      │              │ App servers x2   [ON]    │
+ │ RDS writer (big)     │ ─replicate─▶ │ RDS replica (small)      │
+ │ S3 bucket            │ ──CRR──────▶ │ S3 bucket (replicated)   │
+ └──────────────────────┘              └──────────────────────────┘
+   running: full stack                   running: FULL stack, SMALL size
+
+ On disaster: promote replica → scale 2 → 10 servers (resize DB) →
+              switch Route 53 to Singapore
 ```
 
 - A **smaller, fully working** copy. You can even send test traffic to it any time.
@@ -265,9 +297,19 @@ Primary (Mumbai)                       DR (Singapore)
 ### 4. Multi-site Active/Active
 
 ```
-              Route 53 (latency / weighted routing)
-               ├──▶ Mumbai:    full stack ─┐
-               └──▶ Singapore: full stack ─┴─ data replicated both ways
+     Route 53 ──▶ Mumbai 50% users  +  Singapore 50% users
+
+  REGION A (Mumbai)                     REGION B (Singapore)
+ ┌──────────────────────┐              ┌──────────────────────────┐
+ │ ALB                  │              │ ALB                      │
+ │ App servers x10      │              │ App servers x10  [ON]    │
+ │ DB (writes)          │ ◀─two-way──▶ │ DB (writes)              │
+ │ S3 bucket            │ ◀──CRR─────▶ │ S3 bucket                │
+ └──────────────────────┘              └──────────────────────────┘
+   running: full stack, serving          running: FULL stack, SERVING
+
+ On disaster: Route 53 health check fails for Mumbai → 100% of users go
+              to Singapore. Nothing to start, promote or scale.
 ```
 
 - Both regions serve users **all the time**. If one fails, Route 53 health checks stop sending traffic there.
