@@ -320,6 +320,30 @@ custom AMI         → nginx already installed, nothing runs at launch      (bes
 
 > **Rule of thumb:** Terraform **creates** infra → `user_data` / Packer / Ansible **configure** it. Use a provisioner only when nothing else fits.
 
+### Small setup vs large configuration: which tool?
+
+**Last resort** = the **last option**, used only when nothing better works. HashiCorp's own docs call provisioners a last resort.
+
+**Common mistake:** "small setup → provisioners, large setup → Ansible". ❌
+**Correct:** small setup → **user_data**, large setup → **Ansible**. Provisioners → only as a **bridge** or when nothing else fits. ✅
+
+| Job | First choice | Why |
+|-----|--------------|-----|
+| **Small** setup at boot (install an agent, set the hostname, install nginx) | **user_data** | Runs inside the server at first boot, no SSH, works with Auto Scaling |
+| **Large** setup on many long-running servers, updated later (e.g. RoboShop on 10 EC2s) | **Ansible** | Idempotent, re-runnable, one command updates all servers |
+| Auto Scaling servers that must start fast | **Pre-baked AMI** (Packer, often with Ansible inside) | Software already in the image, so boot is quick |
+| App runs in containers | **Docker image + Kubernetes/Helm** | No server setup at all |
+| Create an AWS thing (DNS record, bucket) | **A Terraform resource** | Don't use `local-exec` + AWS CLI when a resource exists |
+| Start Ansible right after `terraform apply` | **`local-exec` provisioner** | The one common real use: a bridge between the two tools |
+
+```
+Terraform (creates EC2, SG, DNS)
+   → local-exec: ansible-playbook -i <new IP>, app.yml     (bridge)
+   → Ansible installs + configures the app                 (re-run any time to update)
+```
+
+**Why not provisioners for a small setup?** They run **only once** at creation (editing them later does nothing to existing servers), **aren't in state** (Terraform doesn't know what they installed), **aren't idempotent** (commands run blindly, with no "already installed? skip"), and `remote-exec` needs SSH, a key and port 22 open. user_data does the same small job without any of that.
+
 ## Hands-On Lab: Problems I Hit and Fixes
 
 Full lab with code and output: [KodeKloud Module 8.4 hands-on lab](https://github.com/Abhignadumpala/terraform-notes-kodekloud/tree/main/module-08-terraform-provisioners/module-08.4-terraform-provisioners/hands-on-lab)
@@ -390,3 +414,5 @@ More practice questions → [interview-questions/](interview-questions/README.md
 - **Not in plan or state** = Terraform can't see what a provisioner changed.
 - **terraform_data** = built-in resource for provisioners with `triggers_replace`; replaces `null_resource`.
 - **Better options** = `user_data` / cloud-init, Packer AMIs, Ansible.
+- **Terraform vs Ansible** = Terraform **builds** the servers (provisioning); Ansible **sets up the app inside** them (configuration).
+- **Small setup → user_data, large setup → Ansible**; provisioners only as a bridge (`local-exec` → `ansible-playbook` after apply).
