@@ -333,6 +333,17 @@ The company names below are only examples of the **type** of app. Netflix has pu
 
 ## Failover and Failback
 
+**Failover** = moving users and work from the **failed primary** region to the **DR region**, so the app keeps running. Example: Mumbai goes down → promote the DB in Singapore → scale up the servers → Route 53 sends users to Singapore. It's done **during the disaster**, fast, often automatically with health checks.
+
+**Failback** = moving back to the **primary** region **after it's fixed**. Example: Mumbai is healthy again → copy the new data written in Singapore back to Mumbai → switch DNS back to Mumbai. It's done **later, in a planned window**, slowly and carefully, so the data written during the outage isn't lost.
+
+| | Failover | Failback |
+|--|----------|----------|
+| Direction | Primary → DR | DR → primary |
+| When | During the disaster | After the primary is fixed |
+| Speed | As fast as possible (RTO) | Planned, no rush |
+| Main risk | Downtime | Losing the data written in DR during the outage |
+
 ![Failover with Route 53](./images/failover.png)
 
 **Route 53 failover routing:**
