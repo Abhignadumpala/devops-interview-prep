@@ -396,6 +396,24 @@ No. Meta-argument blocks (`lifecycle`, `provisioner`, `connection`) can't be gen
 **7. Any downside?**
 Readability. Too many or deeply nested dynamic blocks make code hard to follow. Use them when the number of blocks really varies.
 
+**8. ⭐ How do you reduce the length of Terraform code?**
+
+Dynamic blocks are **one** answer. A strong answer lists the main ways, each for a different kind of repetition:
+
+| Repetition | Tool | Example |
+|------------|------|---------|
+| Same **nested block** many times | **Dynamic block** | 10 `ingress` rules → 1 `dynamic "ingress"` |
+| Same **resource** many times | **`count` / `for_each`** | 10 EC2 servers → 1 `aws_instance` with `for_each` |
+| Same **group of resources** in many places / environments | **Modules** | One `vpc` module used for dev, qa, prod |
+| Same **value / expression** repeated | **`locals`** | `local.common_tags`, `local.name_prefix` |
+| Hard-coded values per environment | **Variables + `.tfvars`** | `dev.tfvars`, `prod.tfvars` with the same code |
+| Same tags on every resource | **`default_tags`** in the provider block | Tags written once, applied to all AWS resources |
+| Building lists / maps by hand | **`for` expressions** | `[for s in var.servers : "${s}.example.com"]` |
+| Hard-coded IDs (AMI, VPC) | **Data sources** | `data "aws_ami"` instead of pasting AMI IDs |
+
+**Model answer:**
+> "I use `count` or `for_each` to create many similar resources from one block, and dynamic blocks for repeated nested blocks like security group rules. Common values go in `locals`, environment differences go in variables and `.tfvars` files, and tags go in the provider's `default_tags`. For larger setups I package resources into reusable modules, so each environment is just a few lines calling the module."
+
 ## 13. Interview One-Liners
 
 - "A dynamic block generates repeated **nested blocks** from a list or map. Main purpose: **shorter code**, no copy-paste."
@@ -404,3 +422,4 @@ Readability. Too many or deeply nested dynamic blocks make code hard to follow. 
 - "`for_each = cond ? [1] : []` makes a nested block optional."
 - "Meta-argument blocks like `lifecycle` and `provisioner` can't be dynamic."
 - "Use dynamic blocks when the count varies or in reusable modules; otherwise write blocks normally."
+- "To reduce Terraform code: `for_each`/`count` for resources, dynamic blocks for nested blocks, modules for groups, `locals` and variables for values."
