@@ -2,7 +2,7 @@
 
 [← All notes](../README.md)
 
-> **In short:** some resources contain **repeated nested blocks** (like many `ingress` rules in a security group). A **dynamic block** lets you write that nested block **once** and loop over a list or map, so Terraform generates the copies for you. Less copy-paste, and adding a rule means adding one item to a variable.
+> **In short:** some resources contain **repeated nested blocks** (like many `ingress` rules in a security group). A **dynamic block** lets you write that nested block **once** and loop over a list or map, so Terraform generates the copies for you. **Main purpose: reduce the length of the code.** Adding a rule means adding one item to a list.
 
 ## Table of Contents
 
@@ -36,7 +36,15 @@
 - `ingress.key` → the index (list) or key (map)
 - `ingress.value` → the item itself
 
-**Purpose** = **DRY** (Don't Repeat Yourself): write once, repeat from data. Rules live in **variables**, not in copy-pasted code.
+**Main purpose** = **reduce the length of the code**. Instead of writing the same nested block again and again, write it **once** and loop. This is the **DRY** idea (Don't Repeat Yourself).
+
+| | Without dynamic | With dynamic |
+|--|-----------------|--------------|
+| 3 ports | 3 blocks, ~18 lines | 1 block + a list, ~10 lines |
+| 10 ports | 10 blocks, ~60 lines | **Still** 1 block, just a longer list |
+| Add a port | Copy-paste 6 more lines | Add **one item** to the list |
+
+Bonus benefits: fewer copy-paste mistakes, and the rules can come from **variables** (different per environment).
 
 ## 2. The Problem: Repeated Nested Blocks
 
@@ -390,7 +398,7 @@ Readability. Too many or deeply nested dynamic blocks make code hard to follow. 
 
 ## 13. Interview One-Liners
 
-- "A dynamic block generates repeated **nested blocks** from a list or map."
+- "A dynamic block generates repeated **nested blocks** from a list or map. Main purpose: **shorter code**, no copy-paste."
 - "`for_each` on a resource repeats **resources**; `dynamic` repeats **blocks inside a resource**."
 - "Inside `content`, use `<name>.key` and `<name>.value`; `iterator` renames the loop variable."
 - "`for_each = cond ? [1] : []` makes a nested block optional."
