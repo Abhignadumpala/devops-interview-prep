@@ -141,6 +141,8 @@ Before promote:  DR DB = replica (read-only)  → browse ✅  order ❌
 After promote:   DR DB = writer (read+write)  → browse ✅  order ✅
 ```
 
+**Which database for which strategy?** Backup & Restore works with **any DB** (snapshots/dumps copied to another region). Pilot Light and Warm Standby need **cross-region read replicas** (RDS MySQL/PostgreSQL replica, or Aurora Global). Active/Active needs **multi-region writes** (DynamoDB Global Tables; Aurora Global only forwards writes to one writer). You don't change the DB for DR unless you need active/active.
+
 **Summary:**
 
 ```
