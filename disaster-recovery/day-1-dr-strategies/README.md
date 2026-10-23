@@ -82,6 +82,8 @@
 
 > Interview tip: always ask "what are the RPO and RTO?" before choosing a DR design.
 
+**Still confused about data loss vs downtime?** See [RTO and RPO Explained](../rto-rpo-explained/README.md): a timeline, who gets hurt, real RPO values, how to measure them, and who decides.
+
 ## Backup vs High Availability vs DR
 
 | | Backup | High Availability (HA) | Disaster Recovery (DR) |
@@ -96,6 +98,124 @@
 ## The 4 DR Strategies on AWS
 
 ![The 4 DR strategies](./images/strategies.png)
+
+### Understanding the image
+
+**Definition:** a **DR strategy** = how much of production you keep **ready** in the DR region (here Singapore) while the primary (Mumbai) works normally. More running means faster recovery and a higher bill.
+
+**One line each:**
+- 1️⃣ Backup & Restore = **copies only, rebuild everything**
+- 2️⃣ Pilot Light = **data live, app off**
+- 3️⃣ Warm Standby = **everything on, but small**
+- 4️⃣ Active/Active = **everything on, full size, both serving**
+
+#### What exists in the DR region, layer by layer
+
+| Layer | 1️⃣ Backup & Restore | 2️⃣ Pilot Light | 3️⃣ Warm Standby | 4️⃣ Active/Active |
+|-------|--------------------|----------------|-----------------|------------------|
+| VPC, subnets, SG | ❌ (only Terraform code) | ✅ created | ✅ | ✅ |
+| Load balancer (ALB) | ❌ | ✅ or ❌ (cheap, often pre-created) | ✅ | ✅ |
+| App servers | ❌ | ❌ **off (0 instances)** | ✅ **running, few/small** | ✅ **full size** |
+| Database | ❌ only **snapshots** | ✅ **live replica** (read-only) | ✅ live replica | ✅ **live, accepts writes** |
+| S3 files | ✅ copies | ✅ replicated | ✅ replicated | ✅ replicated |
+| Gets user traffic? | ❌ | ❌ | ❌ (or a tiny test %) | ✅ **yes, every day** |
+
+Going left to right, **more is already running**, so recovery is **faster** and the **monthly cost is higher**.
+
+#### 1️⃣ Backup & Restore: only copies, rebuild everything
+
+- **DR region normally:** only DB **snapshots**, **AMIs** (server images) and **S3 copies**. Everything else exists only as **Terraform code in Git**.
+- **On disaster:** `terraform apply` creates the VPC, ALB, servers and DB → restore the DB from the snapshot → deploy the app → switch DNS.
+- **RPO hours:** data is only as fresh as the last snapshot (nightly → up to 24 h lost).
+- **RTO hours:** everything is built from zero, and a big DB restore alone can take hours.
+- **💲 lowest:** you pay only for **storage**, no running servers.
+
+#### 2️⃣ Pilot Light: data is live, app is off
+
+- **DR region normally:** the network (VPC) is built, the **DB replica copies every change from Mumbai within seconds or minutes**, and the app's Auto Scaling Group is set to **0 instances**.
+- **Why keep the DB on but the app off?** Data is the slowest thing to rebuild: restoring a 500 GB DB takes hours. App servers boot from an AMI in minutes, so it's fine to keep them off.
+- **On disaster:** **promote** the replica (read-only → writer) → ASG **0 → 4** (or `terraform apply -var=dr_capacity=4`) → wait for boot and health checks → switch DNS.
+- **RPO minutes:** the replica is only slightly behind.
+- **RTO tens of minutes:** mostly waiting for servers to start.
+- **💲💲:** the DB replica runs 24/7, and the app servers cost nothing while off.
+
+#### 3️⃣ Warm Standby: full stack running at small size
+
+- **Full stack** = **every layer exists and is switched on** (ALB → app servers → DB replica). Nothing is missing.
+- **Small size** = **fewer and smaller** servers than production:
+
+```
+Mumbai (primary):   ALB → 10 × t3.large app servers  → DB db.r5.2xlarge (writer)
+Singapore (warm):   ALB →  2 × t3.medium app servers → DB db.r5.large  (replica)
+```
+
+- It's a **working mini copy**: send it a request now and it answers. It just can't handle all users.
+- **On disaster:** promote the DB → scale 2 → 10 servers (resize the DB if needed) → switch DNS.
+- **RPO seconds** (live replication). **RTO minutes** (no cold start, only scaling up).
+- **💲💲💲:** a small copy of production runs **24/7**.
+- **Bonus:** because it's always running, you **know it works**. A pilot light that's off can hide broken config until the day you need it.
+
+#### 4️⃣ Multi-site Active/Active: both regions serve live traffic
+
+```
+              Route 53 (latency / weighted routing)
+               /                          \
+   Mumbai: full size, 50% users    Singapore: full size, 50% users
+               \                          /
+              DB data synced both ways (e.g. DynamoDB Global Tables)
+```
+
+- **Normally:** both regions run at **full size** and serve **real users every day**.
+- **On disaster:** the Mumbai health check fails, so Route 53 **stops sending traffic there** and Singapore takes 100%. Nothing to start, promote or scale. Each region must be able to handle all traffic alone.
+- **RPO ~0, RTO ~0:** data is already in both places, and the other region is already serving.
+- **💲💲💲💲 highest:** about double the infrastructure.
+- **Hardest part:** **both regions write data**. If a cart is updated in Mumbai and Singapore at the same moment, which change wins? You need databases built for multi-region writes (DynamoDB Global Tables, Aurora Global with write forwarding).
+
+#### Pilot Light vs Warm Standby (the most confusing pair)
+
+| | Pilot Light | Warm Standby |
+|--|-------------|--------------|
+| DB in DR | ✅ live replica | ✅ live replica |
+| App servers in DR | ❌ **off** | ✅ **on** (small) |
+| Can it serve users right now? | **No**, it must start first | **Yes**, just few users |
+| On disaster | **Start** the app | **Scale up** the app |
+
+#### The colour bar and the analogies
+
+- **The bar:** green (left) = cheaper, slower recovery, more data loss → red (right) = costlier, faster recovery, less data loss.
+- **House analogy (in the image):** 1️⃣ insurance papers in a locker (rebuild from scratch) · 2️⃣ an empty flat, with furniture delivered when you call · 3️⃣ a small furnished flat you can move into today · 4️⃣ you already live in two houses.
+- **Restaurant analogy** (disaster = your kitchen burns down):
+
+| # | Strategy | Restaurant version | When the kitchen burns down |
+|---|----------|--------------------|-----------------------------|
+| 1 | Backup & Restore | Only the **recipe book and a photo of the stock list** in a locker | Rent a new place, buy equipment, restock. **Takes a day** |
+| 2 | Pilot Light | Second kitchen **built, fridge stocked and kept fresh**, but **stoves off, no staff** | Turn on the stoves, call staff in. **~30 min** |
+| 3 | Warm Standby | Second **small kitchen open**, 2 cooks already cooking | Call in more cooks for full crowds. **Minutes** |
+| 4 | Active/Active | **Two full restaurants**, both serving every day | Customers go to the other one. **No break** |
+
+#### Real app examples
+
+The company names below are only examples of the **type** of app. Netflix has publicly described running active-active across AWS regions; other companies' exact DR setups aren't public.
+
+| # | Strategy | Real app type | Why it fits | What users see in a disaster |
+|---|----------|---------------|-------------|------------------------------|
+| 1 | Backup & Restore | Company **HR / leave portal**, monthly **sales reports**, **dev/test** environments | Nobody loses money if it's down for hours | "Portal down, apply for leave tomorrow." Back in **hours** |
+| 2 | Pilot Light | **Payroll** system, **CRM**, **college admission** portal | Data must be safe, but people can wait ~30 min | "Under maintenance, try again in 30 min" |
+| 3 | Warm Standby | **Shopping** (Flipkart / Amazon type), **food delivery** (Swiggy / Zomato type), **train / flight booking** | Every minute down = lost orders, but a few minutes is survivable | Errors for **a few minutes**, then it works |
+| 4 | Active/Active | **UPI payments** (GPay / PhonePe type), **net banking**, **streaming** (Netflix), **messaging** | Even minutes down = huge loss and headlines | **Nothing**, maybe one slow request |
+
+**Pick a strategy by asking: "If this app is down for 1 hour, what happens?"**
+
+| Answer | Strategy |
+|--------|----------|
+| "Nobody cares much" | Backup & Restore |
+| "Staff are annoyed, but we can wait" | Pilot Light |
+| "We lose lots of orders and money" | Warm Standby |
+| "It's in the news, and the regulator calls" | Active/Active |
+
+**Tiering:** one company mixes strategies. For example: active/active for **payments**, warm standby for the **shopping site**, pilot light for the **seller dashboard**, and backup & restore for **internal reports**.
+
+### Summary table
 
 | # | Strategy | What runs in the DR region | On disaster | RPO | RTO | Cost |
 |---|----------|----------------------------|-------------|-----|-----|------|
