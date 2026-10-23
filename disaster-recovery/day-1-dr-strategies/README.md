@@ -109,6 +109,48 @@
 - 3️⃣ Warm Standby = **everything on, but small**
 - 4️⃣ Active/Active = **everything on, full size, both serving**
 
+**A bit more detail on each:**
+
+| | DB in DR region | App servers in DR region | Serves users normally? | On disaster |
+|--|-----------------|--------------------------|------------------------|-------------|
+| 1️⃣ **Backup & Restore** | ❌ No DB running, only **snapshot files** (plus AMIs, S3 copies) | ❌ None | ❌ No | **Rebuild everything fresh** with Terraform, restore the DB from the snapshot, deploy the app, switch DNS |
+| 2️⃣ **Pilot Light** | ✅ **Live replica, read-only** (copies every change from primary) | ❌ **Off** (ASG = 0) | ❌ No | **Promote** the replica to writer, **start** the servers, switch DNS |
+| 3️⃣ **Warm Standby** | ✅ **Live replica, still read-only** (smaller size) | ✅ **On, few and small** (e.g. 2 instead of 10) | ❌ No real users (only test traffic), but it **could** answer requests right now | **Promote** the replica to writer, **add more and bigger** servers (2 → 10), switch DNS |
+| 4️⃣ **Active/Active** | ✅ **Live, read + write** in both regions | ✅ **On, full size** | ✅ **Yes**, both regions serve real users every day | Route 53 just **stops sending traffic** to the failed region. Nothing to start or promote |
+
+**Common mistakes:**
+- **Backup & Restore isn't only a DB copy.** You also keep **AMIs** (server images), **S3 copies** and the **Terraform code**, because everything else has to be built fresh.
+- **In warm standby the DR DB is still read-only.** Only one DB can be the writer, and the primary in Mumbai holds that role. On disaster you **promote** the replica in both pilot light and warm standby. The difference is the **app servers**: off in pilot light, on but small in warm standby.
+- **Only active/active writes data in both regions.** That's why it needs special databases (DynamoDB Global Tables, Aurora Global with write forwarding).
+
+**If the warm standby DB is read-only, how can it "serve"?**
+
+A read-only replica can answer **reads**, not **writes**.
+
+| User action | Needs | Works in DR **before** promote? |
+|-------------|-------|----------------------------------|
+| Open menu, search, view past orders, `/health` | Read | ✅ Yes |
+| Place an order, sign up, change address | Write | ❌ No ("database is read-only") |
+
+- **Before a disaster**, "can serve" means the app is **up and healthy**: health checks, smoke tests and test traffic all work, so you **know it works**. Optionally, nearby users can **browse** from it while their **writes go to the primary DB** (Aurora Global calls this **write forwarding**).
+- **On disaster**, step 1 is **promote** the replica → it becomes the writer (read + write) → then scale 2 → 10 servers and switch DNS. Ordering works only **after** the promote.
+- **Active/active** needs no promote: its DB is read + write in both regions all the time.
+
+```
+Before promote:  DR DB = replica (read-only)  → browse ✅  order ❌
+After promote:   DR DB = writer (read+write)  → browse ✅  order ✅
+```
+
+**Summary:**
+
+```
+                 DB in DR          App in DR          Real users in DR?
+Backup&Restore   snapshot files    none               no
+Pilot Light      replica (read)    OFF                no
+Warm Standby     replica (read)    ON, small          no (could, at low capacity)
+Active/Active    live (read+write) ON, full size      yes, every day
+```
+
 #### What exists in the DR region, layer by layer
 
 | Layer | 1️⃣ Backup & Restore | 2️⃣ Pilot Light | 3️⃣ Warm Standby | 4️⃣ Active/Active |
