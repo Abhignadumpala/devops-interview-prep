@@ -175,6 +175,59 @@ resource "aws_security_group" "app" {
 
 **RoboShop link:** each app server's SG (8080 from the frontend, 27017 for MongoDB, 3306 for MySQL) can come from one `ingress_rules` variable per server instead of hand-written blocks.
 
+### Class example: `locals` + list of objects
+
+![Class example: dynamic ingress from locals](images/class-example.png)
+
+```hcl
+locals {
+  ingress_rules = [{ port = 443 }, { port = 80 }, { port = 22 }]
+}
+
+resource "aws_security_group" "allow_tls" {
+  name        = "terra sg"
+  description = "Allow TLS inbound traffic"
+
+  dynamic "ingress" {
+    for_each = local.ingress_rules
+    content {
+      description = "*"
+      from_port   = ingress.value.port
+      to_port     = ingress.value.port
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+
+  tags = {
+    Name = "terra sg"
+  }
+}
+```
+
+**How to read it:**
+
+| Part | Meaning |
+|------|---------|
+| `locals { ingress_rules = [...] }` | **Local value** = a fixed value defined inside the code (not passed in like a variable). Here: a **list of 3 objects**, each with one field `port` |
+| `dynamic "ingress"` | Repeat the `ingress { }` block |
+| `for_each = local.ingress_rules` | Loop over the 3 objects → **3 ingress rules** |
+| `ingress.value` | The current object, e.g. `{ port = 443 }` |
+| `ingress.value.port` | The `port` field of that object → `443`, then `80`, then `22` |
+| `description = "*"` | The same text for every rule (it doesn't change per loop) |
+
+**What Terraform builds:**
+
+| Loop | `ingress.value` | `from_port` / `to_port` | Rule |
+|------|-----------------|-------------------------|------|
+| 1 | `{ port = 443 }` | 443 | HTTPS from anywhere |
+| 2 | `{ port = 80 }` | 80 | HTTP from anywhere |
+| 3 | `{ port = 22 }` | 22 | SSH from anywhere |
+
+**Why objects `{ port = 443 }` instead of a plain list `[443, 80, 22]`?** With objects you can add more fields later without changing the loop structure, e.g. `{ port = 22, cidr = "203.0.113.10/32" }` → `cidr_blocks = [ingress.value.cidr]`. With a plain list you'd use `ingress.value` directly (Example 1).
+
+**Lab note:** port 22 open to `0.0.0.0/0` is fine for practice, but in real projects restrict SSH to your IP.
+
 ## 6. Example 3: Map + Custom iterator
 
 **`iterator`** gives the loop variable a clearer name. Useful with maps, or when dynamic blocks are nested.
