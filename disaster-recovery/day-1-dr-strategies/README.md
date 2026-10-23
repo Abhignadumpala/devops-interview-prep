@@ -103,6 +103,10 @@
 
 **Definition:** a **DR strategy** = how much of production you keep **ready** in the DR region (here Singapore) while the primary (Mumbai) works normally. More running means faster recovery and a higher bill.
 
+**Reading the image:**
+- **Colour bar (bottom):** green (left) = cheaper, slower recovery, more data loss → red (right) = costlier, faster recovery, less data loss.
+- **House analogy (bottom box):** 1️⃣ insurance papers in a locker (rebuild from scratch) · 2️⃣ an empty flat, with furniture delivered when you call · 3️⃣ a small furnished flat you can move into today · 4️⃣ you already live in two houses.
+
 **One line each:**
 - 1️⃣ Backup & Restore = **copies only, rebuild everything**
 - 2️⃣ Pilot Light = **data live, app off**
@@ -279,11 +283,6 @@ Singapore (warm):   ALB →  2 × t3.medium app servers → DB db.r5.large  (rep
 | App servers in DR | ❌ **off** | ✅ **on** (small) |
 | Can it serve users right now? | **No**, it must start first | **Yes**, just few users |
 | On disaster | **Start** the app | **Scale up** the app |
-
-#### The colour bar and the analogy
-
-- **The bar:** green (left) = cheaper, slower recovery, more data loss → red (right) = costlier, faster recovery, less data loss.
-- **House analogy (in the image):** 1️⃣ insurance papers in a locker (rebuild from scratch) · 2️⃣ an empty flat, with furniture delivered when you call · 3️⃣ a small furnished flat you can move into today · 4️⃣ you already live in two houses.
 
 #### Real app examples
 
