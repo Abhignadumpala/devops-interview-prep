@@ -113,49 +113,14 @@
 - 3️⃣ Warm Standby = **everything on, but small**
 - 4️⃣ Active/Active = **everything on, full size, both serving**
 
-**A bit more detail on each:**
+**Quick comparison:**
 
-| | DB in DR region | App servers in DR region | Serves users normally? | On disaster |
-|--|-----------------|--------------------------|------------------------|-------------|
-| 1️⃣ **Backup & Restore** | ❌ No DB running, only **snapshot files** (plus AMIs, S3 copies) | ❌ None | ❌ No | **Rebuild everything fresh** with Terraform, restore the DB from the snapshot, deploy the app, switch DNS |
-| 2️⃣ **Pilot Light** | ✅ **Live replica, read-only** (copies every change from primary) | ❌ **Off** (ASG = 0) | ❌ No | **Promote** the replica to writer, **start** the servers, switch DNS |
-| 3️⃣ **Warm Standby** | ✅ **Live replica, still read-only** (smaller size) | ✅ **On, few and small** (e.g. 2 instead of 10) | ❌ No real users (only test traffic), but it **could** answer requests right now | **Promote** the replica to writer, **add more and bigger** servers (2 → 10), switch DNS |
-| 4️⃣ **Active/Active** | ✅ **Live, read + write** in both regions | ✅ **On, full size** | ✅ **Yes**, both regions serve real users every day | Route 53 just **stops sending traffic** to the failed region. Nothing to start or promote |
-
-**Common mistakes:**
-- **Backup & Restore isn't only a DB copy.** You also keep **AMIs** (server images), **S3 copies** and the **Terraform code**, because everything else has to be built fresh.
-- **In warm standby the DR DB is still read-only.** Only one DB can be the writer, and the primary in Mumbai holds that role. On disaster you **promote** the replica in both pilot light and warm standby. The difference is the **app servers**: off in pilot light, on but small in warm standby.
-- **Only active/active writes data in both regions.** That's why it needs special databases (DynamoDB Global Tables, Aurora Global with write forwarding).
-
-**If the warm standby DB is read-only, how can it "serve"?**
-
-A read-only replica can answer **reads**, not **writes**.
-
-| User action | Needs | Works in DR **before** promote? |
-|-------------|-------|----------------------------------|
-| Open menu, search, view past orders, `/health` | Read | ✅ Yes |
-| Place an order, sign up, change address | Write | ❌ No ("database is read-only") |
-
-- **Before a disaster**, "can serve" means the app is **up and healthy**: health checks, smoke tests and test traffic all work, so you **know it works**. Optionally, nearby users can **browse** from it while their **writes go to the primary DB** (Aurora Global calls this **write forwarding**).
-- **On disaster**, step 1 is **promote** the replica → it becomes the writer (read + write) → then scale 2 → 10 servers and switch DNS. Ordering works only **after** the promote.
-- **Active/active** needs no promote: its DB is read + write in both regions all the time.
-
-```
-Before promote:  DR DB = replica (read-only)  → browse ✅  order ❌
-After promote:   DR DB = writer (read+write)  → browse ✅  order ✅
-```
-
-**Which database for which strategy?** Backup & Restore works with **any DB** (snapshots/dumps copied to another region). Pilot Light and Warm Standby need **cross-region read replicas** (RDS MySQL/PostgreSQL replica, or Aurora Global). Active/Active needs **multi-region writes** (DynamoDB Global Tables; Aurora Global only forwards writes to one writer). You don't change the DB for DR unless you need active/active.
-
-**Summary:**
-
-```
-                 DB in DR          App in DR          Real users in DR?
-Backup&Restore   snapshot files    none               no
-Pilot Light      replica (read)    OFF                no
-Warm Standby     replica (read)    ON, small          no (could, at low capacity)
-Active/Active    live (read+write) ON, full size      yes, every day
-```
+| # | Strategy | What runs in the DR region | On disaster | RPO | RTO | Cost |
+|---|----------|----------------------------|-------------|-----|-----|------|
+| 1 | **Backup & Restore** | Nothing; only **backups** (snapshots, AMIs, S3 copies) | Create infra (**Terraform**), restore data | Hours | Hours (up to 24 h) | 💲 |
+| 2 | **Pilot Light** | **Data** replicating live (DB replica); app servers **off** | Start/scale the app tier, promote the DB, switch DNS | Minutes | Tens of minutes | 💲💲 |
+| 3 | **Warm Standby** | **Full stack running at small size** | Scale up to production size, switch DNS | Seconds | Minutes | 💲💲💲 |
+| 4 | **Multi-site Active/Active** | **Full size**, already **serving traffic** | Stop sending traffic to the failed region | Near zero | Near zero | 💲💲💲💲 |
 
 #### What exists in the DR region, layer by layer
 
@@ -189,6 +154,7 @@ Going left to right, **more is already running**, so recovery is **faster** and 
 ```
 
 - **DR region normally:** only DB **snapshots**, **AMIs** (server images) and **S3 copies**. Everything else exists only as **Terraform code in Git**.
+- **Where backups go:** AWS Backup copies them to the DR region **and ideally another account**, so ransomware or a bad admin can't delete them.
 - **On disaster:** `terraform apply` creates the VPC, ALB, servers and DB → restore the DB from the snapshot → deploy the app → switch DNS.
 - **RPO hours:** data is only as fresh as the last snapshot (nightly → up to 24 h lost).
 - **RTO hours:** everything is built from zero, and a big DB restore alone can take hours.
@@ -211,6 +177,8 @@ Going left to right, **more is already running**, so recovery is **faster** and 
  On disaster: promote replica → writer → ASG 0 → 4 → wait for boot +
               health checks → switch Route 53 to Singapore
 ```
+
+> Named after the small flame in a gas heater: always on, so the full heater lights up quickly.
 
 - **DR region normally:** the network (VPC) is built, the **DB replica copies every change from Mumbai within seconds or minutes**, and the app's Auto Scaling Group is set to **0 instances**.
 - **Why keep the DB on but the app off?** Data is the slowest thing to rebuild: restoring a 500 GB DB takes hours. App servers boot from an AMI in minutes, so it's fine to keep them off.
@@ -274,6 +242,7 @@ Singapore (warm):   ALB →  2 × t3.medium app servers → DB db.r5.large  (rep
 - **RPO ~0, RTO ~0:** data is already in both places, and the other region is already serving.
 - **💲💲💲💲 highest:** about double the infrastructure.
 - **Hardest part:** **both regions write data**. If a cart is updated in Mumbai and Singapore at the same moment, which change wins? You need databases built for multi-region writes (DynamoDB Global Tables, Aurora Global with write forwarding).
+- **Active/Passive (hot standby)** = same full size in the DR region but **not** serving traffic until failover.
 
 #### Pilot Light vs Warm Standby (the most confusing pair)
 
@@ -281,68 +250,30 @@ Singapore (warm):   ALB →  2 × t3.medium app servers → DB db.r5.large  (rep
 |--|-------------|--------------|
 | DB in DR | ✅ live replica | ✅ live replica |
 | App servers in DR | ❌ **off** | ✅ **on** (small) |
-| Can it serve users right now? | **No**, it must start first | **Yes**, just few users |
+| Can it answer requests right now? | **No**, it must start first | **Yes**, reads and test traffic, at low capacity |
 | On disaster | **Start** the app | **Scale up** the app |
 
-#### Real app examples
+#### If the warm standby DB is read-only, how can it "serve"?
 
-The company names below are only examples of the **type** of app. Netflix has publicly described running active-active across AWS regions; other companies' exact DR setups aren't public.
+Only one DB can be the **writer** (the primary in Mumbai), so the DR replica is read-only. A read-only replica can answer **reads**, not **writes**.
 
-| # | Strategy | Real app type | Why it fits | What users see in a disaster |
-|---|----------|---------------|-------------|------------------------------|
-| 1 | Backup & Restore | Company **HR / leave portal**, monthly **sales reports**, **dev/test** environments | Nobody loses money if it's down for hours | "Portal down, apply for leave tomorrow." Back in **hours** |
-| 2 | Pilot Light | **Payroll** system, **CRM**, **college admission** portal | Data must be safe, but people can wait ~30 min | "Under maintenance, try again in 30 min" |
-| 3 | Warm Standby | **Shopping** (Flipkart / Amazon type), **food delivery** (Swiggy / Zomato type), **train / flight booking** | Every minute down = lost orders, but a few minutes is survivable | Errors for **a few minutes**, then it works |
-| 4 | Active/Active | **UPI payments** (GPay / PhonePe type), **net banking**, **streaming** (Netflix), **messaging** | Even minutes down = huge loss and headlines | **Nothing**, maybe one slow request |
+| User action | Needs | Works in DR **before** promote? |
+|-------------|-------|----------------------------------|
+| Open menu, search, view past orders, `/health` | Read | ✅ Yes |
+| Place an order, sign up, change address | Write | ❌ No ("database is read-only") |
 
-**Pick a strategy by asking: "If this app is down for 1 hour, what happens?"**
+- **Before a disaster**, "can serve" means the app is **up and healthy**: health checks, smoke tests and test traffic all work, so you **know it works**. Optionally, nearby users can **browse** from it while their **writes go to the primary DB** (Aurora Global calls this **write forwarding**).
+- **On disaster**, step 1 is **promote** the replica → it becomes the writer (read + write) → then scale 2 → 10 servers and switch DNS. Ordering works only **after** the promote.
+- **Active/active** needs no promote: its DB is read + write in both regions all the time.
 
-| Answer | Strategy |
-|--------|----------|
-| "Nobody cares much" | Backup & Restore |
-| "Staff are annoyed, but we can wait" | Pilot Light |
-| "We lose lots of orders and money" | Warm Standby |
-| "It's in the news, and the regulator calls" | Active/Active |
+```
+Before promote:  DR DB = replica (read-only)  → browse ✅  order ❌
+After promote:   DR DB = writer (read+write)  → browse ✅  order ✅
+```
 
-**Tiering:** one company mixes strategies. For example: active/active for **payments**, warm standby for the **shopping site**, pilot light for the **seller dashboard**, and backup & restore for **internal reports**.
+#### Which database for which strategy?
 
-### Summary table
-
-| # | Strategy | What runs in the DR region | On disaster | RPO | RTO | Cost |
-|---|----------|----------------------------|-------------|-----|-----|------|
-| 1 | **Backup & Restore** | Nothing; only **backups** (snapshots, AMIs, S3 copies) | Create infra (**Terraform**), restore data | Hours | Hours (up to 24 h) | 💲 |
-| 2 | **Pilot Light** | **Data** replicating live (DB replica); app servers **off** | Start/scale the app tier, promote the DB, switch DNS | Minutes | Tens of minutes | 💲💲 |
-| 3 | **Warm Standby** | **Full stack running at small size** | Scale up to production size, switch DNS | Seconds | Minutes | 💲💲💲 |
-| 4 | **Multi-site Active/Active** | **Full size**, already **serving traffic** | Stop sending traffic to the failed region | Near zero | Near zero | 💲💲💲💲 |
-
-### 1. Backup & Restore
-
-- Schedule backups (**AWS Backup**), **copy them to the DR region** (and ideally another account).
-- Keep the infra as **Terraform code**, so the whole stack can be created in the DR region with one `apply`.
-- Restore takes time: create the VPC, restore the DB from a snapshot (big DBs = hours), deploy the app.
-- **Use for:** internal tools, dev/test, apps that can be down for hours.
-
-### 2. Pilot Light
-
-> Named after the small flame in a gas heater: always on, so the full heater lights up quickly.
-
-- The **core** (databases) is always running and replicating. The **app tier** is defined (launch template, ASG, Terraform) but **switched off**.
-- Failover: **promote** the read replica to a writer → set ASG desired from 0 to 4 → switch Route 53.
-- **Use for:** most business apps where 10–30 min of downtime is acceptable.
-
-### 3. Warm Standby
-
-- A **smaller, fully working** copy. You can even send test traffic to it any time.
-- Failover: **scale up** (2 → 10) + switch DNS. No "start from zero" step.
-- **Difference from pilot light:** pilot light **can't serve** requests until you start the app; warm standby **can** (at low capacity).
-- **Use for:** important customer-facing apps (e-commerce, banking front-ends).
-
-### 4. Multi-site Active/Active
-
-- Both regions serve users **all the time**. If one fails, Route 53 health checks stop sending traffic there.
-- Needs data that can be **written in both regions**: DynamoDB Global Tables, Aurora Global Database (one writer, fast promotion), conflict handling.
-- **Use for:** payments, trading, very large consumer apps where minutes of downtime cost a lot.
-- **Active/Passive** (hot standby) = same full size in the DR region but **not** serving traffic until failover.
+Backup & Restore works with **any DB** (snapshots/dumps copied to another region). Pilot Light and Warm Standby need **cross-region read replicas** (RDS MySQL/PostgreSQL replica, or Aurora Global). Active/Active needs **multi-region writes** (DynamoDB Global Tables; Aurora Global only forwards writes to one writer). You don't change the DB for DR unless you need active/active.
 
 ## Which Strategy for Which App?
 
@@ -361,6 +292,26 @@ Companies usually put apps into **tiers** and pick a strategy per tier, not one 
 2. What are the agreed **RPO / RTO** (SLA with customers)?
 3. Does a **law / compliance** rule require a second region or a retention period?
 4. Is the extra **monthly cost** of a standby lower than the expected loss?
+
+### Real app examples
+
+The company names below are only examples of the **type** of app. Netflix has publicly described running active-active across AWS regions; other companies' exact DR setups aren't public.
+
+| # | Strategy | Real app type | Why it fits | What users see in a disaster |
+|---|----------|---------------|-------------|------------------------------|
+| 1 | Backup & Restore | Company **HR / leave portal**, monthly **sales reports**, **dev/test** environments | Nobody loses money if it's down for hours | "Portal down, apply for leave tomorrow." Back in **hours** |
+| 2 | Pilot Light | **Payroll** system, **CRM**, **college admission** portal | Data must be safe, but people can wait ~30 min | "Under maintenance, try again in 30 min" |
+| 3 | Warm Standby | **Shopping** (Flipkart / Amazon type), **food delivery** (Swiggy / Zomato type), **train / flight booking** | Every minute down = lost orders, but a few minutes is survivable | Errors for **a few minutes**, then it works |
+| 4 | Active/Active | **UPI payments** (GPay / PhonePe type), **net banking**, **streaming** (Netflix), **messaging** | Even minutes down = huge loss and headlines | **Nothing**, maybe one slow request |
+
+**Pick a strategy by asking: "If this app is down for 1 hour, what happens?"**
+
+| Answer | Strategy |
+|--------|----------|
+| "Nobody cares much" | Backup & Restore |
+| "Staff are annoyed, but we can wait" | Pilot Light |
+| "We lose lots of orders and money" | Warm Standby |
+| "It's in the news, and the regulator calls" | Active/Active |
 
 ## AWS Services for DR (per layer)
 
@@ -552,12 +503,7 @@ RPO = maximum **data loss** accepted (time between the last good copy and the di
 
 **2. Explain the 4 DR strategies on AWS.**
 
-| Strategy | DR region | RPO / RTO | Cost |
-|----------|-----------|-----------|------|
-| Backup & Restore | Only backups | Hours / hours | Lowest |
-| Pilot Light | Data replicating, app off | Minutes / tens of minutes | Low |
-| Warm Standby | Full stack, small size | Seconds / minutes | Medium |
-| Multi-site Active/Active | Full size, serving traffic | ~0 / ~0 | Highest |
+Backup & Restore (only backups, rebuild everything; hours, cheapest) → Pilot Light (DB replica live, app off; minutes / tens of minutes) → Warm Standby (full stack running small; seconds / minutes) → Active/Active (both regions serve traffic; ~0, most expensive). See the [quick comparison](#understanding-the-image).
 
 **3. How does Terraform help in DR?**
 
