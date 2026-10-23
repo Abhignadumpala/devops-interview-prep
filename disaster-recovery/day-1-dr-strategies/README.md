@@ -124,6 +124,22 @@ Going left to right, **more is already running**, so recovery is **faster** and 
 
 #### 1️⃣ Backup & Restore: only copies, rebuild everything
 
+```
+           Route 53 ──▶ Mumbai only (Singapore has nothing to serve)
+
+  PRIMARY (Mumbai)                      DR (Singapore)
+ ┌──────────────────────┐              ┌──────────────────────────┐
+ │ ALB                  │              │ -                        │
+ │ App servers x4       │ ──AMI──────▶ │ AMI images (stored)      │
+ │ RDS writer           │ ──snapshot─▶ │ DB snapshots (stored)    │
+ │ S3 bucket            │ ──copy─────▶ │ S3 copies (stored)       │
+ └──────────────────────┘              └──────────────────────────┘
+   running: full stack                   running: NOTHING, only backups
+
+ On disaster: terraform apply (VPC, ALB, servers, DB) → restore DB from
+              snapshot → deploy app → switch Route 53 to Singapore
+```
+
 - **DR region normally:** only DB **snapshots**, **AMIs** (server images) and **S3 copies**. Everything else exists only as **Terraform code in Git**.
 - **On disaster:** `terraform apply` creates the VPC, ALB, servers and DB → restore the DB from the snapshot → deploy the app → switch DNS.
 - **RPO hours:** data is only as fresh as the last snapshot (nightly → up to 24 h lost).
@@ -131,6 +147,22 @@ Going left to right, **more is already running**, so recovery is **faster** and 
 - **💲 lowest:** you pay only for **storage**, no running servers.
 
 #### 2️⃣ Pilot Light: data is live, app is off
+
+```
+           Route 53 ──▶ Mumbai only (Singapore app is OFF)
+
+  PRIMARY (Mumbai)                      DR (Singapore)
+ ┌──────────────────────┐              ┌──────────────────────────┐
+ │ ALB                  │              │ ALB (optional, idle)     │
+ │ App servers x4       │              │ App servers x0  [OFF]    │
+ │ RDS writer           │ ─replicate─▶ │ RDS read replica [LIVE]  │
+ │ S3 bucket            │ ──CRR──────▶ │ S3 bucket (replicated)   │
+ └──────────────────────┘              └──────────────────────────┘
+   running: full stack                   running: ONLY the DB replica
+
+ On disaster: promote replica → writer → ASG 0 → 4 → wait for boot +
+              health checks → switch Route 53 to Singapore
+```
 
 - **DR region normally:** the network (VPC) is built, the **DB replica copies every change from Mumbai within seconds or minutes**, and the app's Auto Scaling Group is set to **0 instances**.
 - **Why keep the DB on but the app off?** Data is the slowest thing to rebuild: restoring a 500 GB DB takes hours. App servers boot from an AMI in minutes, so it's fine to keep them off.
@@ -140,6 +172,22 @@ Going left to right, **more is already running**, so recovery is **faster** and 
 - **💲💲:** the DB replica runs 24/7, and the app servers cost nothing while off.
 
 #### 3️⃣ Warm Standby: full stack running at small size
+
+```
+           Route 53 ──▶ Mumbai only (Singapore is ready, small)
+
+  PRIMARY (Mumbai)                      DR (Singapore)
+ ┌──────────────────────┐              ┌──────────────────────────┐
+ │ ALB                  │              │ ALB                      │
+ │ App servers x10      │              │ App servers x2   [ON]    │
+ │ RDS writer (big)     │ ─replicate─▶ │ RDS replica (small)      │
+ │ S3 bucket            │ ──CRR──────▶ │ S3 bucket (replicated)   │
+ └──────────────────────┘              └──────────────────────────┘
+   running: full stack                   running: FULL stack, SMALL size
+
+ On disaster: promote replica → scale 2 → 10 servers (resize DB) →
+              switch Route 53 to Singapore
+```
 
 - **Full stack** = **every layer exists and is switched on** (ALB → app servers → DB replica). Nothing is missing.
 - **Small size** = **fewer and smaller** servers than production:
@@ -158,11 +206,19 @@ Singapore (warm):   ALB →  2 × t3.medium app servers → DB db.r5.large  (rep
 #### 4️⃣ Multi-site Active/Active: both regions serve live traffic
 
 ```
-              Route 53 (latency / weighted routing)
-               /                          \
-   Mumbai: full size, 50% users    Singapore: full size, 50% users
-               \                          /
-              DB data synced both ways (e.g. DynamoDB Global Tables)
+     Route 53 ──▶ Mumbai 50% users  +  Singapore 50% users
+
+  REGION A (Mumbai)                     REGION B (Singapore)
+ ┌──────────────────────┐              ┌──────────────────────────┐
+ │ ALB                  │              │ ALB                      │
+ │ App servers x10      │              │ App servers x10  [ON]    │
+ │ DB (writes)          │ ◀─two-way──▶ │ DB (writes)              │
+ │ S3 bucket            │ ◀──CRR─────▶ │ S3 bucket                │
+ └──────────────────────┘              └──────────────────────────┘
+   running: full stack, serving          running: FULL stack, SERVING
+
+ On disaster: Route 53 health check fails for Mumbai → 100% of users go
+              to Singapore. Nothing to start, promote or scale.
 ```
 
 - **Normally:** both regions run at **full size** and serve **real users every day**.
@@ -226,22 +282,6 @@ The company names below are only examples of the **type** of app. Netflix has pu
 
 ### 1. Backup & Restore
 
-```
-           Route 53 ──▶ Mumbai only (Singapore has nothing to serve)
-
-  PRIMARY (Mumbai)                      DR (Singapore)
- ┌──────────────────────┐              ┌──────────────────────────┐
- │ ALB                  │              │ -                        │
- │ App servers x4       │ ──AMI──────▶ │ AMI images (stored)      │
- │ RDS writer           │ ──snapshot─▶ │ DB snapshots (stored)    │
- │ S3 bucket            │ ──copy─────▶ │ S3 copies (stored)       │
- └──────────────────────┘              └──────────────────────────┘
-   running: full stack                   running: NOTHING, only backups
-
- On disaster: terraform apply (VPC, ALB, servers, DB) → restore DB from
-              snapshot → deploy app → switch Route 53 to Singapore
-```
-
 - Schedule backups (**AWS Backup**), **copy them to the DR region** (and ideally another account).
 - Keep the infra as **Terraform code**, so the whole stack can be created in the DR region with one `apply`.
 - Restore takes time: create the VPC, restore the DB from a snapshot (big DBs = hours), deploy the app.
@@ -251,43 +291,11 @@ The company names below are only examples of the **type** of app. Netflix has pu
 
 > Named after the small flame in a gas heater: always on, so the full heater lights up quickly.
 
-```
-           Route 53 ──▶ Mumbai only (Singapore app is OFF)
-
-  PRIMARY (Mumbai)                      DR (Singapore)
- ┌──────────────────────┐              ┌──────────────────────────┐
- │ ALB                  │              │ ALB (optional, idle)     │
- │ App servers x4       │              │ App servers x0  [OFF]    │
- │ RDS writer           │ ─replicate─▶ │ RDS read replica [LIVE]  │
- │ S3 bucket            │ ──CRR──────▶ │ S3 bucket (replicated)   │
- └──────────────────────┘              └──────────────────────────┘
-   running: full stack                   running: ONLY the DB replica
-
- On disaster: promote replica → writer → ASG 0 → 4 → wait for boot +
-              health checks → switch Route 53 to Singapore
-```
-
 - The **core** (databases) is always running and replicating. The **app tier** is defined (launch template, ASG, Terraform) but **switched off**.
 - Failover: **promote** the read replica to a writer → set ASG desired from 0 to 4 → switch Route 53.
 - **Use for:** most business apps where 10–30 min of downtime is acceptable.
 
 ### 3. Warm Standby
-
-```
-           Route 53 ──▶ Mumbai only (Singapore is ready, small)
-
-  PRIMARY (Mumbai)                      DR (Singapore)
- ┌──────────────────────┐              ┌──────────────────────────┐
- │ ALB                  │              │ ALB                      │
- │ App servers x10      │              │ App servers x2   [ON]    │
- │ RDS writer (big)     │ ─replicate─▶ │ RDS replica (small)      │
- │ S3 bucket            │ ──CRR──────▶ │ S3 bucket (replicated)   │
- └──────────────────────┘              └──────────────────────────┘
-   running: full stack                   running: FULL stack, SMALL size
-
- On disaster: promote replica → scale 2 → 10 servers (resize DB) →
-              switch Route 53 to Singapore
-```
 
 - A **smaller, fully working** copy. You can even send test traffic to it any time.
 - Failover: **scale up** (2 → 10) + switch DNS. No "start from zero" step.
@@ -295,22 +303,6 @@ The company names below are only examples of the **type** of app. Netflix has pu
 - **Use for:** important customer-facing apps (e-commerce, banking front-ends).
 
 ### 4. Multi-site Active/Active
-
-```
-     Route 53 ──▶ Mumbai 50% users  +  Singapore 50% users
-
-  REGION A (Mumbai)                     REGION B (Singapore)
- ┌──────────────────────┐              ┌──────────────────────────┐
- │ ALB                  │              │ ALB                      │
- │ App servers x10      │              │ App servers x10  [ON]    │
- │ DB (writes)          │ ◀─two-way──▶ │ DB (writes)              │
- │ S3 bucket            │ ◀──CRR─────▶ │ S3 bucket                │
- └──────────────────────┘              └──────────────────────────┘
-   running: full stack, serving          running: FULL stack, SERVING
-
- On disaster: Route 53 health check fails for Mumbai → 100% of users go
-              to Singapore. Nothing to start, promote or scale.
-```
 
 - Both regions serve users **all the time**. If one fails, Route 53 health checks stop sending traffic there.
 - Needs data that can be **written in both regions**: DynamoDB Global Tables, Aurora Global Database (one writer, fast promotion), conflict handling.
