@@ -61,6 +61,38 @@ The answers pick one of **4 strategies**, from cheap and slow to costly and inst
 - **RTO → business loss** (no one can order 11:30–13:00)
 - The **business** sets the targets; **DevOps** builds to meet them and tests them.
 
+| | RPO | RTO |
+|---|---|---|
+| **Question** | How much **data** can we lose? | How long can we be **down**? |
+| **Looks** | Backward: disaster → last good copy | Forward: disaster → app back up |
+| **Loss type** | Data loss (saved orders gone) | Business loss (no new orders) |
+| **Controlled by** | How **often** data is copied | How **ready** the DR region is |
+
+### Questions to set RTO and RPO
+
+**Definition:** Questions you ask the **app owner** to find the right RTO and RPO for an app.
+
+**RTO questions (downtime):**
+
+| Ask | Meaning |
+|---|---|
+| Impact if the app is down? Does it get worse over time? | What breaks, and how fast it hurts |
+| Money lost per hour? | Cost of downtime |
+| Reputation cost? | Public notices, e.g. company homepage down |
+| Any SLA with customers? | Uptime already promised |
+| Compliance / regulatory rules? | A law may fix the recovery time |
+| Dependencies? | Which apps it needs, and which apps need it |
+
+**RPO questions (data loss):** the same questions (impact, money, reputation, SLA, compliance), plus:
+
+| Ask | Meaning |
+|---|---|
+| Do other apps use this app's data? What RPO do they need? | Their RPO limits yours |
+| Can lost data be recreated? How long would it take? | If it can be re-imported, a bigger RPO is OK |
+| How often does the data change? | Changes every second (payments) → small RPO. Once a day (reports) → daily backup is enough |
+
+> **One line:** big loss per hour → small RTO/RPO → costly strategy (warm / active-active). Small loss → bigger RTO/RPO → cheap strategy (backup & restore).
+
 ---
 
 ## 2. The 4 DR Strategies
