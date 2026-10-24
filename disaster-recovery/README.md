@@ -290,7 +290,38 @@ Don't pick the most impressive one. Pick the **cheapest one that meets the RTO/R
 
 ---
 
-## 5. Failover steps (pilot / warm)
+## 5. Failover and Failback
+
+### What is Failover?
+
+**Definition:** Failover = **moving users and work from the failed primary region to the DR region**, so the app keeps running.
+
+- **When:** the primary region is down or badly broken
+- **Example:** Mumbai region fails → Route 53 starts sending users to Singapore → the app runs from Singapore
+- **Type:** an emergency step, done **during** the disaster
+
+### What is Failback?
+
+**Definition:** Failback = **moving users and work back from the DR region to the primary region** after the primary is fixed.
+
+- **When:** the primary region is healthy again
+- **Example:** Mumbai is back → copy the new data from Singapore to Mumbai → switch Route 53 back to Mumbai
+- **Type:** a planned step, done **after** the disaster, in a quiet time window
+
+| | Failover | Failback |
+|---|---|---|
+| Direction | Primary → DR | DR → Primary |
+| When | During the disaster | After the primary is fixed |
+| Planned? | No, emergency | Yes, planned window |
+| Data | DR replica promoted to writer | New data copied back DR → primary first |
+
+```
+Normal:    Users ──▶ Mumbai (primary)
+Failover:  Users ──▶ Singapore (DR)        💥 Mumbai down
+Failback:  Users ──▶ Mumbai (primary)      ✅ Mumbai fixed, data synced back
+```
+
+### Failover steps (pilot light / warm standby)
 
 ```
 1. Detect: health check / alarm fires → team decides to fail over
@@ -304,7 +335,17 @@ Don't pick the most impressive one. Pick the **cheapest one that meets the RTO/R
 
 ![Failover](./images/failover.png)
 
-**Failback:** later, copy data back DR → primary and switch DNS back in a planned window.
+### Failback steps
+
+```
+1. Fix the primary region
+2. Copy (re-sync) data from DR → primary
+3. Make primary DB the writer again
+4. Switch DNS back to primary in a planned window
+5. Test + monitor, then shrink DR back to standby size
+```
+
+> **Interview line:** "Failover moves traffic to the DR region during a disaster; failback moves it back to the primary after it's fixed and the data is synced. Failback is planned as carefully as failover."
 
 ---
 
