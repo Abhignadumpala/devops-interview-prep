@@ -321,24 +321,36 @@ Every incident is written as **Problem → Root Cause → Issue → Fix**:
 
 ### Incident 2 — 404 Not Found
 
-🎬 **Scenario:** Marketing shares a new link `/menu` in an email campaign. Users reply: *"The link shows 404."* The home page works fine.
+🎬 **Scenario (real, from my own repo):** I opened my notes link but typed the folder name wrong: `.../day-21-sre/day-21-sre-incid` instead of `.../day-21-sre/day-21-sre-incidents`. GitHub showed **404 - page not found**.
+
+![404 on my GitHub link because of a typo](images/github-404.png)
 
 🔍 **How I debug:**
 
-| Step | Command | What I see | What it tells me |
+| Step | What I check | What I see | What it tells me |
 |---|---|---|---|
-| 1 | `curl -I http://localhost/` | `200 OK` | Server is up |
-| 2 | `curl -I http://localhost/menu` | `404 Not Found` | Only this path is missing |
-| 3 | `ls -la /var/www/html` | No `menu` file/folder | The page was never deployed |
-| 4 | `sudo tail /var/log/nginx/error.log` | `open() "/var/www/html/menu" failed (2: No such file or directory)` | Confirms the missing file |
+| 1 | Is the site itself up? | GitHub loads, my repo and file tree load | **Server is fine**, not an outage |
+| 2 | Read the error | *"main branch does not contain the path day-21-sre/day-21-sre-incid"* | The **path** I asked for doesn't exist |
+| 3 | Compare the URL with the real folder list | Real folder = `day-21-sre-incidents`, URL = `day-21-sre-incid` | **Typo** in the URL |
+| 4 | Fix the URL | `.../day-21-sre/day-21-sre-incidents` | Page opens ✅ |
 
-🎯 **Root cause:** the page / route `/menu` doesn't exist (not deployed, wrong name, or wrong `location` block).
-🔧 **Fix:** deploy the missing page, or fix the link / `location` in the Nginx config.
-✅ **Verify:** `curl -I http://localhost/menu` → `200 OK`.
-🛡️ **Prevent:** check new links in CI / smoke tests before the campaign goes out.
-🧪 **Practice:** `curl -I http://localhost/menu` on a fresh server.
+🎯 **Root cause:** the requested path doesn't exist (typo in the link).
+🔧 **Fix:** correct the link.
+✅ **Verify:** the page opens (HTTP 200).
 
-> **Lesson:** 404 ≠ server down. The server is fine; one page is missing.
+**Same thing on an Nginx server:**
+
+| Step | Command | What I see |
+|---|---|---|
+| 1 | `curl -I http://localhost/` | `200 OK` → server up |
+| 2 | `curl -I http://localhost/menuu` | `404 Not Found` → only this path fails |
+| 3 | `ls -la /var/www/html` | real file is `menu`, not `menuu` |
+| 4 | `sudo tail /var/log/nginx/error.log` | `open() "/var/www/html/menuu" failed (2: No such file or directory)` |
+
+**Common 404 causes:** typo in the URL or link, page not deployed, file renamed/moved (old links break: this happened when I renamed my folders), wrong `location` / `root` in the Nginx config.
+🛡️ **Prevent:** check links after renaming files, redirects for moved pages, link checks / smoke tests in CI.
+
+> **Lesson:** 404 ≠ server down. The server is fine; the **path** is wrong or missing.
 
 ---
 
