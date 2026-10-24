@@ -785,6 +785,30 @@ kubectl create job test-run --from=cronjob/daily-backup   # run it now to test
 
 > **Short version:** "Network is shared by default; files are shared only when we define a volume (emptyDir) and mount it in both containers, and then the sharing is live."
 
+**Q2. How do you check the logs of two containers inside one pod?**
+
+**Answer:**
+> "When a pod has more than one container, `kubectl logs <pod>` alone doesn't know which container I mean, so I pass the **container name with `-c`**: `kubectl logs <pod> -c <container-name>`. For example `kubectl logs web-with-logger -c nginx` for the app and `kubectl logs web-with-logger -c fluentd` for the sidecar. To see all containers at once I use `--all-containers`."
+
+```bash
+kubectl get pod web-with-logger -o jsonpath='{.spec.containers[*].name}'   # list container names
+kubectl logs web-with-logger -c nginx              # app container logs
+kubectl logs web-with-logger -c fluentd            # sidecar logs
+kubectl logs web-with-logger -c nginx -f           # follow live
+kubectl logs web-with-logger --all-containers      # all containers together
+kubectl logs web-with-logger -c nginx --previous   # logs of the crashed (previous) container
+kubectl logs init-demo -c init-container           # init container logs
+```
+
+| Command | Use |
+|---|---|
+| `kubectl logs <pod> -c <name>` | Logs of **one** container in the pod |
+| `-f` | Follow live (like `tail -f`) |
+| `--all-containers` | Logs of every container in the pod |
+| `--previous` | Logs from the **last crashed** run (CrashLoopBackOff debugging) |
+
+> Without `-c` on a multi-container pod, kubectl shows the default container's logs and prints a hint to choose one; always pass `-c` to be sure.
+
 ### Other Questions
 
 **Q1. What is Kubernetes?**
