@@ -280,29 +280,90 @@ Every incident is written as **Problem → Root Cause → Issue → Fix**:
 | 9 | Disk 100% | Big logs, temp files, old artifacts | `df -h`, `du -sh /var/log/*` | Clean up + log rotation + alerts |
 | 10 | Nginx won't start | Broken config | `nginx -t` | Fix config → test → restart |
 
+### How every incident below is written
+
+| Part | Meaning |
+|---|---|
+| 🎬 **Scenario** | The real-life situation: what the customer / alert says |
+| 🔍 **How I debug** | Commands in order, what I see, what it tells me |
+| 🎯 **Root cause** | The real reason (not the symptom) |
+| 🔧 **Fix** | What restores the service |
+| ✅ **Verify** | Proof that it's fixed |
+| 🛡️ **Prevent** | So it doesn't happen again |
+| 🧪 **Practice** | How to break it on purpose in the lab |
+
+**Debug order for every web incident:** client (`curl`) → web server (Nginx status, logs) → app → resources (CPU, RAM, disk) → config.
+
+---
+
 ### Incident 1 — Nginx is down
 
-- **Problem:** customers can't open the site. `curl -I http://localhost` fails.
-- **Root cause:** `systemctl status nginx` shows **inactive**: Nginx isn't running.
-- **Issue:** nothing listens on port 80, so availability drops to 0.
-- **Fix:** `sudo systemctl start nginx`, then check `status` and `curl -I` → `200 OK`.
-- **Practice it:** `sudo systemctl stop nginx`.
+🎬 **Scenario:** 9:05 AM, the support team says *"Customers can't open the website at all."* An uptime alert also fired.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -I http://localhost` | `Failed to connect ... Connection refused` | Nothing is answering on port 80 |
+| 2 | `sudo systemctl status nginx` | `Active: inactive (dead)` | Nginx is not running |
+| 3 | `sudo ss -lntp \| grep :80` | (empty) | Confirms nobody listens on 80 |
+| 4 | `sudo journalctl -u nginx --since "1 hour ago"` | `Stopped A high performance web server` | It was stopped (not crashed by a config error) |
+
+🎯 **Root cause:** Nginx service is stopped.
+🔧 **Fix:** `sudo systemctl start nginx` (and `sudo systemctl enable nginx` so it starts after a reboot).
+✅ **Verify:** `systemctl status nginx` → `active (running)`; `curl -I http://localhost` → `HTTP/1.1 200 OK`.
+🛡️ **Prevent:** `enable` the service, uptime monitoring + alert on "Nginx down".
+🧪 **Practice:** `sudo systemctl stop nginx`
+
+> **Interview line:** "Site fully down → I curl it, check `systemctl status nginx`, see it's inactive, check journalctl for why, start + enable it, and verify with curl."
+
+---
 
 ### Incident 2 — 404 Not Found
 
-- **Problem:** `/menu` doesn't work. `curl -i http://localhost/menu` → **404**.
-- **Root cause:** the file or route `/menu` doesn't exist.
-- **Issue:** the server **is up**; only that one page is missing.
-- **Fix:** `ls -la /var/www/html`, add the page or fix the route or `location`.
-- **Lesson:** a 404 doesn't mean the server is down.
+🎬 **Scenario:** Marketing shares a new link `/menu` in an email campaign. Users reply: *"The link shows 404."* The home page works fine.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -I http://localhost/` | `200 OK` | Server is up |
+| 2 | `curl -I http://localhost/menu` | `404 Not Found` | Only this path is missing |
+| 3 | `ls -la /var/www/html` | No `menu` file/folder | The page was never deployed |
+| 4 | `sudo tail /var/log/nginx/error.log` | `open() "/var/www/html/menu" failed (2: No such file or directory)` | Confirms the missing file |
+
+🎯 **Root cause:** the page / route `/menu` doesn't exist (not deployed, wrong name, or wrong `location` block).
+🔧 **Fix:** deploy the missing page, or fix the link / `location` in the Nginx config.
+✅ **Verify:** `curl -I http://localhost/menu` → `200 OK`.
+🛡️ **Prevent:** check new links in CI / smoke tests before the campaign goes out.
+🧪 **Practice:** `curl -I http://localhost/menu` on a fresh server.
+
+> **Lesson:** 404 ≠ server down. The server is fine; one page is missing.
+
+---
 
 ### Incident 3 — 403 Forbidden
 
-- **Problem:** the server is reachable, but access is refused.
-- **Root cause:** wrong file/directory permissions, an Nginx `deny` rule, or no index file plus directory listing off.
-- **Issue:** the server understood the request but **refuses** it.
-- **Fix:** `ls -ld /var/www/html`, `sudo nginx -t`, `sudo tail -50 /var/log/nginx/error.log` (shows `Permission denied` or `forbidden`). Fix it, then test again.
-- **Practice it:** `sudo chmod 000 /var/www/html/index.html`. Undo with `chmod 644`.
+🎬 **Scenario:** After a teammate "cleaned up permissions" on the server, users see *"403 Forbidden"* on the home page.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -I http://localhost` | `403 Forbidden` | Server is up but refuses |
+| 2 | `sudo tail -20 /var/log/nginx/error.log` | `open() "/var/www/html/index.html" failed (13: Permission denied)` | Nginx can't read the file |
+| 3 | `ls -l /var/www/html/index.html` | `---------- root root` | File permissions are `000` |
+| 4 | `sudo nginx -T \| grep -n deny` | (nothing) | No `deny` rule, so it's permissions |
+
+🎯 **Root cause:** wrong file permissions (the Nginx user can't read `index.html`).
+🔧 **Fix:** `sudo chmod 644 /var/www/html/index.html` (folders need `755`).
+✅ **Verify:** `curl -I http://localhost` → `200 OK`.
+🛡️ **Prevent:** manage permissions with Ansible / config management, not by hand; review changes.
+🧪 **Practice:** `sudo chmod 000 /var/www/html/index.html` (undo with `chmod 644`).
+
+> **Other 403 causes:** a `deny all;` rule in the config, or no `index.html` while directory listing is off.
+
+---
 
 ### Incident 4 — 502 Bad Gateway (most important)
 
@@ -310,59 +371,160 @@ Every incident is written as **Problem → Root Cause → Issue → Fix**:
 User → Nginx ✅ → App :8080 ❌
 ```
 
-- **Problem:** the customer gets a 502.
-- **Root cause:** the upstream app is **down, unreachable, or on the wrong port**.
-- **Issue:** Nginx is healthy; the break is **between Nginx and the app**.
-- **Fix:** `sudo ss -lntp` (is 8080 listening?), error.log (`connect() failed (111: Connection refused)`), `systemctl status <app>`. Start or fix the app and test again.
-- **Remember:** **502 = the gateway is alive, the upstream has a problem.**
-- Full RoboShop version: [devops-notes debugging guide](https://github.com/Abhignadumpala/devops-notes/blob/main/roboshop-debugging-guide/README.md).
+🎬 **Scenario:** Right after a deployment, users see *"502 Bad Gateway"* on every page that needs the backend.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -I http://localhost` | `502 Bad Gateway` | Nginx is up; the problem is behind it |
+| 2 | `sudo tail -20 /var/log/nginx/error.log` | `connect() failed (111: Connection refused) while connecting to upstream ... 127.0.0.1:8080` | Nginx can't reach the app on 8080 |
+| 3 | `sudo ss -lntp \| grep 8080` | (empty) | App is not listening on 8080 |
+| 4 | `sudo systemctl status backend` | `failed` / `inactive` | App service is down |
+| 5 | `sudo journalctl -u backend -n 50` | e.g. `Error: listen EADDRINUSE` / missing env var / crash | Why the app died |
+| 6 | `grep proxy_pass /etc/nginx/conf.d/*.conf` | `proxy_pass http://127.0.0.1:8080;` | Check the port matches the app's real port |
+
+🎯 **Root cause:** the upstream app is **down, crashed, or on a different port** than Nginx expects.
+🔧 **Fix:** fix the app error and start it (`sudo systemctl restart backend`), or correct the port in `proxy_pass` → `nginx -t` → reload.
+✅ **Verify:** `ss -lntp` shows 8080; `curl -I http://localhost` → `200 OK`.
+🛡️ **Prevent:** health checks, deploy with smoke tests, auto-restart (`Restart=always` in the systemd unit).
+🧪 **Practice:** `sudo systemctl stop backend`.
+
+> **Remember:** **502 = the gateway is alive, the upstream has a problem.** Full RoboShop version: [devops-notes debugging guide](https://github.com/Abhignadumpala/devops-notes/blob/main/roboshop-debugging-guide/README.md).
+
+---
 
 ### Incident 5 — 503 Service Unavailable
 
-- **Problem:** the service can't take requests right now.
-- **Root cause:** the app is unavailable or overloaded, maintenance mode, or resources are exhausted (CPU, memory, disk).
-- **Issue:** the app can't handle the request **at the moment**.
-- **Fix:** `systemctl status nginx`, `top`, `free -m`, `df -h`, `ss -lntp`, then the logs. **Fix the actual cause** instead of restarting everything.
+🎬 **Scenario:** A big sale starts at 12:00. At 12:02, users get *"503 Service Unavailable"* on and off.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -I http://localhost` (a few times) | Sometimes `200`, sometimes `503` | Overloaded, not fully down |
+| 2 | `top` | CPU 100%, load very high | Server is overloaded |
+| 3 | `free -m` | Almost no free memory | Memory pressure too |
+| 4 | `df -h` | Disk OK | Not a disk issue |
+| 5 | `sudo tail /var/log/nginx/error.log` | `limiting requests` / `no live upstreams` | Rate limit hit or all upstreams busy/down |
+| 6 | Check for maintenance mode | e.g. a `maintenance.html` rule active | Rule out planned maintenance |
+
+🎯 **Root cause:** too much traffic for the current capacity (or app in maintenance / resources exhausted).
+🔧 **Fix:** scale out (more instances / pods), raise limits carefully, turn off maintenance mode if left on by mistake.
+✅ **Verify:** repeated `curl` → always `200`; CPU back to normal.
+🛡️ **Prevent:** auto-scaling, load testing before sales, capacity planning, alerts on CPU / saturation.
+
+> **Don't blindly restart everything:** a restart under heavy load often makes it worse. Find the cause first.
+
+---
 
 ### Incident 6 — 504 Gateway Timeout
 
-- **Problem:** the page loads for a long time, then shows 504.
-- **Root cause:** the app or one of its **dependencies** (DB, external API) is too slow.
-- **Issue:** Nginx gave up waiting (`proxy_read_timeout`, 60 s by default).
-- **Fix:** `top`, `free -m`, `ss -lntp`, error.log (`upstream timed out (110)`). Check app latency, CPU, memory, network, DB and external services.
-- **Remember:** **502 = upstream broken · 504 = upstream too slow.**
+🎬 **Scenario:** The "Order history" page spins for about 60 seconds, then shows *"504 Gateway Timeout"*. Other pages are fine.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -s -o /dev/null -w "HTTP=%{http_code} TIME=%{time_total}\n" http://localhost/orders` | `HTTP=504 TIME=60.0` | Nginx waited the full 60 s |
+| 2 | `sudo tail /var/log/nginx/error.log` | `upstream timed out (110: Connection timed out) while reading response header` | App answered too slowly |
+| 3 | `top`, `free -m` on the app server | Normal | App server itself is fine |
+| 4 | App logs / DB slow query log | A query taking 70 s | The **database** is the slow part |
+
+🎯 **Root cause:** the app (or its DB / external API) takes longer than Nginx's `proxy_read_timeout` (60 s default).
+🔧 **Fix:** fix the slow part (add a DB index, fix the query, fix the slow API). Raising the timeout only hides it.
+✅ **Verify:** `TIME` drops to under a second, `HTTP=200`.
+🛡️ **Prevent:** latency alerts (p95/p99), slow-query monitoring, tracing.
+
+> **Remember:** **502 = upstream broken · 504 = upstream too slow.**
+
+---
 
 ### Incident 7 — 500 Internal Server Error
 
-- **Problem:** the request reached the server, but the app failed while processing it.
-- **Root cause:** an exception, config error, failed dependency, bug, or **recent deployment**.
-- **Fix:** **app logs first** (`journalctl -u <app>`), then error.log. Fix or roll back, then test.
-- **Tip:** ask "**what changed?**" A fresh deploy is the #1 suspect.
+🎬 **Scenario:** 15 minutes after a new release, the checkout page shows *"500 Internal Server Error"*.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -I http://localhost/checkout` | `500 Internal Server Error` | App received it but crashed while processing |
+| 2 | **What changed?** CI/CD history | New release 15 min ago | #1 suspect |
+| 3 | `sudo journalctl -u backend -n 100` (app logs first) | `TypeError: cannot read property 'price' of undefined` / `DB_PASSWORD not set` | A bug or missing config in the new version |
+| 4 | `sudo tail /var/log/nginx/error.log` | Little or nothing | Confirms it's the app, not Nginx |
+
+🎯 **Root cause:** a bug, exception or bad config in the application (often from the latest deploy).
+🔧 **Fix:** **roll back** to the last good version first (fastest), then fix the bug and redeploy.
+✅ **Verify:** `curl -I /checkout` → `200 OK`; error rate back to normal.
+🛡️ **Prevent:** tests in CI, canary / blue-green deploys, error-rate alerts.
+
+> **Tip:** for 500, read the **app logs first**, not the Nginx logs.
+
+---
 
 ### Incident 8 — High CPU (200 OK but slow)
 
-- **Problem:** "the site works but is very slow".
-- **Measure:** `curl -s -o /dev/null -w "HTTP=%{http_code} TIME=%{time_total}\n" http://localhost` → `HTTP=200`, but TIME is high.
-- **Root cause:** a process is using too much CPU (`top`, `ps aux --sort=-%cpu | head`).
-- **Issue:** availability looks fine, but **latency** and user experience are bad.
-- **Fix:** find the process, understand **why** it is hogging CPU, then fix or restart it.
-- **Practice it:** run `yes > /dev/null &`, then `kill %1`.
-- **Lesson:** **200 OK doesn't mean healthy. Also measure latency.**
+🎬 **Scenario:** Users say *"The site works, but it's very slow."* The uptime check is green (200 OK).
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -s -o /dev/null -w "HTTP=%{http_code} TIME=%{time_total}\n" http://localhost` | `HTTP=200 TIME=4.8` | Available but slow (normal is about 0.05 s) |
+| 2 | `top` | CPU 100%, one process on top | Something is hogging the CPU |
+| 3 | `ps aux --sort=-%cpu \| head` | e.g. `yes`, a runaway script or a backup job | The guilty process |
+| 4 | Ask: who started it and why? | A cron job / stuck script | The reason |
+
+🎯 **Root cause:** one process is using all the CPU, so Nginx/app requests wait.
+🔧 **Fix:** stop or fix that process (`kill <PID>`), move heavy jobs to off-peak hours or another server.
+✅ **Verify:** `TIME` back to normal; `top` shows normal CPU.
+🛡️ **Prevent:** CPU and latency alerts, not just "is it up".
+🧪 **Practice:** `yes > /dev/null &` (stop with `kill %1`).
+
+> **Lesson:** **200 OK doesn't mean healthy.** Measure latency too.
+
+---
 
 ### Incident 9 — Disk full
 
-- **Problem:** `df -h` → `/dev/root 100%`.
-- **Root cause:** big logs, temp files, app data, old artifacts or core dumps.
-- **Issue:** apps can't write logs, temp files, data or PID files → errors, then an outage.
-- **Fix:** find what is big: `sudo du -sh /var/log/*`, `sudo du -sh /var/* 2>/dev/null | sort -h | tail`. Clean up **safely**. Empty a log that is still open with `truncate -s 0`, not `rm`: a deleted file still holds its space while a process has it open.
-- **Prevent:** log rotation (`logrotate`), retention policies, disk alerts (e.g. > 80%), capacity planning.
+🎬 **Scenario:** At night, the app starts throwing errors, and new logs stop appearing. An alert says *"Disk usage 100%"*.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `df -h` | `/dev/root  100%` | Disk is full |
+| 2 | `sudo du -sh /var/* 2>/dev/null \| sort -h \| tail` | `/var/log` is huge | Logs are the problem |
+| 3 | `sudo du -sh /var/log/* \| sort -h \| tail` | `access.log` = 15 GB | One log file grew without limit |
+| 4 | `ls /etc/logrotate.d/` | No rule for this log | Log rotation was never set up |
+
+🎯 **Root cause:** a log file grew forever because there was no log rotation.
+🔧 **Fix:** free space **safely**: `sudo truncate -s 0 /var/log/nginx/access.log` (not `rm`: a deleted file still holds its space while Nginx has it open). Remove old archives / temp files.
+✅ **Verify:** `df -h` shows free space; app errors stop; new log lines appear.
+🛡️ **Prevent:** `logrotate`, retention policies, disk alert at **> 80%**, capacity planning.
+
+---
 
 ### Incident 10 — Nginx config broken
 
-- **Problem:** after someone edits the config, Nginx won't start.
-- **Root cause:** a syntax or config error (missing `;`, wrong directive).
-- **Fix:** **never restart blindly.** Run `sudo nginx -t` (it shows the file and line), fix it, then `systemctl restart nginx`, `status` and `curl -I`.
-- **Golden rule:** **Change → Test → Apply → Verify.**
+🎬 **Scenario:** A teammate edits the Nginx config to add a new site and restarts it. Now the whole website is down.
+
+🔍 **How I debug:**
+
+| Step | Command | What I see | What it tells me |
+|---|---|---|---|
+| 1 | `curl -I http://localhost` | `Connection refused` | Nginx isn't running |
+| 2 | `sudo systemctl status nginx` | `failed` | It tried to start and failed |
+| 3 | `sudo nginx -t` | `unexpected "}" in /etc/nginx/conf.d/site.conf:14` / `test failed` | Exact file and line of the error |
+| 4 | `git diff` / backup of the config | A missing `;` on line 13 | The bad change |
+
+🎯 **Root cause:** a syntax error in the Nginx config (missing `;`, wrong directive or bracket).
+🔧 **Fix:** fix the line → `sudo nginx -t` (must say `test is successful`) → `sudo systemctl restart nginx`.
+✅ **Verify:** `systemctl status nginx` → running; `curl -I` → `200 OK`.
+🛡️ **Prevent:** **always run `nginx -t` before restart/reload**, keep configs in Git, prefer `reload` (keeps the old config if the new one is bad).
+
+> **Golden rule:** **Change → Test → Apply → Verify.**
+
 
 ## 8. Measuring Availability and Latency
 
