@@ -1,6 +1,6 @@
 # Day 3 — War Rooms and Incident Management (SRE)
 
-[← SRE notes](../README.md) · [Day 21 — SRE Incidents](../day-21-sre-incidents/README.md)
+[Day 21 — SRE Incidents](../day-21-sre/day-21-sre-incidents/README.md)
 
 > **In short:** When production breaks badly, the right people join a **war room**, each with a clear **role**. They follow the **alert → investigate → decide → fix → verify** flow using **data**, not guesses, and close it with an **RCA**.
 
@@ -105,7 +105,7 @@ CPU 95% → 100%  →  Prometheus alert  →  Alertmanager  →  PagerDuty  → 
 
 **From this timeline:**
 - **MTTA** (Mean Time To Acknowledge) = alert → team working on it = **2 min**
-- **MTTR** (Mean Time To Recover) = alert → healthy = **27 min** (see [MTTR in Day 21](../day-21-sre-incidents/README.md#4-mttf-and-mttr))
+- **MTTR** (Mean Time To Recover) = alert → healthy = **27 min** (see [MTTR in Day 21](../day-21-sre/day-21-sre-incidents/README.md#4-mttf-and-mttr))
 - The **Scribe** writes this timeline; it goes into the **RCA**.
 
 ---
@@ -178,7 +178,7 @@ Deployment caused issue
 
 **Why not the average?** 99 requests at 100 ms + 1 request at 10 s → average ≈ 200 ms (looks fine), but that one user waited 10 seconds. Percentiles show the slow users the average hides.
 
-> Golden signals are the usual **SLIs** (see [SLI/SLO/SLA in Day 21](../day-21-sre-incidents/README.md#3-sli-slo-sla)).
+> Golden signals are the usual **SLIs** (see [SLI/SLO/SLA in Day 21](../day-21-sre/day-21-sre-incidents/README.md#3-sli-slo-sla)).
 
 ---
 

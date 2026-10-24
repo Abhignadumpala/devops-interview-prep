@@ -700,7 +700,7 @@ Alert → Debug (find evidence) → Fix (restore service) → RCA (find the real
 - **Share:** other teams learn from it; new joiners read old reports
 - **Measure:** records MTTR, SLI/SLO/SLA impact for the business
 
-**When:** after every **SEV-1 / SEV-2** incident (see [War Rooms: severity](../day-3-war-rooms/README.md#3-incident-severity)), usually within 1–5 days, while memory is fresh.
+**When:** after every **SEV-1 / SEV-2** incident (see [War Rooms: severity](../../day-3-war-rooms/README.md#3-incident-severity)), usually within 1–5 days, while memory is fresh.
 
 **Blameless:** the report blames the **system/process, not the person**. Write *"the config was deployed without `nginx -t`"*, not *"Ravi broke Nginx"*. People then report problems honestly instead of hiding them.
 

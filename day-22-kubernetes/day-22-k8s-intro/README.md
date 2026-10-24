@@ -308,7 +308,7 @@ kubectl rollout undo deployment/web                  # back to the previous vers
 | **RollingUpdate** (default) | Replace pods a few at a time | No |
 | **Recreate** | Kill all old pods, then start new ones | Yes (short) |
 
-> Links to SRE: rollback is the first choice when a deploy breaks prod. See [War Rooms: rollback or fix forward](../../day-21-sre/day-3-war-rooms/README.md#6-rollback-or-fix-forward).
+> Links to SRE: rollback is the first choice when a deploy breaks prod. See [War Rooms: rollback or fix forward](../../day-3-war-rooms/README.md#6-rollback-or-fix-forward).
 
 ---
 
