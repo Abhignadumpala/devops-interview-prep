@@ -208,6 +208,18 @@ MTTR = total recovery time / number of incidents
 
 Deeper DR notes: [Disaster Recovery](../../day-20-disaster-recovery/README.md).
 
+### 📌 Quick SRE Cheat Sheet
+
+| Term | Simple meaning |
+|---|---|
+| **SLI** | What we measure |
+| **SLO** | What we target |
+| **SLA** | What we promise |
+| **MTTR** | How quickly we recover |
+| **MTTF** | How long before failure |
+| **RTO** | Maximum recovery time |
+| **RPO** | Maximum acceptable data loss |
+
 ## 6. HTTP Status Codes
 
 **Definition:** a **status code** = a 3-digit number in every HTTP response that says what happened. The **first digit** tells you the type.
