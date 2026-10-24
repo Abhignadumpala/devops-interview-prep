@@ -1,6 +1,6 @@
-# Day 4 — Parallel & Sequential Builds, Composite Actions vs Reusable Workflows
+# Day 7 — Parallel & Sequential Builds, Composite Actions vs Reusable Workflows
 
-[← Day 3](../day-3-codeql-self-hosted-runners/README.md) · [All notes](../README.md) · [Day 5 →](../day-5-inputs-outputs-copilot/README.md)
+[← Day 6](../day-6-codeql-self-hosted-runners/README.md) · [All notes](../README.md) · [Day 8 →](../day-8-inputs-outputs-copilot/README.md)
 
 - **Parallel builds:** independent jobs (build, test, security) run at the same time.
 - **Sequential builds:** used `needs:` to run jobs in order: build → test → deploy.
@@ -151,7 +151,7 @@ run **in parallel** take the time of the **slowest job** only.
 
 #### Real result from this repo — Matrix tests: 120 s → 32 s
 
-On Day 2 I ran the tests on **2 OS × 3 Node versions = 6 jobs**.
+On Day 5 I ran the tests on **2 OS × 3 Node versions = 6 jobs**.
 
 | How the 6 test jobs ran | Time      |
 | ----------------------- | --------- |

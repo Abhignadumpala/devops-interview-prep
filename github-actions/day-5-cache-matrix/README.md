@@ -1,6 +1,6 @@
-# Day 2 — Cache, Dependabot, Matrix Jobs, Conditions, Status Check
+# Day 5 — Cache, Dependabot, Matrix Jobs, Conditions, Status Check
 
-[← Day 1](../day-1-intro/README.md) · [All notes](../README.md) · [Day 3 →](../day-3-codeql-self-hosted-runners/README.md)
+[← Day 4](../day-4-intro/README.md) · [All notes](../README.md) · [Day 6 →](../day-6-codeql-self-hosted-runners/README.md)
 
 - **Cache:** saved npm packages between runs, so `npm ci` is faster.
 - **Jobs with `needs:`:** split the pipeline into lint → test → build → deploy.
@@ -13,7 +13,7 @@
 
 ## Table of Contents
 
-- [The Full Day 2 Workflow](#the-full-day-2-workflow)
+- [The Full Day 5 Workflow](#the-full-day-5-workflow)
 - [Result](#result)
 - [Artifact — Name, Path and Where to Find It](#artifact--name-path-and-where-to-find-it)
 - [Cache](#cache)
@@ -27,7 +27,7 @@
 
 <!-- tocstop -->
 
-## The Full Day 2 Workflow
+## The Full Day 5 Workflow
 
 `.github/workflows/ci.yml`
 

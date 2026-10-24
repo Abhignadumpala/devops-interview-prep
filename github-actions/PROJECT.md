@@ -429,12 +429,12 @@ The pipeline will be built step by step:
 | 5    | Tests (matrix)         | `npm run test:ci`, 2 OS × 3 Node | ✅ Done                          |
 | 6    | Build + artifact       | `npm run build`, `app-build`     | ✅ Done                          |
 | 7    | Deploy + rollback      | `main` only                      | ✅ Placeholder `echo` for now    |
-| 8    | Security: SAST         | CodeQL                           | ⏳ In Day 1 notes, not in ci.yml |
+| 8    | Security: SAST         | CodeQL                           | ⏳ In Day 4 notes, not in ci.yml |
 | 9    | Security: dependencies | `npm audit` / Dependabot         | ⏳ To add                        |
 
-Daily notes: [Day 1](./day-1-intro/README.md) · [Day 2](./day-2-cache-matrix/README.md) ·
-[Day 3](./day-3-codeql-self-hosted-runners/README.md) · [Day 4](./day-4-parallel-composite-reusable/README.md)
-· [Day 5](./day-5-inputs-outputs-copilot/README.md)
+Daily notes: [Day 4](./day-4-intro/README.md) · [Day 5](./day-5-cache-matrix/README.md) ·
+[Day 6](./day-6-codeql-self-hosted-runners/README.md) · [Day 7](./day-7-parallel-composite-reusable/README.md)
+· [Day 8](./day-8-inputs-outputs-copilot/README.md)
 
 ## Run Locally
 

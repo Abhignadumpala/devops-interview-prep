@@ -1,6 +1,6 @@
-# Zomato Project — CI Integration
+# Day 9 — Zomato Project: CI Integration
 
-[← Day 5](../README.md) · [All notes](../../README.md)
+[← Day 8](../day-8-inputs-outputs-copilot/README.md) · [All notes](../README.md)
 
 An **enterprise CI pipeline** for a React app (Zomato clone): build → test → security scan → Docker
 build → push to DockerHub → smoke test.

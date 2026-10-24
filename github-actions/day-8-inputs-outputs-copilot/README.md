@@ -1,6 +1,6 @@
-# Day 5 — Input & Output Parameters, GitHub Copilot, Zomato CI
+# Day 8 — Input & Output Parameters, GitHub Copilot, Zomato CI
 
-[← Day 4](../day-4-parallel-composite-reusable/README.md) · [All notes](../README.md)
+[← Day 7](../day-7-parallel-composite-reusable/README.md) · [All notes](../README.md)
 
 - **Inputs:** values passed **into** a workflow, reusable workflow or action (like function
   arguments).
@@ -10,7 +10,7 @@
 - **GitHub Copilot:** an AI coding assistant that helps generate, understand, troubleshoot, and
   improve code and automation.
 - **Zomato CI integration:** enterprise CI pipeline — build, CodeQL, Trivy, hadolint, Docker
-  Buildx, push to DockerHub, smoke test → [Zomato CI notes](./zomato-ci/README.md)
+  Buildx, push to DockerHub, smoke test → [Zomato CI notes](../day-9-zomato-ci/README.md)
 
 <!-- toc -->
 
@@ -204,7 +204,7 @@ jobs:
 
 ### 2.2 Reusable Workflow Inputs — `workflow_call`
 
-From my Day 4 lab: the reusable pipeline **declares** the input, the caller **sends** it with `with:`.
+From my Day 7 lab: the reusable pipeline **declares** the input, the caller **sends** it with `with:`.
 
 ```yaml
 # reusable-pipeline.yml  (the callee)
@@ -430,7 +430,7 @@ runs:
 | Step → step (same job)     | step output (`steps.<id>.outputs`) |
 | Job → job                  | job output + `needs`               |
 | Reusable workflow → caller | `workflow_call.outputs`            |
-| Files between jobs         | **artifacts** (Day 2), not outputs |
+| Files between jobs         | **artifacts** (Day 5), not outputs |
 
 ## 6. Inputs vs Outputs vs Env vs Secrets
 

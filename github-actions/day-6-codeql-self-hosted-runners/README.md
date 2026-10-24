@@ -1,6 +1,6 @@
-# Day 3 — CodeQL (SAST), Self-Hosted Runners
+# Day 6 — CodeQL (SAST), Self-Hosted Runners
 
-[← Day 2](../day-2-cache-matrix/README.md) · [All notes](../README.md) · [Day 4 →](../day-4-parallel-composite-reusable/README.md)
+[← Day 5](../day-5-cache-matrix/README.md) · [All notes](../README.md) · [Day 7 →](../day-7-parallel-composite-reusable/README.md)
 
 - **CodeQL (SAST):** scanned my source code for security issues on every push and PR.
 - **Self-hosted runners:** set up my own AWS EC2 machine as a runner and ran jobs on it.
