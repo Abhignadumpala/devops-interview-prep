@@ -38,7 +38,7 @@ The names in **Type** just fill in the port for you.
 | 9090 | HTTP       | Custom TCP   |
 | 3000 | HTTP       | Custom TCP   |
 
-Used in: [Monitoring Day 10 — Lab](../../monitoring/day-10-intro/README.md#lab--monitor-an-ec2-server)
+Used in: [Monitoring Day 10 — Lab](../../day-10-monitoring/day-10-intro/README.md#lab--monitor-an-ec2-server)
 
 ## Interview One-Liner
 
