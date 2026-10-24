@@ -32,6 +32,8 @@ Disaster:  Users ──▶ DR region  (app brought up from the copies)
 
 The answers pick one of **4 strategies**, from cheap and slow to costly and instant. The deciding factor is **what is already running in the DR region**.
 
+> **AWS rule:** if the DR setup costs more than the loss it prevents, don't build it (unless a law requires it). Some low-risk apps need no DR at all, and a **multi-AZ** setup in one region already covers a single data-centre failure.
+
 ![DR in one picture](./images/dr-simple.png)
 
 ---
@@ -44,11 +46,13 @@ The answers pick one of **4 strategies**, from cheap and slow to costly and inst
 | **DR (Disaster Recovery)** | The plan and setup to bring the app and data back after a disaster |
 | **Primary region** | Where the app normally runs (e.g. Mumbai `ap-south-1`) |
 | **DR region** | The backup location (e.g. Singapore `ap-southeast-1`) |
-| **RPO** (Recovery Point Objective) | Max **data** you can lose, in time. *"How old can my last copy be?"* |
-| **RTO** (Recovery Time Objective) | Max **downtime**. *"How fast must the app be back?"* |
+| **RPO** (Recovery Point Objective) | Max **data** you can lose, in time. *"How old can my last copy be?"* AWS: *max acceptable time since the last data recovery point* |
+| **RTO** (Recovery Time Objective) | Max **downtime**. *"How fast must the app be back?"* AWS: *max acceptable delay between service interruption and restoration* |
 | **Failover** | Switching users from the primary to the DR region |
 | **Failback** | Moving back to the primary after it is fixed |
-| **HA vs DR** | HA = survive a small failure (1 server / 1 AZ) automatically. DR = survive losing a whole region |
+| **HA vs DR** | HA = survive a small failure (1 server / 1 AZ) automatically. DR = survive losing a whole region, or lost/corrupted data |
+| **Active/passive** | Only the primary serves users; DR waits (Backup & Restore, Pilot Light, Warm Standby) |
+| **BIA** (Business Impact Analysis) | Study of what downtime and data loss cost the business; used to set RTO/RPO |
 
 ### RPO vs RTO in one example
 
@@ -59,7 +63,7 @@ The answers pick one of **4 strategies**, from cheap and slow to costly and inst
 
 - **RPO → data loss** (orders placed 10:00–11:30 are gone)
 - **RTO → business loss** (no one can order 11:30–13:00)
-- The **business** sets the targets; **DevOps** builds to meet them and tests them.
+- The **business** sets the targets (from a BIA); **DevOps** builds to meet them and tests them.
 
 | | RPO | RTO |
 |---|---|---|
@@ -76,7 +80,7 @@ The answers pick one of **4 strategies**, from cheap and slow to costly and inst
 
 | Ask | Meaning |
 |---|---|
-| Impact if the app is down? Does it get worse over time? | What breaks, and how fast it hurts |
+| Impact if the app is down? Does it get worse over time? | What breaks, and how fast it hurts. AWS example: payroll down **just before payday** = huge impact; just after = small |
 | Money lost per hour? | Cost of downtime |
 | Reputation cost? | Public notices, e.g. company homepage down |
 | Any SLA with customers? | Uptime already promised |
@@ -114,6 +118,7 @@ S3 / Backup Vault   (other region · nothing running)
 ```
 
 - **On disaster:** rebuild infra (Terraform) → restore data from backups → deploy app → switch DNS
+- **Back up more than data (AWS):** also AMIs, config and IaC code. Without IaC the rebuild is slow and may miss the RTO
 - **AWS examples:** AWS Backup, S3, EBS snapshots, RDS snapshots, S3 Object Lock, cross-region backups
 - **Advantages:** low cost, simple, good for less-critical workloads
 - **Disadvantages:** slow recovery, more recovery work, higher RTO
@@ -133,6 +138,8 @@ EKS + Database              Small infrastructure
 
 - **On disaster:** scale up the infrastructure and deploy the rest of the environment, promote the DB, switch DNS
 - **Critical components** = core infra (VPC, subnets, security groups, IAM, EKS cluster / ASG at 0) + data (DB replica). App servers are **not running** yet.
+- **AWS wording:** databases and storage are **always on**; app servers are **"switched off"**: code, AMIs and config are ready, but the servers are not deployed until failover.
+- **AWS service:** AWS Elastic Disaster Recovery (DRS) works the pilot light way
 - **Name meaning:** like a gas stove pilot flame: small flame always on, turn it up when needed
 
 > **Interview answer:** "Pilot light keeps critical infrastructure and data ready in the DR region so the environment can be activated quickly during a disaster."
@@ -150,6 +157,8 @@ DR        3 nodes   (already running)
 
 - **On disaster:** scale DR (3 → 10 nodes) → promote database → switch DNS
 - **DB in DR is read-only** until promoted, so before failover it serves only reads / test traffic
+- **AWS:** warm standby can take traffic **immediately** at reduced capacity; pilot light cannot without extra steps
+- **Hot standby (AWS term):** like warm standby but at **full size**, still not serving users (active/passive)
 
 > **Interview answer:** "Warm standby maintains a scaled-down but functional version of production that can be scaled during failover."
 
@@ -182,10 +191,18 @@ DR        3 nodes   (already running)
   Database              Database
 ```
 
-- **On disaster:** traffic keeps flowing through the other region
+- **On disaster:** traffic keeps flowing through the other region. AWS: *"there is no such thing as failover"* here
 - **Advantages:** very fast recovery, no break for users if one region fails
-- **Disadvantages:** highest cost, highest complexity, data consistency challenges (both DBs take writes), more operations work
-- **DB for writes in both regions:** DynamoDB Global Tables
+- **Disadvantages:** highest cost, highest complexity, data consistency challenges, more operations work
+- **Still needs backups:** if data is deleted or corrupted, it is copied to both regions, so RPO is not zero for that case
+
+**How writes work (AWS):** reads are served from the nearest region. Writes:
+
+| Write style | Meaning | AWS DB |
+|---|---|---|
+| **Write global** | All writes go to one region; promote another if it fails | Aurora Global Database (promote < 1 min) |
+| **Write local** | Each region takes writes; conflicts = *last writer wins* | DynamoDB Global Tables |
+| **Write partitioned** | Each user's writes go to one fixed region (by user ID) | S3 two-way replication |
 
 > **Interview answer:** "Active-active runs workloads in multiple locations simultaneously so traffic can continue through another location if one fails."
 
@@ -201,7 +218,8 @@ DR        3 nodes   (already running)
 | Active-Active | Full production | Very fast | Very high | Very high |
 
 > These are **relative** comparisons. Actual recovery times depend on the workload and implementation.
-> For a rough idea, the AWS whitepaper gives RPO/RTO of: hours · tens of minutes · minutes · near zero.
+> For a rough idea, the AWS whitepaper gives RPO/RTO of: **hours · tens of minutes · minutes · near zero (real time)**.
+> The first 3 are **active/passive**; only Active-Active serves users from both regions.
 
 ---
 
@@ -225,12 +243,14 @@ Don't pick the most impressive one. Pick the **cheapest one that meets the RTO/R
 ## 5. Failover steps (pilot / warm)
 
 ```
-1. Health check fails (Route 53 / alarm)
-2. Promote DB replica → writer
-3. Scale app up (ASG / EKS nodes / terraform apply)
-4. Switch DNS to DR region (Route 53 failover)
+1. Detect: health check / alarm fires → team decides to fail over
+2. Scale DR up (ASG / EKS nodes / terraform apply)
+3. Promote DB replica → writer
+4. Switch traffic to DR region (Route 53 failover / Global Accelerator)
 5. Test + monitor
 ```
+
+- **AWS advice:** automatic failover on a false alarm also causes data loss and downtime, so many teams **start failover manually** but **automate every step** ("one button").
 
 ![Failover](./images/failover.png)
 
