@@ -1,6 +1,6 @@
-# Day 2 — Service Discovery, Alertmanager
+# Day 11 — Service Discovery, Alertmanager
 
-[← Day 1](../day-1-intro/README.md) · [All notes](../README.md) · [Day 3 →](../day-3-pushgateway-loki/README.md) · [Quick rebuild with user data](../user-data-scripts/README.md)
+[← Day 10](../day-10-intro/README.md) · [All notes](../README.md) · [Day 12 →](../day-12-pushgateway-loki/README.md) · [Quick rebuild with user data](../user-data-scripts/README.md)
 
 - **Service discovery:** Prometheus finds EC2 servers to monitor **automatically** (by region/tags).
 - **Alertmanager:** sends **email / Slack** alerts when a rule is hit, e.g. CPU > 90% (port 9093).
@@ -12,7 +12,7 @@ typing each server IP into `prometheus.yml` by hand.
 
 ## The Problem — Static Targets
 
-On Day 1 we added the worker IP **manually**:
+On Day 10 we added the worker IP **manually**:
 
 ```yaml
 - targets: ["<amazon-vm-ip>:9100"]
@@ -64,7 +64,7 @@ app).
 
 ### Step 2 — Install Node Exporter on the New VM
 
-SSH into the **new VM** → run the same `node-exporter` script as Day 1 → port **9100** is already
+SSH into the **new VM** → run the same `node-exporter` script as Day 10 → port **9100** is already
 open (same security group).
 
 ### Step 3 — Add the New IP to Prometheus
@@ -373,7 +373,7 @@ Browser: `http://<monitoring-public-ip>:9093` → Alertmanager UI.
 
 ### Step 2 — Node Exporter on the Web Server
 
-Same script as Day 1 (already done if service discovery is set up).
+Same script as Day 10 (already done if service discovery is set up).
 
 ### Step 3 — Write the Rules File
 

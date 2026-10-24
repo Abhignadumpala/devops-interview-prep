@@ -1,6 +1,6 @@
-# Day 1 — Intro to Monitoring
+# Day 10 — Intro to Monitoring
 
-[← All notes](../README.md) · [Day 2 →](../day-2-service-discovery/README.md) · [Quick rebuild with user data](../user-data-scripts/README.md)
+[← All notes](../README.md) · [Day 11 →](../day-11-service-discovery/README.md) · [Quick rebuild with user data](../user-data-scripts/README.md)
 
 ## What is Monitoring?
 

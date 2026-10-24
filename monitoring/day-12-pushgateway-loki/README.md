@@ -1,6 +1,6 @@
-# Day 3 — Pushgateway, Grafana RBAC, Loki, Custom Dashboards
+# Day 12 — Pushgateway, Grafana RBAC, Loki, Custom Dashboards
 
-[← Day 2](../day-2-service-discovery/README.md) · [All notes](../README.md)
+[← Day 11](../day-11-service-discovery/README.md) · [All notes](../README.md)
 
 - **Pushgateway:** captures metrics of **short-living** scripts / jobs / pods (≤ 15 s) — they **push**, Prometheus **pulls** (port 9091).
 - **Grafana RBAC:** control **what each user can do** in Grafana (users, teams, folder permissions).

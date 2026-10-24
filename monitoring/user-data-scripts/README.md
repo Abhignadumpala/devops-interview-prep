@@ -14,8 +14,8 @@ Launch EC2 → Advanced details → User data → paste script → Launch
 | **Worker**        | Amazon app (nginx :80) + Node Exporter (:9100)                |
 | **Monitoring**    | Node Exporter + Prometheus (EC2 SD + rules + alerting) + Grafana (data source ready) + Alertmanager |
 
-Step-by-step explanations: [Day 1 — Intro](../day-1-intro/README.md) ·
-[Day 2 — Service Discovery, Alertmanager](../day-2-service-discovery/README.md)
+Step-by-step explanations: [Day 10 — Intro](../day-10-intro/README.md) ·
+[Day 11 — Service Discovery, Alertmanager](../day-11-service-discovery/README.md)
 
 ## Launch Checklist
 
@@ -217,7 +217,7 @@ rm -rf alertmanager-0.25.0.linux-amd64*
 useradd -rs /bin/false alertmanager
 mkdir -p /etc/alertmanager /var/lib/alertmanager
 
-# default config — add Slack / email later (Day 2, Step 9)
+# default config — add Slack / email later (Day 11, Step 9)
 cat <<'EOF' > /etc/alertmanager/alertmanager.yml
 route:
   receiver: "default"
