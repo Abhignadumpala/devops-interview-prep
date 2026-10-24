@@ -329,6 +329,24 @@ Every incident is written as **Problem → Root Cause → Issue → Fix**:
 
 > **Interview line:** "Site fully down → I curl it, check `systemctl status nginx`, see it's inactive, check journalctl for why, start + enable it, and verify with curl."
 
+**How to explain it (incident update / interview story):**
+
+> "Our website became unreachable: users got **ERR_CONNECTION_REFUSED** and the uptime alert fired. I confirmed with `curl -I http://localhost` (connection refused, so nothing was listening on port 80). `systemctl status nginx` showed **inactive (dead)**. To find **why**, I checked the system logs (`journalctl -u nginx`, `dmesg`) and found **[the reason, e.g. the OOM killer stopped Nginx because another process used all the memory]**. To restore service quickly I started Nginx, enabled it on boot, and verified with `systemctl status` (active) and `curl -I` (200 OK), back in about 5 minutes. Then I **[fixed the memory-hungry process / added alerts / enabled auto-restart]** and wrote the incident report."
+
+**Why did Nginx stop? (fill the "x y z" with evidence, never guess):**
+
+| Possible reason | Command to prove it | What you'd see |
+|---|---|---|
+| Server rebooted, Nginx not enabled | `last reboot`, `systemctl is-enabled nginx` | Recent reboot; `disabled` |
+| OOM killer (another process ate all RAM) | `dmesg -T \| grep -i oom`, `free -m` | `Out of memory: Killed process ... (nginx)` |
+| Someone stopped it by hand | `journalctl -u nginx`, `last`, `sudo grep nginx /var/log/secure` | `Stopped nginx` + who ran `sudo systemctl stop` |
+| Crashed after a bad config change | `journalctl -u nginx`, `nginx -t` | `test failed` → see Incident 10 |
+| Disk full | `df -h` | `100%` → see Incident 9 |
+
+**Two layers of fix:** ① **restore** the service in minutes (`systemctl start nginx`) → ② **remove the root cause** afterwards (fix what stopped it, `enable`, `Restart=always` in the systemd unit, alert).
+
+> **One line:** "Restarting brings the service back, but finding **why** it stopped is what prevents the next outage."
+
 ---
 
 ### Incident 2 — 404 Not Found
