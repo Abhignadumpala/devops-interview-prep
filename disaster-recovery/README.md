@@ -97,95 +97,105 @@ The answers pick one of **4 strategies**, from cheap and slow to costly and inst
 
 ## 2. The 4 DR Strategies
 
+AWS groups DR into **4 strategies**. They trade **cost** for **recovery speed**.
+
 ### 1️⃣ Backup & Restore
 
-**Definition:** Keep backups in another region. When disaster hits, rebuild everything from them.
+**Definition:** Take backups and **rebuild** the environment when a disaster happens.
 
 ```
-PRIMARY                       DR REGION
-App + DB  ── backups ──▶  snapshots, AMIs, S3 copies   (nothing running)
+PRIMARY REGION
+      │
+      ▼
+   Backups
+      │
+      ▼
+S3 / Backup Vault   (other region · nothing running)
 ```
 
-- **On disaster:** `terraform apply` → restore DB from snapshot → deploy app → switch DNS
-- **RPO / RTO:** hours · **Cost:** 💲 lowest
-- **Back up more than the DB:** AMIs, config and IaC code too (AWS says use IaC, or rebuild is slow)
-- **Use for:** internal tools, dev/test, reports
+- **On disaster:** rebuild infra (Terraform) → restore data from backups → deploy app → switch DNS
+- **AWS examples:** AWS Backup, S3, EBS snapshots, RDS snapshots, S3 Object Lock, cross-region backups
+- **Advantages:** low cost, simple, good for less-critical workloads
+- **Disadvantages:** slow recovery, more recovery work, higher RTO
 
-> **Interview line:** "Backup and restore keeps backups in another region and rebuilds the infra and app from them during a disaster."
+> **Interview answer:** "Backup and restore means keeping recoverable backups in another location and rebuilding the infrastructure and application when a disaster occurs."
 
 ### 2️⃣ Pilot Light
 
-**Definition:** Only the core (the database) is live in the DR region. The app is **off**.
+**Definition:** Keep the **critical components ready**, but don't run the full production environment.
 
 ```
-PRIMARY                       DR REGION
-EKS / EC2 + DB ─ replication ─▶ DB replica (read-only, LIVE)
-                                 App servers OFF (0 instances)
+PRIMARY                     DR REGION
+EKS + Database              Small infrastructure
+      │                     +
+      └── replication ───▶  Database replica
 ```
 
-- **On disaster:** promote replica → writer, turn app on, switch DNS
-- **RPO / RTO:** 10s of minutes · **Cost:** 💲💲
-- **Name meaning:** like a gas stove pilot flame: small flame always on, turn up when needed
+- **On disaster:** scale up the infrastructure and deploy the rest of the environment, promote the DB, switch DNS
+- **Critical components** = data (DB replica) + core infra (VPC, small cluster). The app is **not serving** traffic yet.
+- **Name meaning:** like a gas stove pilot flame: small flame always on, turn it up when needed
 
-> **Interview line:** "Pilot light keeps the critical parts (data) ready in the DR region so the full environment can be switched on quickly."
+> **Interview answer:** "Pilot light keeps critical infrastructure and data ready in the DR region so the environment can be activated quickly during a disaster."
 
 ### 3️⃣ Warm Standby
 
-**Definition:** A **small but working** copy of production always runs in the DR region.
+**Definition:** Run a **smaller working version** of production in the DR region.
 
 ```
-PRIMARY                       DR REGION
-10 nodes + DB ─ replication ─▶ 3 nodes + DB replica (read-only)
-                               already RUNNING
+PRIMARY  10 nodes
+            │ replication
+            ▼
+DR        3 nodes   (already running)
 ```
 
-- **On disaster:** promote DB → scale 3 nodes to 10 → switch DNS
-- **RPO / RTO:** minutes · **Cost:** 💲💲💲
-- **DB is still read-only** until promoted, so before failover it serves only reads / test traffic
+- **On disaster:** scale DR (3 → 10 nodes) → promote database → switch DNS
+- **DB in DR is read-only** until promoted, so before failover it serves only reads / test traffic
 
-> **Interview line:** "Warm standby runs a scaled-down but working copy of production that we scale up during failover."
+> **Interview answer:** "Warm standby maintains a scaled-down but functional version of production that can be scaled during failover."
 
 #### Pilot Light vs Warm Standby (most confused)
 
 | | Pilot Light | Warm Standby |
 |---|---|---|
-| App in DR | **Off** | **Running (small)** |
-| Can take traffic right now? | ❌ No, must switch on first | ✅ Yes, at low capacity |
-| On disaster | Turn on + scale up | Only scale up |
+| What runs in DR | Critical components only (small infra + DB replica) | Small **working** copy of the full app |
+| Can take traffic right now? | ❌ No, deploy/scale the rest first | ✅ Yes, at low capacity |
+| On disaster | Scale up + deploy the rest | Only scale up |
 
-*(AWS whitepaper: "pilot light cannot process requests without additional action, warm standby can handle traffic at reduced capacity immediately.")*
+### 4️⃣ Active-Active
 
-### 4️⃣ Active/Active (Multi-site)
-
-**Definition:** **Both regions run full size and serve users at the same time.**
+**Definition:** **Both environments actively serve production traffic.**
 
 ```
-              Global DNS (Route 53)
-               ┌──────┴──────┐
-           REGION A       REGION B
-             EKS            EKS
-           Database ◀─────▶ Database
+            GLOBAL DNS
+                │
+     ┌──────────┴──────────┐
+  REGION A              REGION B
+     │                     │
+    EKS                   EKS
+     │                     │
+  Database              Database
 ```
 
-- **On disaster:** DNS just stops sending users to the failed region (no real "failover")
-- **RPO / RTO:** near zero · **Cost:** 💲💲💲💲 highest, most complex
-- **DB must accept writes in both regions:** DynamoDB Global Tables (Aurora Global = one writer + fast promote)
-- **Use for:** payments, banking, big e-commerce
+- **On disaster:** traffic keeps flowing through the other region
+- **Advantages:** very fast recovery, no break for users if one region fails
+- **Disadvantages:** highest cost, highest complexity, data consistency challenges (both DBs take writes), more operations work
+- **DB for writes in both regions:** DynamoDB Global Tables
 
-> **Interview line:** "Active-active runs the workload in multiple regions at once, so if one fails, traffic continues through the other."
+> **Interview answer:** "Active-active runs workloads in multiple locations simultaneously so traffic can continue through another location if one fails."
 
 ---
 
 ## 3. Comparison Table
 
-| Strategy | What runs in DR | RPO / RTO (AWS) | Cost | Complexity |
+| Strategy | Infrastructure | Recovery Speed | Cost | Complexity |
 |---|---|---|---|---|
-| Backup & Restore | Only backups | Hours | Low | Low |
-| Pilot Light | DB replica (app off) | 10s of minutes | Medium | Medium |
-| Warm Standby | Small full stack | Minutes | High | High |
-| Active/Active | Full stack, serving users | Near zero | Very high | Very high |
+| Backup & Restore | Mostly offline | Slow | Low | Low |
+| Pilot Light | Critical components | Medium | Medium | Medium |
+| Warm Standby | Reduced production | Fast | High | High |
+| Active-Active | Full production | Very fast | Very high | Very high |
 
-> These are rough ranges. Real numbers depend on the app and how well it is automated.
+> These are **relative** comparisons. Actual recovery times depend on the workload and implementation.
+> For a rough idea, the AWS whitepaper gives RPO/RTO of: hours · tens of minutes · minutes · near zero.
 
 ---
 
@@ -242,16 +252,16 @@ Don't pick the most impressive one. Pick the **cheapest one that meets the RTO/R
 ### ⭐ Very Important (asked in class)
 
 **Q1. Explain the 4 DR strategies.**
-Backup & Restore (only backups, rebuild on disaster, hours) → Pilot Light (live DB replica, app off, 10s of minutes) → Warm Standby (small working copy, scale up, minutes) → Active/Active (both regions serve users, near zero). More running in DR = faster recovery = more cost.
+Backup & Restore (keep backups, rebuild on disaster: slow, low cost) → Pilot Light (critical components ready: small infra + DB replica: medium) → Warm Standby (smaller working copy, scale up and promote DB: fast) → Active-Active (both regions serve traffic: very fast, very high cost). Faster recovery costs more.
 
 **Q2. How do you choose a DR strategy?**
-Start from the business's RTO/RPO, then the budget. Choose the cheapest strategy that meets the target.
+Start from the business's RTO/RPO, then the budget. Choose the cheapest strategy that meets the target. Don't choose one just because it is technically impressive.
 
 ### Other Questions
 
 **Q1. RPO vs RTO?** RPO = max data loss (time since last copy). RTO = max downtime.
 
-**Q2. Pilot Light vs Warm Standby?** Pilot light: app is off, must be switched on. Warm standby: app already runs small, only scale up.
+**Q2. Pilot Light vs Warm Standby?** Pilot light: only critical components ready, deploy/scale the rest. Warm standby: small working copy already runs, only scale up.
 
 **Q3. HA vs DR?** HA = one server/AZ fails, handled inside the region. DR = whole region lost, move to another region.
 
