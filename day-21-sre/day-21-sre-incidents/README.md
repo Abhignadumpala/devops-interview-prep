@@ -688,6 +688,12 @@ INCIDENT → Is the service UP?
 
 Whenever something goes wrong, don't just say *"Nginx was down."* Write an incident report.
 
+**Where it fits:** the incident report is the **last step**, written **after** debugging and RCA:
+
+```
+Alert → Debug (find evidence) → Fix (restore service) → RCA (find the real root cause, 5 Whys) → Incident report (postmortem) → Action items done
+```
+
 **Why write it:**
 - **Learn:** find the real root cause, not just the symptom
 - **Prevent:** every report ends with action items so it doesn't repeat
