@@ -1,4 +1,4 @@
-# Day 23 — War Rooms and Incident Management (SRE class 3)
+# Day 3 — War Rooms and Incident Management (SRE)
 
 [← SRE notes](../README.md) · [Day 21 — SRE Incidents](../day-21-sre-incidents/README.md)
 
