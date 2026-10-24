@@ -1,7 +1,36 @@
 # Disaster Recovery (DR): Short and Simple
 
-> **In short:** DR = how you bring the app and its data back when a whole region or site is lost.
-> The strategy you pick depends on **what is already running in the DR region**.
+## What is Disaster Recovery?
+
+**Definition:** Disaster Recovery (DR) is the plan, setup and steps to **bring your application and its data back** after a big failure, so the business can keep running.
+
+**What is a disaster?** Something that takes down far more than one server:
+
+| Type | Example |
+|---|---|
+| Region / data centre outage | AWS Mumbai region goes down |
+| Data loss | Someone runs `DROP TABLE` or deletes an S3 bucket |
+| Cyber attack | Ransomware encrypts the database |
+| Bad change | A wrong deployment or Terraform run breaks production |
+| Natural event | Flood or fire at the data centre |
+
+**Why we need DR:**
+- Downtime = **lost money** (no orders) and angry customers
+- Lost data = **lost orders and payments** that may never come back
+- Many companies (banks, healthcare) **must** have DR by law/compliance
+
+**How DR works (the idea):**
+
+```
+Normal:    Users ──▶ PRIMARY region (app + DB)      ── copies data ──▶  DR region
+Disaster:  Users ──▶ DR region  (app brought up from the copies)
+```
+
+**Two questions decide every DR design:**
+- **RPO:** how much data can we lose?
+- **RTO:** how long can we be down?
+
+The answers pick one of **4 strategies**, from cheap and slow to costly and instant. The deciding factor is **what is already running in the DR region**.
 
 ![DR in one picture](./images/dr-simple.png)
 
