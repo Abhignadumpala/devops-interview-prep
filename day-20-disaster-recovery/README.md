@@ -81,25 +81,8 @@ The answers pick one of **4 strategies**, from cheap and slow to costly and inst
 
 ### Is MTTR / MTTF the same as RTO / RPO?
 
-**No.** RTO/RPO are **targets** set **before** a disaster. MTTR/MTTF are **averages measured** after many failures.
-
-| Term | Full form | Type | Question it answers |
-|---|---|---|---|
-| **RTO** | Recovery Time Objective | 🎯 Target | **Max time** we can be down? |
-| **RPO** | Recovery Point Objective | 🎯 Target | **Max data** we can lose? |
-| **MTTR** | Mean Time To Recover / Repair | 📏 Measured average | How long do we **usually** take to fix? |
-| **MTTF** | Mean Time To Failure | 📏 Measured average | How long does it **usually** run before breaking? |
-
-**How they connect:**
-- **MTTR vs RTO:** both are about **downtime**. RTO = the limit, MTTR = your real average → **MTTR should be below RTO**. Example: RTO 1 hr, MTTR 27 min ✅. MTTR 2 hrs → you usually miss the RTO ❌.
-- **RPO** is about **data loss**; no MT-something matches it.
-- **MTTF** is about **how often** things break (higher is better); RTO/RPO don't measure this.
-
-**Example:** a server failed 3 times this month; fixes took 20, 30 and 40 min, and it ran about 10 days between failures.
-- MTTR = (20 + 30 + 40) ÷ 3 = **30 min** → compare with RTO 1 hr ✅
-- MTTF ≈ **10 days**
-
-> **One line:** RTO/RPO = the **rule** for one disaster (how long down, how much data lost). MTTR/MTTF = the **report card** over many failures (how fast we fix, how often it breaks). Goal: **MTTR < RTO**, MTTF as high as possible.
+**No.** RTO/RPO = **targets** set before a disaster. MTTR/MTTF = **averages measured** after many failures. Goal: **MTTR < RTO**.
+👉 Full comparison with example: [SRE Day 21 — MTTR/MTTF vs RTO/RPO](../day-21-sre/day-21-sre-incidents/README.md#is-mttr--mttf-the-same-as-rto--rpo)
 
 ### Questions to set RTO and RPO
 
