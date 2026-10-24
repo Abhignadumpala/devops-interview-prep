@@ -144,6 +144,13 @@ Availability SLI = successful requests / total requests × 100
 
 👉 **In simple words:** how long the **application keeps running fine** before it fails. Higher = better (it fails less often).
 
+**Not just the first time:** MTTF is the **average of every working period**: from "app up" to "app fails", counted again after every fix and restart. Repair time is **not** counted (that goes into MTTR).
+
+```
+Start ✅ ── 30 h ── 💥 fix ✅ ── 50 h ── 💥 fix ✅ ── 40 h ── 💥
+MTTF = (30 + 50 + 40) ÷ 3 = 40 h      (only the first 30 h = "time to first failure")
+```
+
 > **Note:** for systems that get repaired and restarted (like apps), the exact term is **MTBF** (Mean Time Between Failures). In classes and interviews MTTF is often used for the same idea.
 
 ```
