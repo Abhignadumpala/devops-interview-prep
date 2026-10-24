@@ -551,6 +551,65 @@ So Nginx's logs in container 1 are **invisible** to Fluentd in container 2, unle
 3. Nginx writes a log line → Fluentd sees it at once (same folder).
 4. Pod deleted → **emptyDir deleted too** (temporary), so the sidecar must ship logs out.
 
+### Class example: native sidecar + emptyDir (explained simply)
+
+![Class YAML: app + logshipper sidecar sharing an emptyDir](images/class-native-sidecar-emptydir.png)
+
+```yaml
+spec:
+  containers:
+    - name: myapp                       # 1️⃣ the main app
+      image: alpine:latest
+      command: ['sh', '-c', 'while true; do echo "logging" >> /opt/logs.txt; sleep 1; done']
+      volumeMounts:
+        - name: data                    # uses the shared folder "data"
+          mountPath: /opt               # ...seen inside myapp as /opt
+  initContainers:
+    - name: logshipper                  # 2️⃣ the sidecar
+      image: alpine:latest
+      restartPolicy: Always             # ⭐ makes this init container a SIDECAR
+      command: ['sh', '-c', 'tail -F /opt/logs.txt']
+      volumeMounts:
+        - name: data                    # SAME shared folder
+          mountPath: /opt
+  volumes:
+    - name: data                        # 3️⃣ the shared folder itself
+      emptyDir: {}
+```
+
+**What each part does, in simple words:**
+
+| Part | Simple meaning |
+|---|---|
+| `volumes: - name: data, emptyDir: {}` | Create **one empty shared folder** called `data` when the pod starts |
+| **myapp** + `mountPath: /opt` | The app sees that folder as **`/opt`**. Every 1 second it writes the word **"logging"** into `/opt/logs.txt` |
+| **logshipper** + `mountPath: /opt` | The sidecar sees the **same folder** as `/opt`, so it sees the **same `logs.txt`** |
+| `tail -F /opt/logs.txt` | Keep reading the file and print every new line as it is added (`-F` keeps following even if the file is recreated) |
+| `restartPolicy: Always` inside `initContainers` | Normally an init container runs once and exits. With `Always` it becomes a **native sidecar**: it **starts before the app** and **keeps running** next to it |
+
+**The flow:**
+
+```
+Pod starts
+ → emptyDir "data" created (empty folder)
+ → logshipper (sidecar) starts first and waits on /opt/logs.txt
+ → myapp starts, writes "logging" to /opt/logs.txt every second
+ → logshipper sees each new line instantly (same folder) and prints it
+```
+
+**Try it:**
+
+```bash
+kubectl apply -f sidecar.yaml
+kubectl get pod                          # READY 2/2
+kubectl logs <pod> -c logshipper -f      # "logging" every second, read by the sidecar
+kubectl exec <pod> -c myapp -- cat /opt/logs.txt
+```
+
+> **Key point:** the volume name (`data`) must be the **same** in both `volumeMounts`. That's what connects the two containers to one folder. Remove the volume and logshipper would never see the app's file.
+
+> In real life, `logshipper` would be **Fluentd / Fluent Bit** sending the lines to Elasticsearch or Loki instead of just printing them.
+
 > **Bonus:** in many real clusters apps log to **stdout**; Kubernetes stores it on the node in `/var/log/containers/`, and **one Fluent Bit/Fluentd per node (DaemonSet)** collects all pods' logs. Sidecars are used when an app can only write to files or needs special log handling.
 
 **Other famous sidecars:** **Envoy** proxy in Istio service mesh, Vault agent (injects secrets), Prometheus exporters.
