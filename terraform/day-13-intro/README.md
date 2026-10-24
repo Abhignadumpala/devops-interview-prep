@@ -1,4 +1,4 @@
-# Day 1 — Intro to Terraform
+# Day 13 — Intro to Terraform
 
 [← All notes](../README.md)
 
@@ -116,7 +116,7 @@ terraform {
 | -------------------- | ---------------------------------------------- |
 | `required_version`   | Allowed Terraform CLI version (older CLI → `init` fails) |
 | `required_providers` | Which provider plugins + versions to download  |
-| `backend`            | Where the state file is stored (Day 2)         |
+| `backend`            | Where the state file is stored (Day 14)         |
 
 **Check the version** (all four do the same): `terraform -v` · `terraform version` ·
 `terraform -version` · `terraform --version`

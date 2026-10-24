@@ -1,4 +1,4 @@
-# Day 3 — Taint, Saved Plans, Import & Debugging
+# Day 15 — Taint, Saved Plans, Import & Debugging
 
 [← All notes](../README.md)
 
@@ -37,7 +37,7 @@
 
 **Local block** = define a repeating value **once** (`locals { env = "prod" }`), use it many times as `local.env`.
 
-**terraform block** = Terraform's own settings: `required_version`, `required_providers`, `backend` (see Day 1).
+**terraform block** = Terraform's own settings: `required_version`, `required_providers`, `backend` (see Day 13).
 
 **terraform graph** = show **which resource depends on which**, as a DOT graph.
 - `terraform graph > graph.dot` → view in Graphviz.
@@ -261,14 +261,14 @@ resource "aws_instance" "three" {
 ```
 
 Change `env = "dev"` → dev-vpc, dev-subnet, dev-server. Full details (variables vs locals) in
-[Day 4](../day-4-variables/README.md#locals).
+[Day 16](../day-16-variables/README.md#locals).
 
 ## Terraform Block & Providers
 
 **terraform block** = Terraform's own settings (version, providers, backend). Full notes in
-[Day 1](../day-1-intro/README.md#terraform-block--version).
+[Day 13](../day-13-intro/README.md#terraform-block--version).
 
-![terraform block](../day-1-intro/images/tfblock.png)
+![terraform block](../day-13-intro/images/tfblock.png)
 
 ```hcl
 terraform {
@@ -281,7 +281,7 @@ Check version: `terraform -v` · `terraform version` · `terraform -version` · 
 **Multiple providers** can be installed at once; `terraform init -upgrade` moves to the newest
 versions the rules allow.
 
-![Multiple providers](../day-1-intro/images/providers.png)
+![Multiple providers](../day-13-intro/images/providers.png)
 
 ## terraform graph
 

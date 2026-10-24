@@ -1,4 +1,4 @@
-# Disaster Recovery (DR): Short and Simple
+# Day 20 — Disaster Recovery (DR): Short and Simple
 
 ## What is Disaster Recovery?
 
@@ -391,7 +391,7 @@ Start from the business's RTO/RPO, then the budget. Choose the cheapest strategy
 ## Detailed notes (optional, read only if needed)
 
 - [RTO and RPO Explained (detailed)](./rto-rpo-explained/README.md)
-- [Migration Strategies (6 R's / AWS 7 Rs)](../migration-strategies/README.md)
+- [Migration Strategies (6 R's / AWS 7 Rs)](../day-20-migration-strategies/README.md)
 
 **Images:** architecture diagrams © Amazon Web Services, shown from the official whitepaper.
 

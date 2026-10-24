@@ -2,11 +2,11 @@
 
 Daily notes:
 
-- [Day 1 — Intro, count, for_each, Lifecycle](./day-1-intro/README.md)
-- [Day 2 — State File & State Management](./day-2-state/README.md)
-- [Day 3 — Taint, Saved Plans, Import & Debugging](./day-3-taint-import-debug/README.md)
-- [Day 4 — Variables, Outputs & Locals](./day-4-variables/README.md)
-- [Day 5 — Workspaces & Passing Variables](./day-5-workspaces/README.md)
-- [Day 6 — Modules](./day-6-modules/README.md)
-- [Day 7 — Provisioners](./day-7-provisioners/README.md)
-- [Day 8 — Dynamic Blocks](./day-8-dynamic-blocks/README.md)
+- [Day 13 — Intro, count, for_each, Lifecycle](./day-13-intro/README.md)
+- [Day 14 — State File & State Management](./day-14-state/README.md)
+- [Day 15 — Taint, Saved Plans, Import & Debugging](./day-15-taint-import-debug/README.md)
+- [Day 16 — Variables, Outputs & Locals](./day-16-variables/README.md)
+- [Day 17 — Workspaces & Passing Variables](./day-17-workspaces/README.md)
+- [Day 18 — Modules](./day-18-modules/README.md)
+- [Day 19 — Provisioners](./day-19-provisioners/README.md)
+- [Day 22 — Dynamic Blocks](./day-22-dynamic-blocks/README.md)

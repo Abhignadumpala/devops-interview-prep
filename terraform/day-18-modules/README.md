@@ -1,4 +1,4 @@
-# Day 6 — Terraform Modules
+# Day 18 — Terraform Modules
 
 [← All notes](../README.md)
 

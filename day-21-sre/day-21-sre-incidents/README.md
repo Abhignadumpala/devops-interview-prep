@@ -1,4 +1,4 @@
-# Day 1 — SRE Basics and Production Incidents (EC2 + Nginx)
+# Day 21 — SRE Basics and Production Incidents (EC2 + Nginx)
 
 [← All notes](../README.md)
 
@@ -171,7 +171,7 @@ MTTR = total recovery time / number of incidents
 | MTTR vs RTO | MTTR = what **actually** happened · RTO = what is **required** |
 | RTO vs RPO | RTO = how **fast** we recover · RPO = how much **data** we lose |
 
-Deeper DR notes: [Disaster Recovery](../../disaster-recovery/README.md).
+Deeper DR notes: [Disaster Recovery](../../day-20-disaster-recovery/README.md).
 
 ## 6. HTTP Status Codes
 

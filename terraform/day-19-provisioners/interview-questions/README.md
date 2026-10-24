@@ -1,6 +1,6 @@
-# Day 7 - Interview Questions (Provisioners)
+# Day 19 - Interview Questions (Provisioners)
 
-[← Back to Day 7 notes](../README.md)
+[← Back to Day 19 notes](../README.md)
 
 **1. What is a provisioner in Terraform?**
 

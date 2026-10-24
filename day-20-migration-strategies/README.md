@@ -1,4 +1,4 @@
-# Migration Strategies: Short and Simple
+# Day 20 — Migration Strategies: Short and Simple
 
 > **In short:** A migration strategy = **how** you move an app from one place (on-prem / AWS / Azure) to another.
 > Class teaches the **6 R's**. AWS's official list today is **7 Rs** (adds *Relocate*).

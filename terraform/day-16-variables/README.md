@@ -1,4 +1,4 @@
-# Day 4 — Terraform Variables, Outputs & Locals
+# Day 16 — Terraform Variables, Outputs & Locals
 
 [← All notes](../README.md)
 

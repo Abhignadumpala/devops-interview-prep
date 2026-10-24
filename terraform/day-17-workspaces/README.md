@@ -1,4 +1,4 @@
-# Day 5 — Terraform Workspaces & Passing Variables
+# Day 17 — Terraform Workspaces & Passing Variables
 
 [← All notes](../README.md)
 

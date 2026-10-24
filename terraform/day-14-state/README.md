@@ -1,4 +1,4 @@
-# Day 2 — Terraform State File & State Management
+# Day 14 — Terraform State File & State Management
 
 [← All notes](../README.md)
 

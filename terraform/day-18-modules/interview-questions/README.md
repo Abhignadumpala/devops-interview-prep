@@ -1,6 +1,6 @@
-# Day 6 - Interview Questions (Modules)
+# Day 18 - Interview Questions (Modules)
 
-[← Back to Day 6 notes](../README.md)
+[← Back to Day 18 notes](../README.md)
 
 **1. What is a Terraform module?**
 
