@@ -9,4 +9,4 @@ Daily notes:
 - [Day 17 — Workspaces & Passing Variables](./day-17-workspaces/README.md)
 - [Day 18 — Modules](./day-18-modules/README.md)
 - [Day 19 — Provisioners](./day-19-provisioners/README.md)
-- [Day 22 — Dynamic Blocks](./day-22-dynamic-blocks/README.md)
+- [Day 19 — Dynamic Blocks](./day-19-dynamic-blocks/README.md)

@@ -1,4 +1,4 @@
-# Day 22 — Terraform Dynamic Blocks
+# Day 19 — Terraform Dynamic Blocks
 
 [← All notes](../README.md)
 
