@@ -142,6 +142,10 @@ Availability SLI = successful requests / total requests × 100
 
 **MTTF (Mean Time To Failure)** = the average time the system **works before it breaks**.
 
+👉 **In simple words:** how long the **application keeps running fine** before it fails. Higher = better (it fails less often).
+
+> **Note:** for systems that get repaired and restarted (like apps), the exact term is **MTBF** (Mean Time Between Failures). In classes and interviews MTTF is often used for the same idea.
+
 ```
 Started Mon 9 AM → failed Wed 9 AM  → MTTF = 48 h
 Failures after 20 h, 30 h, 40 h     → MTTF = 90 / 3 = 30 h
