@@ -300,6 +300,18 @@ Every incident is written as **Problem → Root Cause → Issue → Fix**:
 
 🎬 **Scenario:** 9:05 AM, the support team says *"Customers can't open the website at all."* An uptime alert also fired.
 
+**Real example from my lab:** opening the EC2 public IP in the browser showed **"This site can't be reached, refused to connect, ERR_CONNECTION_REFUSED"**. I checked `systemctl status nginx` → **inactive**. I started Nginx again → the site loaded.
+
+![Browser: ERR_CONNECTION_REFUSED when Nginx is down](images/nginx-down-refused.png)
+
+**Reading the browser error:**
+
+| Browser shows | Meaning | Look at |
+|---|---|---|
+| `ERR_CONNECTION_REFUSED` (fast) | Reached the server, but **nothing is listening** on port 80 | Nginx stopped / wrong port → `systemctl status nginx` |
+| `ERR_CONNECTION_TIMED_OUT` (slow) | Packets never got an answer | **Security Group / firewall** blocking port 80, or server off |
+| Page loads with `502` / `504` | Nginx is up, app behind it has a problem | App / upstream (incidents 4 and 6) |
+
 🔍 **How I debug:**
 
 | Step | Command | What I see | What it tells me |
