@@ -770,7 +770,20 @@ kubectl create job test-run --from=cronjob/daily-backup   # run it now to test
 ### ⭐ Very Important (asked in class)
 
 **Q1. In a sidecar, the app writes logs in container 1. How does container 2 get them? Do 2 containers in the same pod share data automatically?**
-No. Containers in a pod share the **network** automatically (localhost) but **not files**. To share logs, define an **`emptyDir` volume** in the pod and **mount it in both containers**: the app writes logs there and the sidecar (Fluentd) reads the same folder and ships them to Elasticsearch / Loki.
+
+**Answer:**
+> "Not everything is shared automatically. Containers in the same pod **share the network by default**: same IP, so they talk on `localhost`. But they **don't share files by default**: each container has its own filesystem from its own image.
+>
+> To share logs, I **define a volume** in the pod, usually an **`emptyDir`**, and **mount it in both containers** with `volumeMounts`. The app writes its log file into that folder, and the sidecar, for example **Fluentd**, reads the same file and ships it to Elasticsearch or Loki.
+>
+> Once the volume is mounted in both, the sharing is **live**: whatever the app writes, the sidecar sees instantly. The `emptyDir` is deleted with the pod, so the sidecar must ship the logs out."
+
+| What | Shared automatically? | How |
+|---|---|---|
+| Network (IP, `localhost`) | ✅ Yes | By default for every container in the pod |
+| Files / folders | ❌ No | Only after we add `volumes:` + `volumeMounts:` in **both** containers |
+
+> **Short version:** "Network is shared by default; files are shared only when we define a volume (emptyDir) and mount it in both containers, and then the sharing is live."
 
 ### Other Questions
 
