@@ -137,7 +137,7 @@ MTTR = total recovery time / number of incidents
 | MTTR vs RTO | MTTR = what **actually** happened · RTO = what is **required** |
 | RTO vs RPO | RTO = how **fast** we recover · RPO = how much **data** we lose |
 
-Deeper DR notes: [Disaster Recovery Day 1](../../disaster-recovery/day-1-dr-strategies/README.md).
+Deeper DR notes: [Disaster Recovery](../../disaster-recovery/README.md).
 
 ## 6. HTTP Status Codes
 

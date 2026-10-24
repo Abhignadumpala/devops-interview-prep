@@ -155,7 +155,7 @@ Don't pick the most impressive one. Pick the **cheapest one that meets the RTO/R
 5. Test + monitor
 ```
 
-![Failover](./day-1-dr-strategies/images/failover.png)
+![Failover](./images/failover.png)
 
 **Failback:** later, copy data back DR → primary and switch DNS back in a planned window.
 
@@ -202,8 +202,6 @@ Start from the business's RTO/RPO, then the budget. Choose the cheapest strategy
 
 ## Detailed notes (optional, read only if needed)
 
-- [Day 1: DR Strategies (detailed)](./day-1-dr-strategies/README.md)
-- [Day 2: DR Design for EKS (detailed)](./day-2-dr-design/README.md)
 - [RTO and RPO Explained (detailed)](./rto-rpo-explained/README.md)
 - [Migration Strategies (6 R's / AWS 7 Rs)](../migration-strategies/README.md)
 

@@ -1,6 +1,6 @@
 # RTO and RPO Explained (Deep Dive)
 
-[← All notes](../README.md) · [Day 1](../day-1-dr-strategies/README.md) · [Day 2](../day-2-dr-design/README.md)
+[← Disaster Recovery notes](../README.md)
 
 > **In short:** **RPO** = how much **data** you might lose (looks **backward** from the disaster). **RTO** = how long the app stays **down** (looks **forward** from the disaster). Data loss hurts customers who already paid. Downtime loses future business. The **business sets** the targets, and **DevOps meets** them and proves it.
 
