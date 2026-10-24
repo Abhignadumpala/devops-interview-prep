@@ -417,6 +417,37 @@ WITH init:     pod starts → init: "MySQL up? no… wait… YES ✅" → exits
 
 > **One line:** "We use an init container to make sure everything the app depends on (DB, files, permissions, migrations) is ready **before** the app starts, so it doesn't crash on startup, and to keep setup logic out of the app image."
 
+### How it works, step by step (simple)
+
+**Both containers live inside the SAME pod.** The pod is created first. Inside it, the containers take turns:
+
+```
+Pod created
+ ├─ 1️⃣ Init container runs first
+ │     "Is the DB up? Are the files ready?"
+ │     ✅ Yes → its work is done → it stops (exits)
+ │
+ └─ 2️⃣ App container starts now
+       (DB and files are already ready, so the app works)
+
+→ Pod status: Running
+```
+
+- ❗ It's the **app container** that waits, not the pod. The pod already exists.
+- The init container can **check** things (is the DB up?) and also **do** things (download files, fix permissions, run a DB migration).
+- If the check **fails**, the init container **tries again and again**. The app container **keeps waiting** and never starts until everything is ready.
+
+**What you see in `kubectl get pods` while this happens:**
+
+| STATUS | What it means in simple words |
+|---|---|
+| `Init:0/1` | The init container is still working or waiting (e.g. the DB is not up yet) |
+| `PodInitializing` | The init container finished; the app container is starting |
+| `Running` | The app container is up ✅ |
+| `Init:CrashLoopBackOff` | The init container keeps failing, so the app never starts → check `kubectl logs <pod> -c <init-name>` |
+
+> **In one line:** "The init container goes first inside the pod, makes sure everything the app needs is ready, and then stops. Only after that does the app container start."
+
 **Class example:**
 
 ```yaml
