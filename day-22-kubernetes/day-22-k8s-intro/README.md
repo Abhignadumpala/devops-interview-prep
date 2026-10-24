@@ -524,6 +524,35 @@ kubectl get pod web-with-logger    # READY 2/2 = both containers running
 kubectl logs web-with-logger -c fluentd
 ```
 
+### How does the sidecar get the app's logs? (⭐ interview question)
+
+**Containers in the same pod do NOT share files automatically.**
+
+| What | Shared automatically? |
+|---|---|
+| **Network** (IP, ports) | ✅ Yes → talk on `localhost` |
+| **Files / folders** | ❌ No → each container has its **own filesystem** from its own image |
+
+So Nginx's logs in container 1 are **invisible** to Fluentd in container 2, unless we add a **shared volume**:
+
+```
+┌──────────────────── Pod ────────────────────┐
+│  nginx (container 1)      fluentd (container 2)
+│  writes → /var/log/nginx   reads ← /var/log/nginx
+│             └───────┬──────────────┘
+│              📁 volume "logs" (emptyDir)
+│              same folder mounted in both
+└──────────────────────────────────────────────┘
+          fluentd ships logs → Elasticsearch / Loki
+```
+
+1. **`emptyDir`** = an empty folder created when the pod starts (on the node's disk).
+2. Both containers **mount the same volume** (in the YAML above: `volumes` + `volumeMounts` in both).
+3. Nginx writes a log line → Fluentd sees it at once (same folder).
+4. Pod deleted → **emptyDir deleted too** (temporary), so the sidecar must ship logs out.
+
+> **Bonus:** in many real clusters apps log to **stdout**; Kubernetes stores it on the node in `/var/log/containers/`, and **one Fluent Bit/Fluentd per node (DaemonSet)** collects all pods' logs. Sidecars are used when an app can only write to files or needs special log handling.
+
 **Other famous sidecars:** **Envoy** proxy in Istio service mesh, Vault agent (injects secrets), Prometheus exporters.
 
 > **Newer Kubernetes (1.29+):** a "native sidecar" is written as an init container with `restartPolicy: Always`: it starts before the app and keeps running. Good to know for interviews.
@@ -678,6 +707,11 @@ kubectl create job test-run --from=cronjob/daily-backup   # run it now to test
 ---
 
 ## 15. Interview Questions
+
+### ⭐ Very Important (asked in class)
+
+**Q1. In a sidecar, the app writes logs in container 1. How does container 2 get them? Do 2 containers in the same pod share data automatically?**
+No. Containers in a pod share the **network** automatically (localhost) but **not files**. To share logs, define an **`emptyDir` volume** in the pod and **mount it in both containers**: the app writes logs there and the sidecar (Fluentd) reads the same folder and ships them to Elasticsearch / Loki.
 
 ### Other Questions
 
