@@ -100,9 +100,43 @@ Availability SLI = successful requests / total requests × 100
 |------|-------|-----------|---------|
 | SLI | Measurement | Engineers | 99% |
 | SLO | Engineering target | Engineering team | 99.9% |
-| SLA | Business commitment | Customers, legal | 99.9% promised |
+| SLA | Business commitment | Customers, legal | 99.5% promised |
 
 **Remember:** SLI = what happened · SLO = what we wanted · SLA = what we promised.
+
+### Should SLI equal SLO?
+
+**No.** The SLI does not have to equal the SLO. It must **meet or beat** it.
+
+- **SLI** = the **actual** result we measured
+- **SLO** = the **target** (the pass mark)
+- **SLA** = the **promise** to the customer (looser than the SLO, with a penalty if broken)
+
+**Analogy:** an exam. The pass mark is 35 (SLO), you scored 80 (SLI). You don't need exactly 35, just **at least 35**. The SLA is like the college rule "below 30 = fail the year": stricter consequences, lower bar.
+
+**For availability, the SLI should be ≥ the SLO ≥ the SLA:**
+
+| SLI (measured) | SLO (target) | SLA (promise) | Result |
+|---|---|---|---|
+| 99.95% | 99.9% | 99.5% | ✅ SLO met (better than target), SLA safe |
+| 99.9% | 99.9% | 99.5% | ✅ SLO just met (on the edge), SLA safe |
+| 99.7% | 99.9% | 99.5% | ⚠️ SLO missed, SLA still safe → team is warned, fix now |
+| 99% | 99.9% | 99.5% | ❌ SLO missed **and SLA broken** → customer gets refund/credits |
+
+**For "bad" metrics the direction flips. The SLI should be ≤ the SLO ≤ the SLA:**
+
+| Metric | SLO (target) | SLA (promise) | Good SLI |
+|---|---|---|---|
+| Latency | p95 < 300 ms | p95 < 500 ms | 250 ms ✅ (lower is better) |
+| Error rate | < 0.1% | < 0.5% | 0.05% ✅ |
+
+**Why the SLA is looser than the SLO:** the gap between them is a **safety buffer**. When the SLO is missed, the team gets warned and fixes the problem **before** the SLA (and the penalty) is broken.
+
+**Error budget:** an SLO of 99.9% allows 0.1% failures. That 0.1% is the **error budget**.
+- Budget left → safe to ship new features
+- Budget almost used → slow down releases, fix reliability first
+
+> **One line:** SLI is reality, SLO is the goal, SLA is the promise. Keep **SLI ≥ SLO ≥ SLA** (for availability).
 
 ## 4. MTTF and MTTR
 
@@ -361,7 +395,7 @@ Fix:         systemctl start nginx → curl -I → 200 OK
 Impact:      All users, 10:00–10:06
 SLI:         Availability for the day 99.58% (6 min of 1440 down)
 SLO:         99.9% → missed
-SLA:         99.9% → at risk
+SLA:         99.5% → still met, but very close (at risk)
 MTTR:        6 min
 MTTF:        48 h since the last failure
 RTO:         15 min → met
