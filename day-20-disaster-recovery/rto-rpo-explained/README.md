@@ -210,7 +210,7 @@ SELECT MAX(created_at) FROM orders;   -- 2:00 PM
 | RTO | 1 hr | 30 min | ✅ |
 | RPO | 1 hr | 30 min | ✅ |
 
-**Worse than target?** The report includes a fix, e.g. "backups every 15 min instead of hourly" or "automate the restore with Terraform to save 20 minutes". (See sections 11 and 12 of the [SRE incident report](../../day-21-sre/day-21-sre-incidents/README.md#10-incident-report).)
+**Worse than target?** The report includes a fix, e.g. "backups every 15 min instead of hourly" or "automate the restore with Terraform to save 20 minutes". (See sections 11 and 12 of the [SRE incident report](../../day-21-sre/day-21-sre-incidents/README.md#10-incident-report-postmortem).)
 
 **Practice idea (RoboShop):** take a MySQL dump → insert rows → "destroy" the DB → restore → measure both numbers with `date` and `SELECT MAX(...)`.
 
