@@ -42,14 +42,7 @@
 
 **Example:** FoodExpress takes a backup **every hour**. RPO target = 1 hr, RTO target = 1 hr.
 
-```
- 2:00 PM            2:30 PM              3:00 PM
- backup ✅          💥 disaster           ✅ app up
-   |==================|====================|
-   ←── DATA LOSS ────→←──── DOWNTIME ─────→
-        30 min               30 min
-     (RPO side)            (RTO side)
-```
+![FoodExpress example: 30 min data loss, 30 min downtime](images/example-timeline.png)
 
 | Period | What happened | Type |
 |--------|---------------|------|
