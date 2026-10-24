@@ -471,4 +471,4 @@ Next, add observability so incidents are **alerted** instead of reported by cust
 EC2 → Nginx → App → Prometheus → Grafana → Alertmanager → Alert → Troubleshoot → Root cause → Postmortem
 ```
 
-See my [monitoring notes](../../day-10-monitoring/) (Prometheus, Grafana, Alertmanager).
+See my [monitoring notes](../../day-10-12-monitoring/) (Prometheus, Grafana, Alertmanager).

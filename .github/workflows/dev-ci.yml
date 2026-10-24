@@ -17,5 +17,5 @@ jobs:
 
       - name: Run Tests
         run: npm test
-        working-directory: github-actions
+        working-directory: day-04-09-github-actions
         shell: bash

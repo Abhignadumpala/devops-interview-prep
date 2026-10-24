@@ -17,7 +17,7 @@ jobs:
 
       - name: Build
         run: npm install
-        working-directory: github-actions
+        working-directory: day-04-09-github-actions
 
   test:
     needs: build
