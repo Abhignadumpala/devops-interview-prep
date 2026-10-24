@@ -336,7 +336,14 @@ Every incident is written as **Problem → Root Cause → Issue → Fix**:
 
 🎯 **Root cause:** the requested path doesn't exist (typo in the link).
 🔧 **Fix:** correct the link.
-✅ **Verify:** the page opens (HTTP 200).
+✅ **Verify:** with the correct link `.../day-21-sre/day-21-sre-incidents`, the page loads (HTTP 200): folder, files and the Day 21 notes are shown.
+
+![Correct link: page loads](images/github-200-fixed.png)
+
+| | URL path | Result |
+|---|---|---|
+| ❌ Before | `day-21-sre/day-21-sre-incid` | 404 - page not found |
+| ✅ After | `day-21-sre/day-21-sre-incidents` | 200 - page loaded |
 
 **Same thing on an Nginx server:**
 
