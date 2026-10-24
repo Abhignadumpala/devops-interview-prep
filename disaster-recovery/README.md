@@ -132,7 +132,7 @@ EKS + Database              Small infrastructure
 ```
 
 - **On disaster:** scale up the infrastructure and deploy the rest of the environment, promote the DB, switch DNS
-- **Critical components** = data (DB replica) + core infra (VPC, small cluster). The app is **not serving** traffic yet.
+- **Critical components** = core infra (VPC, subnets, security groups, IAM, EKS cluster / ASG at 0) + data (DB replica). App servers are **not running** yet.
 - **Name meaning:** like a gas stove pilot flame: small flame always on, turn it up when needed
 
 > **Interview answer:** "Pilot light keeps critical infrastructure and data ready in the DR region so the environment can be activated quickly during a disaster."
@@ -155,11 +155,17 @@ DR        3 nodes   (already running)
 
 #### Pilot Light vs Warm Standby (most confused)
 
-| | Pilot Light | Warm Standby |
+**Key idea:** "infrastructure" has 2 parts. **Core infra** = network, security, DB, cluster. **App capacity** = the servers/nodes that run the app.
+
+| In DR region | Pilot Light | Warm Standby |
 |---|---|---|
-| What runs in DR | Critical components only (small infra + DB replica) | Small **working** copy of the full app |
-| Can take traffic right now? | ❌ No, deploy/scale the rest first | ✅ Yes, at low capacity |
-| On disaster | Scale up + deploy the rest | Only scale up |
+| Core infra (VPC, subnets, SG, IAM) | ✅ Ready | ✅ Ready |
+| Data (DB replica, read-only) | ✅ Live, replicating | ✅ Live, replicating |
+| App servers / nodes | ❌ **0**: not running | ✅ **3** running (primary has 10) |
+| Can take traffic right now? | ❌ No | ✅ Yes, at low capacity |
+| On disaster | Start app servers 0 → 10, deploy app, promote DB | Scale 3 → 10, promote DB |
+
+> **One line:** Pilot light = **stage is set, actors at home**. Warm standby = **a small cast is already performing**.
 
 ### 4️⃣ Active-Active
 
