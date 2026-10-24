@@ -15,7 +15,7 @@
 7. [The 10 Incidents](#7-the-10-incidents)
 8. [Measuring Availability and Latency](#8-measuring-availability-and-latency)
 9. [SRE Troubleshooting Flow](#9-sre-troubleshooting-flow)
-10. [Incident Report](#10-incident-report)
+10. [Incident Report (Postmortem)](#10-incident-report-postmortem)
 11. [Commands Cheat Sheet](#11-commands-cheat-sheet)
 12. [Final Challenge: "Sometimes Working, Sometimes Failing"](#12-final-challenge-sometimes-working-sometimes-failing)
 13. [Interview Questions and One-Liners](#13-interview-questions-and-one-liners)
@@ -682,45 +682,146 @@ INCIDENT → Is the service UP?
 9. Did the fix actually work? (verify)
 10. How do we prevent it next time?
 
-## 10. Incident Report
+## 10. Incident Report (Postmortem)
 
-**Definition:** an **incident report** (postmortem) = a written record of what broke, why, how it was fixed and how to prevent it. It's **blameless**: it focuses on the system, not the person.
+**Definition:** an **incident report**, also called a **postmortem**, is a written record of **what broke, why, how it was fixed and how we stop it happening again**.
 
-Not just "Nginx was down". Fill in all 13 parts:
+Whenever something goes wrong, don't just say *"Nginx was down."* Write an incident report.
 
-| # | Section | Answer |
+**Why write it:**
+- **Learn:** find the real root cause, not just the symptom
+- **Prevent:** every report ends with action items so it doesn't repeat
+- **Share:** other teams learn from it; new joiners read old reports
+- **Measure:** records MTTR, SLI/SLO/SLA impact for the business
+
+**When:** after every **SEV-1 / SEV-2** incident (see [War Rooms: severity](../day-3-war-rooms/README.md#3-incident-severity)), usually within 1–5 days, while memory is fresh.
+
+**Blameless:** the report blames the **system/process, not the person**. Write *"the config was deployed without `nginx -t`"*, not *"Ravi broke Nginx"*. People then report problems honestly instead of hiding them.
+
+### The 13 parts
+
+| # | Section | Question it answers |
 |---|---------|--------|
-| 1 | Problem | What did the customer experience? |
-| 2 | Root cause | What actually caused it? |
-| 3 | Issue | Which component was affected? |
-| 4 | Fix | What restored the service? |
-| 5 | Impact | How many users/requests were affected? |
-| 6 | SLI | What did we measure? (e.g. 92% success) |
-| 7 | SLO | Was the target met? |
-| 8 | SLA | Was the customer promise at risk? |
-| 9 | MTTR | How long did recovery take? |
-| 10 | MTTF | How long did it run before failing? |
-| 11 | RTO | Recovered within the allowed time? |
-| 12 | RPO | Was any data lost? |
-| 13 | Prevention | What will change so it doesn't repeat? |
+| 1 | **Problem** | What did the customer experience? |
+| 2 | **Root cause** | What actually caused the problem? |
+| 3 | **Issue** | Which component was affected? |
+| 4 | **Fix** | What did we do to restore the service? |
+| 5 | **Impact** | How many users / requests were affected? |
+| 6 | **SLI** | What did we measure? (e.g. 92% success) |
+| 7 | **SLO** | Was our target met? |
+| 8 | **SLA** | Was the customer commitment at risk? |
+| 9 | **MTTR** | How long did recovery take? |
+| 10 | **MTTF** | How long had the system been working before the failure? |
+| 11 | **RTO** | Did we recover within the required time? |
+| 12 | **RPO** | Was any data lost? |
+| 13 | **Prevention** | What will we change so this doesn't happen again? |
 
-**Example (Incident 1):**
+> Real postmortems also add a **Timeline** (what happened at each minute; the Scribe writes it in the war room) and **Action items** with an **owner and due date**, so prevention actually gets done.
+
+### Copy-paste template
+
+```markdown
+# Incident Report: <short title>
+Date: <YYYY-MM-DD>   Severity: SEV-<1-4>   Author: <name>   Status: Resolved
+
+## 1. Problem
+What did the customer experience?
+
+## 2. Root Cause
+What actually caused the problem? (ask "why?" until you reach the real cause)
+
+## 3. Issue
+Which component was affected?
+
+## 4. Fix
+What did you do to restore the service? How did you verify it?
+
+## 5. Impact
+How many users/requests were affected? For how long?
+
+## 6. SLI
+What did we measure?
+
+## 7. SLO
+Was our target met?
+
+## 8. SLA
+Was the customer commitment at risk?
+
+## 9. MTTR
+How long did recovery take?
+
+## 10. MTTF
+How long had the system been working before the failure?
+
+## 11. RTO
+Did we recover within the required time?
+
+## 12. RPO
+Was any data lost?
+
+## 13. Prevention
+What will we change so this doesn't happen again?
+
+## Timeline
+| Time | Event |
+|------|-------|
+
+## Action Items
+| Action | Owner | Due |
+|--------|-------|-----|
+```
+
+### Finding the root cause: "5 Whys"
+
+**Definition:** keep asking **"why?"** (about 5 times) until you reach the cause you can fix for good.
 
 ```
-Problem:     Site not loading, curl → connection refused
-Root cause:  Nginx stopped (systemctl status → inactive)
-Issue:       Nginx on EC2, port 80 had no listener
-Fix:         systemctl start nginx → curl -I → 200 OK
-Impact:      All users, 10:00–10:06
-SLI:         Availability for the day 99.58% (6 min of 1440 down)
-SLO:         99.9% → missed
-SLA:         99.5% → still met, but very close (at risk)
-MTTR:        6 min
-MTTF:        48 h since the last failure
-RTO:         15 min → met
-RPO:         Static site, no data lost
-Prevention:  systemctl enable nginx, uptime alert on port 80
+Site down            → why? Nginx was inactive
+Nginx inactive       → why? OOM killer stopped it
+OOM killer           → why? a backup script used all the RAM
+Script used all RAM  → why? it loads the whole DB dump into memory
+Runs at peak time    → why? cron was never reviewed
+Root cause: heavy backup job at peak hours with no memory limit
 ```
+
+Restarting Nginx fixes the **symptom**; fixing the backup job fixes the **root cause**.
+
+### Filled example (Incident 1: Nginx down)
+
+```
+Incident Report: Website down, Nginx stopped
+Date: 2026-10-23   Severity: SEV-1   Status: Resolved
+
+1. Problem:     Customers got ERR_CONNECTION_REFUSED; curl → connection refused
+2. Root cause:  Nginx stopped (systemctl status → inactive); it was not enabled, so it stayed down after a reboot
+3. Issue:       Nginx on EC2, nothing listening on port 80
+4. Fix:         systemctl start nginx → status active → curl -I → 200 OK
+5. Impact:      All users, 10:00–10:06 (6 min)
+6. SLI:         Availability for the day 99.58% (6 min of 1440 down)
+7. SLO:         99.9% → missed
+8. SLA:         99.5% → still met, but very close (at risk)
+9. MTTR:        6 min
+10. MTTF:       48 h since the last failure
+11. RTO:        15 min → met
+12. RPO:        Static site, no data lost
+13. Prevention: systemctl enable nginx, Restart=always, uptime alert on port 80
+
+Timeline:
+10:00  Uptime alert fired
+10:01  curl → connection refused
+10:02  systemctl status nginx → inactive
+10:03  journalctl → stopped after reboot, service disabled
+10:05  systemctl start + enable nginx
+10:06  curl -I → 200 OK, alert resolved
+
+Action items:
+Enable nginx on all web servers      | Ops team | 2026-10-25
+Add Restart=always to nginx unit     | Ops team | 2026-10-25
+Port-80 uptime alert for every site  | SRE team | 2026-10-30
+```
+
+> **One line:** "A postmortem is a blameless report of problem, root cause, fix, impact (SLI/SLO/SLA, MTTR, RTO/RPO) and prevention, with owners and dates so it doesn't happen again."
 
 ## 11. Commands Cheat Sheet
 
