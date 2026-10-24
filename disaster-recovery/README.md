@@ -27,8 +27,15 @@ Disaster:  Users ──▶ DR region  (app brought up from the copies)
 ```
 
 **Two questions decide every DR design:**
-- **RPO:** how much data can we lose?
-- **RTO:** how long can we be down?
+
+- **RPO (Recovery Point Objective):** the maximum amount of data, measured in time, that the business can afford to lose. It is the gap between the **last good copy** of data and the **disaster**.
+  *Example:* backup every 1 hour → up to 1 hour of orders can be lost → RPO = 1 hr.
+  👉 Question it answers: **how much data can we lose?**
+- **RTO (Recovery Time Objective):** the maximum time the app can stay **down** after a disaster before it must be working again. It is the gap between the **disaster** and the **app being back up**.
+  *Example:* the business says "the app must be back within 30 minutes" → RTO = 30 min.
+  👉 Question it answers: **how long can we be down?**
+
+**Small RPO/RTO = less loss but more cost. Big RPO/RTO = more loss but cheaper.**
 
 The answers pick one of **4 strategies**, from cheap and slow to costly and instant. The deciding factor is **what is already running in the DR region**.
 
