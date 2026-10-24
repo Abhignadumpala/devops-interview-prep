@@ -149,6 +149,8 @@ Failures after 20 h, 30 h, 40 h     → MTTF = 90 / 3 = 30 h
 
 **MTTR (Mean Time To Recovery)** = the average time **to fix** it after it breaks.
 
+👉 **In simple words:** how long it takes us, on average, to **recover the application** and bring it back to normal after a failure.
+
 ```
 Down 10:00 → back 10:08             → MTTR = 8 min
 Incidents 5 + 10 + 15 min           → MTTR = 30 / 3 = 10 min
