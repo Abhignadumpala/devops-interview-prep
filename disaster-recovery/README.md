@@ -125,6 +125,16 @@ S3 / Backup Vault   (other region · nothing running)
 
 > **Interview answer:** "Backup and restore means keeping recoverable backups in another location and rebuilding the infrastructure and application when a disaster occurs."
 
+**Official AWS diagram (backup & restore):**
+
+![AWS backup and restore architecture](https://docs.aws.amazon.com/images/whitepapers/latest/disaster-recovery-workloads-on-aws/images/backup-restore-architecture.png)
+
+**How to read it:**
+- **Left region (primary):** EBS, EC2, EFS and RDS are backed up as snapshots into **S3 / AWS Backup**. RDS transaction logs also go to S3.
+- **Top arrow "Cross-region backup":** the backups are copied to the **right region (DR)**.
+- **Right region:** only storage exists. The faded (light) servers and DB **do not exist yet**. On disaster they are **restored** from the backups.
+- **Traffic:** no traffic routing here. Users get nothing until the restore is done → slowest recovery.
+
 ### 2️⃣ Pilot Light
 
 **Definition:** Keep the **critical components ready**, but don't run the full production environment.
@@ -144,6 +154,17 @@ EKS + Database              Small infrastructure
 
 > **Interview answer:** "Pilot light keeps critical infrastructure and data ready in the DR region so the environment can be activated quickly during a disaster."
 
+**Official AWS diagram (pilot light):**
+
+![AWS pilot light architecture](https://docs.aws.amazon.com/images/whitepapers/latest/disaster-recovery-workloads-on-aws/images/pilot-light-architecture.png)
+
+**How traffic flows:**
+- **Route 53** sends users only to the **left region** (`Active`). The line to the right region says **"Inactive for production traffic"**.
+- **Left region:** ELB → front-end servers → app servers → **Aurora Primary**, spread across 2 AZs with Auto Scaling groups.
+- **Bottom arrow:** **Aurora Global Database** copies data to the right region (**asynchronous cross-region replication**).
+- **Right region:** VPC, ELB, Auto Scaling groups and **Aurora Replica** exist, but the servers are faded: **"No instances running"**. That is the pilot light: critical infra + data ready, app off.
+- **On disaster:** start the instances (ASG desired count up), promote Aurora Replica, switch Route 53 to the right region.
+
 ### 3️⃣ Warm Standby
 
 **Definition:** Run a **smaller working version** of production in the DR region.
@@ -161,6 +182,17 @@ DR        3 nodes   (already running)
 - **Hot standby (AWS term):** like warm standby but at **full size**, still not serving users (active/passive)
 
 > **Interview answer:** "Warm standby maintains a scaled-down but functional version of production that can be scaled during failover."
+
+**Official AWS diagram (warm standby):**
+
+![AWS warm standby architecture](https://docs.aws.amazon.com/images/whitepapers/latest/disaster-recovery-workloads-on-aws/images/warm-standby-architecture.png)
+
+**How traffic flows:**
+- **Route 53** still sends production users only to the **left region** (`Active`); the right one is **"Inactive for production traffic"**.
+- **Right region:** **"Minimal instances running"**: 1 front-end + 1 app server are live (the others are faded), connected to the **Aurora Replica**.
+- **"Write forwarding to Aurora Primary":** if the DR app needs to write (e.g. a test), Aurora forwards the write to the primary DB, because the replica is read-only.
+- **Difference from pilot light:** same picture, but here some servers are **already running** → it can take traffic straight away.
+- **On disaster:** scale up the ASGs, promote Aurora Replica, switch Route 53.
 
 #### Pilot Light vs Warm Standby (most confused)
 
@@ -205,6 +237,17 @@ DR        3 nodes   (already running)
 | **Write partitioned** | Each user's writes go to one fixed region (by user ID) | S3 two-way replication |
 
 > **Interview answer:** "Active-active runs workloads in multiple locations simultaneously so traffic can continue through another location if one fails."
+
+**Official AWS diagram (multi-site active/active):**
+
+![AWS multi-site active/active architecture](https://docs.aws.amazon.com/images/whitepapers/latest/disaster-recovery-workloads-on-aws/images/multi-site-active-active-architecture.png)
+
+**How traffic flows:**
+- **Route 53** shows **Active** on **both** lines → users are sent to **both regions** at the same time (e.g. by latency or geolocation routing).
+- **Each region** is full size: ELB → front-end → app servers in 2 AZs.
+- **Database:** each region has its own **DynamoDB** table. **DynamoDB global tables** replicate data automatically **both ways**, so both regions can write.
+- **DynamoDB continuous backup** in each region protects against deleted or corrupted data.
+- **On disaster:** Route 53 health checks stop sending users to the failed region; the other region already has all the data.
 
 ---
 
@@ -301,5 +344,7 @@ Start from the business's RTO/RPO, then the budget. Choose the cheapest strategy
 
 - [RTO and RPO Explained (detailed)](./rto-rpo-explained/README.md)
 - [Migration Strategies (6 R's / AWS 7 Rs)](../migration-strategies/README.md)
+
+**Images:** architecture diagrams © Amazon Web Services, shown from the official whitepaper.
 
 **Source:** [AWS whitepaper: Disaster Recovery of Workloads on AWS](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)
