@@ -252,6 +252,67 @@ Deeper DR notes: [Disaster Recovery](../../day-20-disaster-recovery/README.md).
 
 **Upstream** = the server Nginx forwards the request to (the app on :8080). **Gateway / reverse proxy** = Nginx itself.
 
+### WAF, Rate Limiting and Geo-Blocking (where 403 / 429 come from)
+
+**WAF (Web Application Firewall):** a firewall for web traffic. It sits **in front of the app**, checks every HTTP request, and **blocks bad ones before they reach the servers**.
+
+```
+User → WAF (checks each request) → ALB / CloudFront / API Gateway → App
+          ❌ bad / too many / blocked country → 403 (never reaches the app)
+```
+
+| | Security Group | WAF |
+|---|---|---|
+| Looks at | IP + port (network level) | The **HTTP request**: URL, headers, body, rate, country |
+| Example rule | "Allow 443 from anywhere" | "Block SQL injection", "block an IP sending too many requests", "block UK" |
+
+**What a WAF blocks:** too many requests (bots, brute-force, small DDoS) · SQL injection (`' OR 1=1 --`) and XSS (`<script>`) · bad IPs, countries, bots · known attacks via AWS **managed rules**.
+
+#### Rate limiting (rate-based rule)
+
+**Definition:** automatically block a user (IP) who sends **more requests than allowed** in a time window.
+
+```
+Rule: same IP > 10 requests in 1 minute → BLOCK
+request 1–10 → ✅ allowed
+request 11+  → ❌ blocked (403 in AWS WAF)
+rate drops   → ✅ allowed again automatically
+```
+
+- **Automatic:** no one blocks by hand; WAF counts requests per IP, blocks while over the limit, unblocks when the rate drops.
+- **AWS WAF:** limit can be as low as **10**, window **1, 2, 5 or 10 min**; count per IP or per header (e.g. API key). Attaches to CloudFront, ALB, API Gateway.
+- **Tip:** start in **Count** mode (log only), check who would be blocked, then switch to **Block**.
+- **Same idea in Nginx:**
+
+```nginx
+limit_req_zone $binary_remote_addr zone=perip:10m rate=10r/m;   # 10 requests/min per IP
+location / { limit_req zone=perip; limit_req_status 429; }      # Nginx default is 503 (see Incident 5)
+```
+
+- **Real uses:** login page (stop password guessing), OTP/SMS API (stop spam costing money), public API (fair use).
+
+#### Geo-blocking (region-level block)
+
+**Definition:** block (or allow) users by **country**, found from their **IP address**.
+
+```
+User in UK 🇬🇧    → WAF: country = GB → ❌ 403 Forbidden
+User in India 🇮🇳 → WAF: country = IN → ✅ allowed → App
+```
+
+- **AWS WAF:** **geo match rule** (country = GB, action = Block). **CloudFront** also has built-in **geo restriction** (allow list / block list).
+- **Why 403:** the server understood the request but **refuses** it: the user is not allowed to access the app from that location.
+- **Know:** a VPN can bypass it (UK user with an Indian IP gets in); you can return a custom page ("Not available in your region") instead of a plain 403.
+- **Real reasons:** licence or law allows the service only in some countries (OTT, banking), compliance, blocking attack traffic.
+
+| Code | Meaning | Example |
+|---|---|---|
+| **401** | "Who are you?" Not logged in | Wrong password, no token |
+| **403** | "Not allowed" | Geo-blocked, IP blocked by WAF, no permission |
+| **429** | "Slow down" | Rate limit hit (Nginx / API) |
+
+> **One line:** "WAF is a Layer-7 firewall that inspects HTTP requests. A rate-based rule auto-blocks an IP over the limit (like 10 requests/min), and a geo match rule blocks whole countries; blocked users get 403 before reaching the app."
+
 ## 7. The 10 Incidents
 
 **Definition:** an **incident** = any unplanned event that hurts the service for users (down, errors, slow).
@@ -712,6 +773,10 @@ sudo tail -50 /var/log/nginx/error.log
 | Nginx won't start after a change? | `nginx -t` first, fix, then restart and verify |
 | Disk is 100%, what now? | `df -h` → `du -sh` → clean safely → logrotate + alerts |
 | First question in any incident? | "What changed?" |
+| What is a WAF? | A Layer-7 firewall in front of the app that inspects HTTP requests and blocks bad ones (SQLi, XSS, bots) |
+| WAF vs Security Group? | SG = IP + port · WAF = the HTTP request itself (URL, headers, rate, country) |
+| User sends > 10 requests/min? | WAF rate-based rule blocks that IP automatically (403), unblocks when the rate drops |
+| Block users from the UK? | WAF geo match rule / CloudFront geo restriction → they get 403 Forbidden |
 
 **One-liners:**
 - "SLI is what we measure, SLO is what we target, SLA is what we promise."
