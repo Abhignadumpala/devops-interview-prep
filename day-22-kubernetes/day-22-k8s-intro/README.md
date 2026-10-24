@@ -1,4 +1,4 @@
-# Day 22 — Kubernetes Intro: Architecture, Pods, ReplicaSet, Deployment
+# Day 22 — Kubernetes: Architecture, Pods, ReplicaSet, Deployment, Multi-Container Pods, Jobs
 
 [← Kubernetes notes](../README.md)
 
@@ -14,8 +14,13 @@
 6. [ReplicaSet](#6-replicaset)
 7. [Deployment](#7-deployment)
 8. [Pod vs ReplicaSet vs Deployment](#8-pod-vs-replicaset-vs-deployment)
-9. [Commands Cheat Sheet](#9-commands-cheat-sheet)
-10. [Interview Questions](#10-interview-questions)
+9. [Multi-Container Pod](#9-multi-container-pod)
+10. [Init Container](#10-init-container)
+11. [Sidecar Container](#11-sidecar-container)
+12. [Job](#12-job)
+13. [CronJob](#13-cronjob)
+14. [Commands Cheat Sheet](#14-commands-cheat-sheet)
+15. [Interview Questions](#15-interview-questions)
 
 ---
 
@@ -135,7 +140,10 @@ Local practice: **minikube**, **kind**, **k3s**.
 
 **Definition:** a **Pod** is the **smallest deployable unit** in Kubernetes. It wraps **one or more containers** that share the same **IP address, network and storage**.
 
-- Usually **1 container per pod**. Extra helper containers are called **sidecars** (e.g. a log shipper).
+- Pods are **ephemeral** (short-living objects).
+- Usually **1 container per pod**, but you can run **multiple containers** in the same pod if needed (see [Multi-Container Pod](#9-multi-container-pod)).
+- Containers in a pod share the **same network namespace** (same IP, talk on `localhost`) and can share the **same storage volumes**.
+- When creating a pod, you specify the **image** along with **configuration** and **resource limits** (CPU / memory).
 - Pods are **temporary**: if a pod dies, it is **not** brought back by itself. A new pod (new name, new IP) must replace it → that's why we use ReplicaSet / Deployment.
 
 ```yaml
@@ -166,6 +174,16 @@ kubectl delete pod nginx-pod     # it is gone for good, nobody recreates it
 **Definition:** a **ReplicaSet** makes sure a **fixed number of identical pods** (replicas) is **always running**. A pod dies → it creates a new one. Too many → it deletes extras.
 
 - It finds "its" pods using **labels** (`selector.matchLabels` must match the pod template labels).
+- Creates **multiple replicas of the same pod**; all pods have the **same config** (from the `template`).
+- Pod deleted → **automatically creates a new pod**.
+- Scaling: change `replicas` (manually or with **HPA** for auto scaling). Traffic is spread across the replicas by a **Service** (load balancing).
+- In the background, a **controller** (the ReplicaSet controller in kube-controller-manager) keeps creating replicas.
+
+| | ReplicationController (RC) | ReplicaSet (RS) |
+|---|---|---|
+| Age | **Older** version | **Newer** version (use this) |
+| Selector | Only equality (`app = nginx`) | Also set-based (`app in (nginx, web)`) |
+| Used today? | Legacy | ✅ (created by Deployments) |
 
 ```yaml
 apiVersion: apps/v1
@@ -239,6 +257,36 @@ spec:
             - containerPort: 80
 ```
 
+**What is a Deployment (class points):** one word: **automate**.
+- It has all features of a **ReplicaSet** plus **updating** and **rolling back** to a particular version.
+- The best part: we can do it **without downtime**.
+- **Deployment creates ReplicaSet, ReplicaSet creates Pods.**
+- **Deployment = zero-downtime updates + rollbacks + self-healing.**
+
+**Class example (movies app):**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: movies
+  labels:
+    app: paytm
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: paytm
+  template:
+    metadata:
+      labels:
+        app: paytm
+    spec:
+      containers:
+        - name: cont1
+          image: rahamshaik/mynetflix:1.0
+```
+
 **Rolling update and rollback:**
 
 ```bash
@@ -279,7 +327,268 @@ kubectl rollout undo deployment/web                  # back to the previous vers
 
 ---
 
-## 9. Commands Cheat Sheet
+## 9. Multi-Container Pod
+
+**Definition:** a **multi-container pod** = **more than one container in a single pod**, working together for **one application**. One word: **teamwork**.
+
+![Multi-container pod patterns](images/multi-container-patterns.png)
+
+**Key points:**
+
+| Point | Meaning |
+|---|---|
+| Same **network IP and ports** | Containers talk to each other on **`localhost`** |
+| Same **storage volumes** | They can share files (e.g. log files) |
+| **Same node**, always | Scheduled together |
+| **Start and stop together** | If the pod dies, all its containers die |
+| Scaling is per **pod** | You can't scale one container alone |
+| YAML | Multiple entries under `spec.containers` |
+
+**Why used:** the **main purpose is to support the main application container** with helper work: logging, monitoring, syncing files, proxy, security, setup.
+
+**When to use / avoid:**
+- ✅ **Tightly coupled** containers (helper can't live without the app)
+- ❌ **Unrelated apps** (e.g. frontend + database) → separate pods, so each scales on its own
+
+### The 4 patterns
+
+| Pattern | What it does | Example |
+|---|---|---|
+| **Init container** | Runs **first** and exits before the app starts | Wait for DB, download config |
+| **Sidecar** | Helper running **alongside** the app the whole time | Nginx + **Fluentd** log shipper |
+| **Ambassador** | **Proxy** connecting the app to an **external service** | App calls `localhost:6379`, proxy forwards to the real Redis cluster |
+| **Adapter** | **Converts** logs/data into another format | App's custom metrics → Prometheus format |
+
+---
+
+## 10. Init Container
+
+**Definition:** an **init container** runs **before** the app containers, does setup work, and **exits**. The main containers start **only after it completes successfully**. It **prepares the environment** so the app starts in the right conditions.
+
+```
+Init container (runs first) ──✅ success──▶ Main containers start ──▶ Pod Running
+        │
+        └── ❌ fails → pod restarts it until it succeeds (app never starts)
+```
+
+| Point | Meaning |
+|---|---|
+| Runs **before** app containers | Order is guaranteed |
+| Runs **one time** at pod startup | Then it exits (status Completed) |
+| **Fails → retried** until success | App containers wait |
+| Several init containers | Run **one after another**, in order |
+| YAML | Under **`spec.initContainers`** |
+
+**Commonly used for:** wait for the **DB** to be ready · **download files** / config · set **permissions** on a volume · check **DNS / Service** availability · run DB migrations.
+
+**Class example:**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: init-demo
+spec:
+  initContainers:
+    - name: init-container
+      image: busybox
+      command: ['sh', '-c', 'echo Preparing App']
+  containers:
+    - name: main-container
+      image: nginx
+```
+
+**Real example: wait for MySQL before starting the app:**
+
+```yaml
+  initContainers:
+    - name: wait-for-db
+      image: busybox
+      command: ['sh', '-c', 'until nslookup mysql; do echo waiting for db; sleep 2; done']
+```
+
+```bash
+kubectl get pod init-demo          # STATUS: Init:0/1 → PodInitializing → Running
+kubectl logs init-demo -c init-container    # "Preparing App"
+```
+
+> If the pod is stuck in **`Init:0/1`** or **`Init:CrashLoopBackOff`**, the init container is failing: check `kubectl logs <pod> -c <init-name>`.
+
+---
+
+## 11. Sidecar Container
+
+**Definition:** a **sidecar** is a helper container that runs **together with the main container in the same pod**, the whole time, to **support** it. One word: **assistant**.
+
+| Point | Meaning |
+|---|---|
+| Same pod, runs **simultaneously** | Not before (that's init); **alongside** |
+| Shares **network, IP and volumes** | Talks over `localhost`, reads shared files |
+| **Starts and stops with the pod** | Same lifecycle |
+| **Separates helper logic** from app code | App team doesn't write logging/proxy code |
+| Commonly for | **Logging, monitoring, proxy, security** |
+
+**Common real example: Nginx app + Fluentd sidecar.** Nginx writes logs to a shared volume; Fluentd reads them and ships them to Elasticsearch / Loki.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-with-logger
+spec:
+  volumes:
+    - name: logs
+      emptyDir: {}               # shared folder, lives as long as the pod
+  containers:
+    - name: nginx                # main app
+      image: nginx
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/nginx
+    - name: fluentd              # sidecar
+      image: fluent/fluentd
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/nginx
+```
+
+```bash
+kubectl get pod web-with-logger    # READY 2/2 = both containers running
+kubectl logs web-with-logger -c fluentd
+```
+
+**Other famous sidecars:** **Envoy** proxy in Istio service mesh, Vault agent (injects secrets), Prometheus exporters.
+
+> **Newer Kubernetes (1.29+):** a "native sidecar" is written as an init container with `restartPolicy: Always`: it starts before the app and keeps running. Good to know for interviews.
+
+### Init vs Sidecar
+
+| | Init container | Sidecar |
+|---|---|---|
+| When it runs | **Before** the app | **Alongside** the app |
+| How long | Runs once, then **exits** | Runs the **whole pod life** |
+| YAML | `spec.initContainers` | `spec.containers` (extra entry) |
+| Example | Wait for DB | Ship logs with Fluentd |
+
+---
+
+## 12. Job
+
+**Definition:** a **Job** runs a pod for a **one-time or batch task** and makes sure it **runs until it completes successfully**, then **stops**. One word: **task**.
+
+```
+Job → Pod running (task in progress) → Pod Completed ✅ → Job finished (stops)
+```
+
+| Point | Meaning |
+|---|---|
+| For **one-time / batch** work | Not for long-running apps (that's a Deployment) |
+| Pod fails → Job creates a **new pod** | Retries automatically |
+| **`backoffLimit`** | How many retries before the Job is marked **Failed** (default 6) |
+| **`completions`** | How many successful runs are needed |
+| **`parallelism`** | How many pods run at the same time |
+| Pod status after success | **Completed** |
+
+**Used for:** backups, **DB migration**, batch processing, data import/export, running a script.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration
+spec:
+  completions: 1
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never       # Jobs need Never or OnFailure
+      containers:
+        - name: migrate
+          image: busybox
+          command: ['sh', '-c', 'echo running migration; sleep 5; echo done']
+```
+
+```bash
+kubectl apply -f job.yaml
+kubectl get jobs                 # COMPLETIONS 1/1
+kubectl get pods                 # STATUS Completed
+kubectl logs job/db-migration
+```
+
+---
+
+## 13. CronJob
+
+**Definition:** a **CronJob** creates **Jobs automatically on a schedule**, using **Linux cron syntax**. Schedule → automate → repeat.
+
+```
+CronJob (schedule) → creates a Job → Job creates a Pod → task Completed
+```
+
+**Cron format:** 5 fields
+
+```
+┌ minute (0-59)
+│ ┌ hour (0-23)
+│ │ ┌ day of month (1-31)
+│ │ │ ┌ month (1-12)
+│ │ │ │ ┌ day of week (0-6, Sun=0)
+* * * * *        → every minute
+0 2 * * *        → daily at 2 AM
+*/15 * * * *     → every 15 minutes
+0 9 * * 1        → every Monday 9 AM
+```
+
+**Used for:** daily backups, log cleanup, monitoring scripts, scheduled reports.
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: daily-backup
+spec:
+  schedule: "0 2 * * *"              # daily at 2 AM
+  concurrencyPolicy: Forbid          # skip if the last one is still running
+  successfulJobsHistoryLimit: 3      # keep last 3 successful Jobs
+  failedJobsHistoryLimit: 1          # keep last 1 failed Job
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: busybox
+              command: ['sh', '-c', 'echo backup done']
+```
+
+**Concurrency policy** (what if the previous run is still running?):
+
+| Policy | Meaning |
+|---|---|
+| **Allow** (default) | Run jobs at the same time |
+| **Forbid** | Skip the new run if one is still running |
+| **Replace** | Stop the running job and start the new one |
+
+**History limits:** `successfulJobsHistoryLimit` (default 3) and `failedJobsHistoryLimit` (default 1) decide how many old Jobs are kept for checking logs.
+
+```bash
+kubectl get cronjobs
+kubectl get jobs --watch                          # a new Job appears on schedule
+kubectl create job test-run --from=cronjob/daily-backup   # run it now to test
+```
+
+### Deployment vs Job vs CronJob
+
+| | Deployment | Job | CronJob |
+|---|---|---|---|
+| Runs | **Forever** (web apps, APIs) | **Once**, until success | **On a schedule** |
+| Ends? | No | Yes (Completed) | Each run ends; schedule repeats |
+| Example | Nginx, cart service | DB migration | Daily 2 AM backup |
+
+---
+
+## 14. Commands Cheat Sheet
 
 | Command | What it does |
 |---|---|
@@ -294,10 +603,14 @@ kubectl rollout undo deployment/web                  # back to the previous vers
 | `kubectl set image deploy/web web=nginx:1.28` | Update image |
 | `kubectl rollout status / history / undo deploy/web` | Watch / list / roll back |
 | `kubectl delete -f file.yaml` | Delete what the file created |
+| `kubectl logs <pod> -c <container>` | Logs of one container in a multi-container pod |
+| `kubectl exec -it <pod> -c <container> -- sh` | Shell into one container of the pod |
+| `kubectl get jobs` / `kubectl get cronjobs` | List Jobs / CronJobs |
+| `kubectl create job now --from=cronjob/<name>` | Run a CronJob immediately |
 
 ---
 
-## 10. Interview Questions
+## 15. Interview Questions
 
 ### Other Questions
 
@@ -331,6 +644,30 @@ The ReplicaSet notices the count dropped and creates a new pod.
 **Q10. What is EKS?**
 AWS-managed Kubernetes: AWS runs the control plane, you run (or let Fargate run) the worker nodes.
 
+**Q11. What is a multi-container pod and why use it?**
+Several tightly coupled containers in one pod sharing IP (localhost) and volumes, to support the main app (logging, proxy, setup).
+
+**Q12. Init container vs sidecar?**
+Init runs before the app and exits; sidecar runs alongside the app for the whole pod life.
+
+**Q13. What happens if an init container fails?**
+The pod restarts it until it succeeds; the main containers never start until then.
+
+**Q14. Name the multi-container patterns.**
+Init, sidecar, ambassador (proxy to external service), adapter (converts output format).
+
+**Q15. ReplicationController vs ReplicaSet?**
+RC is the older version; ReplicaSet is newer and supports set-based selectors. Deployments create ReplicaSets.
+
+**Q16. Job vs CronJob vs Deployment?**
+Job = run once until success; CronJob = create Jobs on a schedule; Deployment = keep a long-running app up.
+
+**Q17. What are backoffLimit and completions?**
+backoffLimit = retries before the Job fails; completions = successful runs needed.
+
+**Q18. CronJob concurrencyPolicy options?**
+Allow (run together), Forbid (skip if still running), Replace (stop old, start new).
+
 ---
 
-**Source:** [Kubernetes docs: components](https://kubernetes.io/docs/concepts/overview/components/) · [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) · [ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/)
+**Source:** [Kubernetes docs: components](https://kubernetes.io/docs/concepts/overview/components/) · [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) · [ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/) · [Init containers](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) · [Sidecar containers](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) · [Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/) · [CronJob](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/)
