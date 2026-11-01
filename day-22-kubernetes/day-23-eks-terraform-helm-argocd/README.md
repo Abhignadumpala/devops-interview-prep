@@ -1078,6 +1078,8 @@ aws --version
 
 > Step 0 starts on your **💻 laptop** (to SSH in). **Every step after that runs on the 🖥️ bastion.**
 
+> **Shortcut (scripted):** my repo has all these steps as scripts: [k8s-eks-projects/03-argocd](https://github.com/Abhignadumpala/k8s-eks-projects/tree/main/03-argocd). On the bastion: `git clone https://github.com/Abhignadumpala/k8s-eks-projects.git && cd k8s-eks-projects/03-argocd && bash install.sh`. Remove with `bash uninstall.sh` before `terraform destroy`.
+
 **Step 0 — 💻 LAPTOP → 🖥️ BASTION: SSH in and check tools**
 
 ```bash
