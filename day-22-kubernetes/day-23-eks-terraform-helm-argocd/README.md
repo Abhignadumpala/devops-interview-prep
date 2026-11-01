@@ -127,11 +127,11 @@ Class code: [devopsbyraham/eks-code](https://github.com/devopsbyraham/eks-code).
 ### terraform.tfvars (my values)
 
 ```hcl
-aws_region   = "ap-southeast-1"
+aws_region   = "us-east-1"
 project_name = "abhigna"
 
 # Bastion / admin host
-bastion_ami_id           = "ami-095f155a67469a548" # Ubuntu 22.04, ap-southeast-1 only
+bastion_ami_id           = "ami-033ea4ff4a9c726dc" # Ubuntu 22.04, us-east-1 only
 bastion_instance_type    = "m7i-flex.large"
 bastion_root_volume_size = 30
 key_pair_name            = "abhigna-eks-key"       # create this key pair first in the same region
@@ -139,7 +139,7 @@ ssh_allowed_cidr         = "0.0.0.0/0"             # real time: your IP only, e.
 
 # Networking
 vpc_cidr             = "10.0.0.0/16"
-azs                  = ["ap-southeast-1a", "ap-southeast-1b", "ap-southeast-1c"]
+azs                  = ["us-east-1a", "us-east-1b", "us-east-1c"]
 public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
 private_subnet_cidrs = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 
@@ -206,7 +206,7 @@ All inputs in the file:
 
 | Variable | Type | Default |
 |---|---|---|
-| `aws_region` | string | `ap-southeast-1` |
+| `aws_region` | string | `us-east-1` |
 | `project_name` | string | `abhigna` |
 | `bastion_ami_id` | string | Ubuntu 22.04 AMI (region-specific) |
 | `bastion_instance_type` | string | `m7i-flex.large` |
@@ -214,7 +214,7 @@ All inputs in the file:
 | `key_pair_name` | string | `abhigna-eks-key` |
 | `ssh_allowed_cidr` | string | `0.0.0.0/0` |
 | `vpc_cidr` | string | `10.0.0.0/16` |
-| `azs` | list(string) | `ap-southeast-1a`, `1b`, `1c` |
+| `azs` | list(string) | `us-east-1a`, `1b`, `1c` |
 | `public_subnet_cidrs` | list(string) | `10.0.1.0/24`, `10.0.2.0/24`, `10.0.3.0/24` |
 | `private_subnet_cidrs` | list(string) | `10.0.101.0/24`, `10.0.102.0/24`, `10.0.103.0/24` |
 | `cluster_name` | string | `abhigna-cluster` |
@@ -557,7 +557,7 @@ chown ubuntu:ubuntu /home/ubuntu/.profile
 |---|---|
 | Terraform ≥ 1.5 | `terraform version` |
 | AWS credentials (admin-level for VPC, EC2, EKS, IAM) | `aws sts get-caller-identity` |
-| Key pair `abhigna-eks-key` in `ap-southeast-1` | EC2 → Key pairs → Create → download `.pem` |
+| Key pair `abhigna-eks-key` in `us-east-1` | EC2 → Key pairs → Create → download `.pem` |
 
 **Step 1: get the code and set my values**
 
@@ -597,7 +597,7 @@ On the bastion:
 
 ```bash
 # kubeconfig is already set by user_data. If not:
-aws eks update-kubeconfig --region ap-southeast-1 --name abhigna-cluster
+aws eks update-kubeconfig --region us-east-1 --name abhigna-cluster
 
 kubectl get nodes           # 2 nodes, STATUS Ready
 kubectl get pods -A         # system pods: coredns, aws-node (VPC CNI), kube-proxy
@@ -767,7 +767,7 @@ terraform destroy -auto-approve
 
 | Problem | Cause | Fix |
 |---|---|---|
-| `InvalidKeyPair.NotFound` | Key pair not created in this region | Create `abhigna-eks-key` in `ap-southeast-1` |
+| `InvalidKeyPair.NotFound` | Key pair not created in this region | Create `abhigna-eks-key` in `us-east-1` |
 | `InvalidAMIID.NotFound` | AMI ID is from another region | Get the Ubuntu 22.04 AMI ID for your region |
 | `kubectl get nodes` → `Unauthorized` / no access | kubeconfig not set, or IAM role has no access entry | Re-run `aws eks update-kubeconfig ...`; check access entry |
 | `kubectl` not found on bastion | `user_data` still running or failed | `sudo tail -f /var/log/bastion-bootstrap.log` |
