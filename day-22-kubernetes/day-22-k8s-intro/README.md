@@ -62,6 +62,47 @@
 
 > **One line:** Docker **builds and runs** containers; Kubernetes **manages** them at scale (heal, scale, update, network).
 
+### What Kubernetes does (5 jobs)
+
+Kubernetes **orchestrates** containers. It does five main jobs:
+
+| Job | Meaning |
+|---|---|
+| **Scheduling** | Places containers on the right nodes |
+| **Scaling** | Adds or removes copies as load changes |
+| **Self-healing** | Restarts failed containers |
+| **Service discovery** | Lets services find each other by name |
+| **Rolling updates** | Releases a new version with no downtime |
+
+### Why Amazon EKS?
+
+**Definition:** **Amazon EKS** (Elastic Kubernetes Service) is AWS's **managed Kubernetes** service.
+
+**Main benefit:** AWS runs and patches the **control plane**, so your team doesn't run the **API server** or **etcd**.
+
+| | Self-managed K8s (on EC2) | Amazon EKS |
+|---|---|---|
+| Control plane (API server, etcd) | **You** install, patch, back up | **AWS** runs and patches it |
+| Worker nodes | You | You (or managed node groups / Fargate) |
+| Access / auth | Set up yourself | Built-in **IAM** integration |
+| Networking | Set up yourself | **VPC** networking (pods get VPC IPs) |
+| Load balancers | Set up yourself | Works with AWS **ALB / NLB** |
+| Ops effort | High | **Lower** |
+
+```
+           Amazon EKS
+┌───────────────────────────────┐
+│  Control plane  (AWS manages) │  API server · etcd · scheduler
+└───────────────┬───────────────┘
+                │
+┌───────────────▼───────────────┐
+│  Worker nodes   (you manage)  │  EC2 / Fargate → your pods
+└───────────────────────────────┘
+   + IAM · VPC · ALB/NLB integration
+```
+
+> **Interview one-liner:** Kubernetes schedules, scales, heals and updates containers. **EKS** is AWS's managed Kubernetes: AWS runs the control plane (API server + etcd), and EKS works with IAM, VPC and load balancers, so the team does less ops work.
+
 ---
 
 ## 3. Kubernetes in Real Time
