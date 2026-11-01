@@ -8,16 +8,17 @@
 
 1. [Console vs Terraform](#1-console-vs-terraform)
 2. [What we build (architecture)](#2-what-we-build-architecture)
-3. [Terraform module](#3-terraform-module)
-4. [Project files](#4-project-files)
-5. [The code](#5-the-code)
-6. [Steps: create the cluster](#6-steps-create-the-cluster)
-7. [Introduction to Helm](#7-introduction-to-helm)
-8. [Install Argo CD with Helm](#8-install-argo-cd-with-helm)
-9. [Destroy everything](#9-destroy-everything)
-10. [Common problems](#10-common-problems)
-11. [Commands Cheat Sheet](#11-commands-cheat-sheet)
-12. [Interview Questions](#12-interview-questions)
+3. [Beginner Guide: Who Creates What, Who You Talk To](#3-beginner-guide-who-creates-what-who-you-talk-to)
+4. [Terraform module](#4-terraform-module)
+5. [Project files](#5-project-files)
+6. [The code](#6-the-code)
+7. [Steps: create the cluster](#7-steps-create-the-cluster)
+8. [Introduction to Helm](#8-introduction-to-helm)
+9. [Install Argo CD with Helm](#9-install-argo-cd-with-helm)
+10. [Destroy everything](#10-destroy-everything)
+11. [Common problems](#11-common-problems)
+12. [Commands Cheat Sheet](#12-commands-cheat-sheet)
+13. [Interview Questions](#13-interview-questions)
 
 ---
 
@@ -68,7 +69,78 @@
 
 ---
 
-## 3. Terraform module
+## 3. Beginner Guide: Who Creates What, Who You Talk To
+
+### A Kubernetes cluster has 2 parts
+
+| Part | Also called | Job | Example |
+|---|---|---|---|
+| **Control plane** | Master node | The **brain**: decides where pods run, stores cluster state | API server, etcd, scheduler, controller manager |
+| **Worker nodes** | Nodes | The **hands**: actually run your pods (containers) | EC2 machines with kubelet, kube-proxy, containerd |
+
+### Do I create the control plane or only worker nodes?
+
+**In EKS, you ask for both in the code, but AWS builds and runs the control plane for you.**
+
+| | Control plane (master) | Worker nodes |
+|---|---|---|
+| Asked for in my code? | ✅ Yes: `module "eks"` → `cluster_name`, `cluster_version` | ✅ Yes: `eks_managed_node_groups` → instance type, 2–6 nodes |
+| Who builds it? | **AWS** | **AWS** launches the EC2s from my settings |
+| Where does it live? | In an **AWS-owned account**, not in my VPC | In **my VPC**, private subnets |
+| Can I see the machines in EC2 console? | ❌ No, hidden | ✅ Yes, 2 EC2 instances |
+| Can I SSH into it? | ❌ Never | ✅ Possible (from bastion), but rarely needed |
+| Who patches / backs up / keeps it running? | **AWS** (3 copies across AZs) | Me (updates via node group) |
+| How do I talk to it? | Through its **API endpoint** (an HTTPS URL) using `kubectl` | I don't; the control plane tells them what to run |
+
+> **Simple:** I write *"I want a cluster named `abhigna-cluster` with 2 worker nodes"*. AWS creates the brain (control plane) in its own account and the hands (worker nodes) in my VPC.
+
+### What is the bastion, and who do I connect to?
+
+**Bastion host** = a normal small Ubuntu EC2 with a public IP, created by my code (`bastion.tf`). It is **not** part of the cluster. It is just my "admin desk" that has `kubectl` and `helm` installed.
+
+| Question | Answer |
+|---|---|
+| Do I create the bastion myself? | ❌ No, `bastion.tf` creates it and the bootstrap script installs all tools |
+| Where do I **SSH** to? | **Bastion only** |
+| Do I SSH into the control plane? | ❌ No, impossible (AWS owns it) |
+| Do I SSH into worker nodes? | ❌ Normally no |
+| Where do I **run** `kubectl` / `helm`? | **On the bastion** |
+| Who receives my `kubectl` command? | The **control plane (API server)** over HTTPS port 443, not SSH |
+| Who actually starts the pods? | The control plane tells the **kubelet** on the worker nodes |
+
+### How one command travels
+
+```
+ ① SSH (port 22)           ② kubectl = HTTPS (port 443)      ③ control plane gives orders
+┌──────────┐            ┌──────────────┐            ┌────────────────────┐            ┌──────────────────┐
+│  Laptop  │ ─────────► │ Bastion EC2  │ ─────────► │ EKS control plane  │ ─────────► │ Worker nodes     │
+│ (me)     │            │ kubectl/helm │            │ API server (AWS)   │            │ kubelet → pods   │
+└──────────┘            └──────────────┘            └────────────────────┘            └──────────────────┘
+   my home              my VPC, public subnet       AWS-owned account                 my VPC, private subnet
+```
+
+Example: on the bastion I type `kubectl get nodes`:
+
+1. `kubectl` reads `~/.kube/config` → finds the API server URL + uses the bastion's IAM role to log in.
+2. Sends an HTTPS request to the **control plane**.
+3. The control plane looks in **etcd** and replies: *"2 nodes, both Ready"*.
+
+> Nothing goes to the worker nodes for this command. For `kubectl apply`, the control plane picks a node and tells that node's **kubelet** to start the pod.
+
+### Where each command runs
+
+| Command | Run on | Talks to |
+|---|---|---|
+| `terraform init / plan / apply / destroy` | **Laptop** | AWS APIs (creates VPC, EKS, nodes, bastion) |
+| `ssh -i ... ubuntu@<bastion-ip>` | **Laptop** | Bastion |
+| `kubectl get nodes`, `kubectl apply ...` | **Bastion** | Control plane (API server) |
+| `helm install argocd ...` | **Bastion** | Control plane (API server) |
+
+> **Interview one-liner:** In EKS, AWS creates and manages the control plane in its own account; I only define the worker nodes (node group) that run in my VPC. I SSH into a **bastion host**, and from there `kubectl` talks to the control plane's API server over HTTPS. I never SSH into the control plane.
+
+---
+
+## 4. Terraform module
 
 **Definition:** A **module** is a ready-made, reusable package of Terraform code. You give it inputs; it creates many resources for you.
 
@@ -95,7 +167,7 @@ module "vpc" {
 
 ---
 
-## 4. Project files
+## 5. Project files
 
 ```
 eks-terraform/
@@ -118,7 +190,7 @@ eks-terraform/
 
 ---
 
-## 5. The code
+## 6. The code
 
 Class code: [devopsbyraham/eks-code](https://github.com/devopsbyraham/eks-code). Names changed to mine in `terraform.tfvars`.
 
@@ -549,7 +621,7 @@ chown ubuntu:ubuntu /home/ubuntu/.profile
 
 ---
 
-## 6. Steps: create the cluster
+## 7. Steps: create the cluster
 
 **Before you start**
 
@@ -559,56 +631,83 @@ chown ubuntu:ubuntu /home/ubuntu/.profile
 | AWS credentials (admin-level for VPC, EC2, EKS, IAM) | `aws sts get-caller-identity` |
 | Key pair `abhigna-eks-key` in `us-east-1` | EC2 → Key pairs → Create → download `.pem` |
 
-**Step 1: get the code and set my values**
+**Step 0: create the key pair (once, by hand)**
+
+The only thing the code does **not** create. Terraform uses it to let me SSH into the bastion.
 
 ```bash
+# 💻 LAPTOP
+aws ec2 create-key-pair --region us-east-1 --key-name abhigna-eks-key \
+  --query KeyMaterial --output text > ~/.ssh/abhigna-eks-key.pem
+chmod 400 ~/.ssh/abhigna-eks-key.pem      # SSH refuses keys others can read
+```
+
+Or console: EC2 → region **N. Virginia** → Key pairs → Create → name `abhigna-eks-key`, RSA, `.pem`.
+
+**Step 1: get the code**
+
+```bash
+# 💻 LAPTOP
 git clone git@github.com:Abhignadumpala/k8s-eks-projects.git
 cd k8s-eks-projects/01-eks-terraform
-cat terraform.tfvars        # my names already set: abhigna, abhigna-cluster, abhigna-eks-key
+cat terraform.tfvars        # my values already set: abhigna-cluster, abhigna-eks-key, us-east-1
 ```
 
-**Step 2: init, plan, apply**
+**Step 2: create everything with Terraform**
 
 ```bash
-terraform init              # downloads AWS/K8s providers + VPC and EKS modules
+# 💻 LAPTOP (inside 01-eks-terraform)
+terraform init              # downloads AWS provider + VPC and EKS modules (~1 min)
 terraform validate          # syntax check
-terraform plan              # shows what will be created
-terraform apply -auto-approve
+terraform plan              # preview only: lists what will be created, creates nothing
+terraform apply -auto-approve   # really creates it (~15–20 min)
 ```
 
-| What `apply` does | Order |
+| `terraform` command | What it means |
 |---|---|
-| 1 | VPC, subnets, NAT gateway |
-| 2 | EKS control plane (slowest, ~10–12 min) |
-| 3 | IAM OIDC provider, node group (2 nodes) |
-| 4 | Bastion EC2, which installs tools and sets up kubeconfig on boot |
+| `init` | Get ready: download plugins and modules into `.terraform/` |
+| `plan` | Dry run: "this is what I would create" |
+| `apply` | Do it: create resources in AWS |
+| `-auto-approve` | Don't ask "yes?" before applying |
 
-Total: around **15–20 minutes**.
+What `apply` creates, in order:
 
-**Step 3: connect from the bastion**
+| # | Created | Who runs it after |
+|---|---|---|
+| 1 | VPC, subnets, NAT gateway | AWS (network) |
+| 2 | EKS **control plane** (~10–12 min, slowest) | **AWS manages** |
+| 3 | IAM OIDC provider + **node group** (2 worker EC2s) | AWS launches, I own |
+| 4 | **Bastion** EC2 → installs AWS CLI, kubectl, eksctl, helm + sets kubeconfig | Me |
+
+**Step 3: SSH into the bastion**
 
 ```bash
-terraform output                                   # bastion IP, kubectl command
-chmod 400 abhigna-eks-key.pem
-ssh -i abhigna-eks-key.pem ubuntu@$(terraform output -raw bastion_public_ip)
+# 💻 LAPTOP
+terraform output            # prints bastion IP, cluster name, kubectl command
+ssh -i ~/.ssh/abhigna-eks-key.pem ubuntu@$(terraform output -raw bastion_public_ip)
 ```
 
-On the bastion:
+`$(terraform output -raw bastion_public_ip)` = put the bastion's IP here automatically.
+
+**Step 4: talk to the cluster**
 
 ```bash
-# kubeconfig is already set by user_data. If not:
-aws eks update-kubeconfig --region us-east-1 --name abhigna-cluster
-
-kubectl get nodes           # 2 nodes, STATUS Ready
+# 🖥️ BASTION (prompt changes to ubuntu@ip-10-0-1-x)
+kubectl get nodes           # 2 worker nodes, STATUS Ready
 kubectl get pods -A         # system pods: coredns, aws-node (VPC CNI), kube-proxy
-kubectl cluster-info
+kubectl cluster-info        # shows the control plane (API server) URL
+
+# Only if kubectl says "no configuration" (bootstrap not finished / failed):
+aws eks update-kubeconfig --region us-east-1 --name abhigna-cluster
 ```
+
+> Bootstrap takes a few minutes after the bastion starts. If `kubectl` is not found yet, check `sudo tail -f /var/log/bastion-bootstrap.log`.
 
 > Bastion user is **ubuntu** (Ubuntu AMI), not `ec2-user`.
 
 ---
 
-## 7. Introduction to Helm
+## 8. Introduction to Helm
 
 **Definition:** **Helm** is the **package manager for Kubernetes**. Like `apt` / `yum` installs software on Linux, `helm install` installs a full app (all its YAML files) into a cluster with one command.
 
@@ -670,7 +769,7 @@ templates/ ───┘
 
 ---
 
-## 8. Install Argo CD with Helm
+## 9. Install Argo CD with Helm
 
 **Definition:** **Argo CD** is a **GitOps** tool for Kubernetes. It watches a Git repo and keeps the cluster the same as what is in Git.
 
@@ -740,7 +839,7 @@ helm uninstall argocd -n argocd       # removes the LB too
 
 ---
 
-## 9. Destroy everything
+## 10. Destroy everything
 
 EKS + NAT gateway + EC2 cost money every hour. Destroy when the lab is done.
 
@@ -763,7 +862,7 @@ terraform destroy -auto-approve
 
 ---
 
-## 10. Common problems
+## 11. Common problems
 
 | Problem | Cause | Fix |
 |---|---|---|
@@ -777,7 +876,7 @@ terraform destroy -auto-approve
 
 ---
 
-## 11. Commands Cheat Sheet
+## 12. Commands Cheat Sheet
 
 | Command | Use |
 |---|---|
@@ -801,7 +900,7 @@ terraform destroy -auto-approve
 
 ---
 
-## 12. Interview Questions
+## 13. Interview Questions
 
 ### Other Questions
 
@@ -846,6 +945,15 @@ From the secret `argocd-initial-admin-secret` in the `argocd` namespace, base64-
 
 **Q14. Why delete load balancers before `terraform destroy`?**
 Kubernetes created them, not Terraform. They keep using the subnets, so the VPC delete fails until they are gone.
+
+**Q15. In EKS, do you create the control plane?**
+I request it in Terraform (`module "eks"`), but AWS builds, runs, patches and scales it in an AWS-owned account. I can't see or SSH into it. I define only the worker nodes (node group).
+
+**Q16. You SSH into the bastion. Which part of the cluster does `kubectl` talk to?**
+The control plane's API server, over HTTPS (443), using the kubeconfig and the bastion's IAM role. Not the worker nodes, and not over SSH.
+
+**Q17. Is the bastion part of the cluster?**
+No. It's a separate EC2 in a public subnet used as an admin machine with kubectl and helm installed.
 
 ---
 
