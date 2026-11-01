@@ -797,19 +797,70 @@ templates/ ───┘
 Developer ──push YAML──► Git repo ◄──watches── Argo CD (in cluster) ──applies──► Pods
 ```
 
-**Run these on the bastion:**
+### Where does everything run? (read this first)
 
-**Step 1: add the Argo Helm repo**
+| Question | Answer |
+|---|---|
+| Where do I run the `helm` and `kubectl` commands? | 🖥️ **Bastion host** |
+| Do I install Helm on the bastion? | Already done: the bootstrap script installs it. Check with `helm version` |
+| Do I install Helm on the cluster too? | ❌ **No.** Helm is only a **client tool** (like `kubectl`). Nothing Helm-related runs in the cluster |
+| Where does **Argo CD** get installed? | **Inside the Kubernetes cluster**, as pods in the `argocd` namespace |
+| On the control plane or worker nodes? | Argo CD **pods run on the worker nodes**. The control plane only stores their records in etcd and schedules them |
+| Is Argo CD installed on the bastion? | ❌ No. The bastion only **sends** the install command |
+| How do I open the Argo CD UI? | Browser → **AWS load balancer** (public subnet) → `argocd-server` pod on a worker node |
+
+**How `helm install` works, step by step**
+
+| Step | Where | What happens |
+|---|---|---|
+| 1 | 🖥️ Bastion | I run `helm install argocd argo/argo-cd ...` |
+| 2 | 🖥️ Bastion | Helm **downloads the chart** from the Argo repo and fills the templates with values → many K8s YAMLs (Deployments, Services, Secrets, RBAC, CRDs) |
+| 3 | Bastion → Control plane | Helm sends those YAMLs to the **API server** over **HTTPS (443)**, the same way `kubectl` does (uses `~/.kube/config`) |
+| 4 | Control plane | API server saves them in **etcd**; **scheduler** picks worker nodes for the Argo CD pods |
+| 5 | Worker nodes | **kubelet** tells **containerd** to **pull the Argo CD images** and start the pods |
+| 6 | AWS | The `LoadBalancer` Service makes AWS create a **load balancer** in the public subnets |
+| 7 | 💻 My browser | Open the LB address → reaches the `argocd-server` pod → Argo CD UI |
+
+```
+ 🖥️ Bastion                     Control plane (AWS)              Worker nodes (my VPC, private)
+┌───────────────┐  HTTPS 443  ┌──────────────────────┐        ┌──────────────────────────────────┐
+│ helm install  │ ──────────► │ API server → etcd    │ ─────► │ namespace: argocd                │
+│ (client only) │             │ scheduler            │        │  argocd-server  (UI + API)       │
+└───────────────┘             └──────────────────────┘        │  argocd-repo-server (reads Git)  │
+                                                              │  argocd-application-controller   │
+                                                              │  argocd-redis, dex ...           │
+💻 Browser ──► AWS Load Balancer (public subnet) ───────────► │  └─ argocd-server pod            │
+                                                              └──────────────────────────────────┘
+```
+
+> **Simple:** Helm lives on the bastion and only sends orders. Argo CD lives **inside the cluster**, as pods on the **worker nodes**.
+
+### Steps (all on 🖥️ bastion)
+
+**Step 0: SSH in and check tools**
 
 ```bash
+# 💻 LAPTOP
+ssh -i ~/.ssh/abhigna-eks-key.pem ubuntu@$(terraform output -raw bastion_public_ip)
+
+# 🖥️ BASTION
+helm version                # Helm is installed
+kubectl get nodes           # cluster reachable, 2 nodes Ready
+```
+
+**Step 1: add the Argo Helm repo** (like adding a yum/apt repo)
+
+```bash
+# 🖥️ BASTION
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
 helm search repo argo/argo-cd          # see chart versions
 ```
 
-**Step 2: install Argo CD**
+**Step 2: install Argo CD into the cluster**
 
 ```bash
+# 🖥️ BASTION
 helm install argocd argo/argo-cd \
   --namespace argocd \
   --create-namespace \
@@ -823,36 +874,48 @@ helm install argocd argo/argo-cd \
 | `--namespace argocd --create-namespace` | Put everything in its own namespace |
 | `--set server.service.type=LoadBalancer` | Change one value: create an AWS load balancer so I can open the UI |
 
-**Step 3: check it**
+**Step 3: check it is running in the cluster**
 
 ```bash
-helm list -n argocd                    # release status: deployed
-kubectl get pods -n argocd             # all Running
+# 🖥️ BASTION
+helm list -n argocd                       # release status: deployed
+kubectl get pods -n argocd -o wide        # all Running; NODE column = which worker node
 kubectl get svc -n argocd argocd-server   # EXTERNAL-IP = load balancer DNS
 ```
+
+> `-o wide` shows the **NODE** column, proof that Argo CD pods run on the **worker nodes**.
 
 **Step 4: get the admin password**
 
 ```bash
+# 🖥️ BASTION
 kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d; echo
 ```
 
 **Step 5: open the UI**
 
-- Open `https://<EXTERNAL-IP from step 3>` in the browser (wait 2–3 min for the LB DNS).
+- 💻 **Laptop browser:** open `https://<EXTERNAL-IP from step 3>` (wait 2–3 min for the LB DNS).
 - Accept the self-signed certificate warning.
 - Login: user **admin**, password from step 4.
 
-> **No load balancer?** Use port-forward from the bastion: `kubectl port-forward svc/argocd-server -n argocd 8080:443`
+> **No load balancer?** Port-forward through the bastion with an SSH tunnel:
+> ```bash
+> # 🖥️ BASTION
+> kubectl port-forward svc/argocd-server -n argocd 8080:443
+> # 💻 LAPTOP (new terminal)
+> ssh -i ~/.ssh/abhigna-eks-key.pem -L 8080:localhost:8080 ubuntu@<bastion-ip>
+> ```
+> Then open `https://localhost:8080` on the laptop.
 
 **Upgrade / remove**
 
 ```bash
+# 🖥️ BASTION
 helm upgrade argocd argo/argo-cd -n argocd --set server.service.type=LoadBalancer
 helm history argocd -n argocd
 helm rollback argocd 1 -n argocd
-helm uninstall argocd -n argocd       # removes the LB too
+helm uninstall argocd -n argocd       # removes Argo CD pods and the LB
 ```
 
 ---
@@ -972,6 +1035,12 @@ The control plane's API server, over HTTPS (443), using the kubeconfig and the b
 
 **Q17. Is the bastion part of the cluster?**
 No. It's a separate EC2 in a public subnet used as an admin machine with kubectl and helm installed.
+
+**Q18. Do you install Helm in the cluster?**
+No. Helm 3 is only a client tool on the machine that runs it (the bastion). It sends YAML to the API server like kubectl. (Old Helm 2 had a server part called Tiller; it was removed.)
+
+**Q19. Where does Argo CD run?**
+Inside the cluster, as pods in the `argocd` namespace on the worker nodes. The bastion only runs the `helm install` command.
 
 ---
 
