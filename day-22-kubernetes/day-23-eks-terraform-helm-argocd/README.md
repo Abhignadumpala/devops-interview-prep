@@ -96,36 +96,54 @@
 
 ### What is the bastion, and who do I connect to?
 
-**Bastion host** = a normal small Ubuntu EC2 with a public IP, created by my code (`bastion.tf`). It is **not** part of the cluster. It is just my "admin desk" that has `kubectl` and `helm` installed.
+**Bastion host** = a small Ubuntu EC2 with a public IP, created by my code (`bastion.tf`). It is **not** part of the cluster. It is my **admin desk**: `kubectl` and `helm` are installed on it, and from there I send commands to the cluster.
+
+**Why do I need it?**
+
+- The **control plane is managed by AWS**, so I **cannot SSH into it**. The only way to talk to it is through its **API server**, using **HTTPS API calls on port 443**.
+- `kubectl` is the tool that makes those API calls. I run `kubectl` **on the bastion**.
+- The **worker nodes** are in private subnets with no public IP. I don't log in to them; the control plane manages them for me.
 
 | Question | Answer |
 |---|---|
-| Do I create the bastion myself? | ❌ No, `bastion.tf` creates it and the bootstrap script installs all tools |
-| Where do I **SSH** to? | **Bastion only** |
-| Do I SSH into the control plane? | ❌ No, impossible (AWS owns it) |
-| Do I SSH into worker nodes? | ❌ Normally no |
-| Where do I **run** `kubectl` / `helm`? | **On the bastion** |
-| Who receives my `kubectl` command? | The **control plane (API server)** over HTTPS port 443, not SSH |
-| Who actually starts the pods? | The control plane tells the **kubelet** on the worker nodes |
+| Who creates the bastion? | My code (`bastion.tf`); the bootstrap script installs all tools |
+| Where do I **SSH**? | **Bastion only** (port 22) |
+| Can I SSH into the control plane? | ❌ No, AWS manages it |
+| Do I SSH into worker nodes? | ❌ No, not needed |
+| How do I talk to the control plane? | `kubectl` on the bastion → **HTTPS API calls, port 443** → API server |
+| Who talks to the worker nodes? | The **API server** ↔ **kubelet** on each worker node |
+| Who actually runs the containers? | **Container runtime** (containerd) on the worker node |
 
-### How one command travels
+### Step by step: what happens when I run `kubectl apply`
+
+Example: I want 2 nginx pods (`kubectl apply -f deploy.yaml`).
+
+| Step | Where | What happens |
+|---|---|---|
+| 1 | 💻 Laptop | I **SSH** into the bastion (port 22) |
+| 2 | 🖥️ Bastion | I run `kubectl apply -f deploy.yaml` |
+| 3 | Bastion → Control plane | `kubectl` reads `~/.kube/config`, logs in with the bastion's IAM role, and sends an **HTTPS API call (443)** to the **API server** |
+| 4 | Control plane | **API server** checks I'm allowed, then saves *"2 nginx pods wanted"* in **etcd** |
+| 5 | Control plane | **Scheduler** picks which **worker node** each pod should run on |
+| 6 | Control plane → Worker node | **API server** gives the pod to the **kubelet** on that node (kubelet keeps watching the API server for new work) |
+| 7 | Worker node | **kubelet** tells the **container runtime** (containerd): *"run nginx"* |
+| 8 | Worker node | **Container runtime pulls the image** (from Docker Hub / ECR, through the NAT gateway) and **starts the container** |
+| 9 | Worker node → Control plane | **kubelet** reports back to the API server: *"pod is Running"* |
+| 10 | 🖥️ Bastion | `kubectl get pods` → I see 2 pods **Running** |
 
 ```
- ① SSH (port 22)           ② kubectl = HTTPS (port 443)      ③ control plane gives orders
-┌──────────┐            ┌──────────────┐            ┌────────────────────┐            ┌──────────────────┐
-│  Laptop  │ ─────────► │ Bastion EC2  │ ─────────► │ EKS control plane  │ ─────────► │ Worker nodes     │
-│ (me)     │            │ kubectl/helm │            │ API server (AWS)   │            │ kubelet → pods   │
-└──────────┘            └──────────────┘            └────────────────────┘            └──────────────────┘
-   my home              my VPC, public subnet       AWS-owned account                 my VPC, private subnet
+ ① SSH (22)        ② kubectl: HTTPS API call (443)     ③ API server ↔ kubelet       ④ pull + run
+┌────────┐       ┌─────────────┐       ┌──────────────────────────┐       ┌───────────────────────────────┐
+│ Laptop │ ────► │ Bastion EC2 │ ────► │ Control plane (AWS)      │ ────► │ Worker node (my VPC)          │
+│  (me)  │       │ kubectl     │       │ API server · etcd ·      │       │ kubelet → containerd          │
+│        │       │ helm        │       │ scheduler                │       │        → pulls image → pod ✅  │
+└────────┘       └─────────────┘       └──────────────────────────┘       └───────────────────────────────┘
+ my home          public subnet          AWS-owned account                  private subnet
 ```
 
-Example: on the bastion I type `kubectl get nodes`:
+> **Note:** `kubectl` manages what runs **on** the worker nodes (pods, deployments, services). The worker **nodes themselves** (the EC2 machines) are created by Terraform's **node group**, not by `kubectl`.
 
-1. `kubectl` reads `~/.kube/config` → finds the API server URL + uses the bastion's IAM role to log in.
-2. Sends an HTTPS request to the **control plane**.
-3. The control plane looks in **etcd** and replies: *"2 nodes, both Ready"*.
-
-> Nothing goes to the worker nodes for this command. For `kubectl apply`, the control plane picks a node and tells that node's **kubelet** to start the pod.
+> **In one line:** I SSH into the bastion → `kubectl` makes HTTPS API calls (443) to the API server in the AWS-managed control plane → the API server talks to the kubelet on a worker node → kubelet tells the container runtime to pull the image and run the container.
 
 ### Where each command runs
 
