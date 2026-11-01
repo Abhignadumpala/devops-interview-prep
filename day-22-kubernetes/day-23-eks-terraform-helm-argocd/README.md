@@ -38,6 +38,8 @@
 
 ## 2. What we build (architecture)
 
+![EKS with Terraform + Argo CD architecture](images/eks-terraform-argocd-architecture.png)
+
 ```
                          Internet
                             │
@@ -812,7 +814,7 @@ Developer ──push YAML──► Git repo ◄──watches── Argo CD (in c
 1. **Helm** = the app store program. It sits on the **bastion**.
 2. I type `helm install argocd ...` on the **bastion**.
 3. Helm sends the Argo CD YAML files to the cluster's **API server** (HTTPS 443).
-4. Argo CD gets **installed and runs in the cluster** (worker nodes), **not on the bastion**.
+4. Argo CD gets **installed in the cluster** and **runs on the worker nodes as pods**, **not on the bastion**.
 
 ```
 🖥️ Bastion                         ☸️ EKS cluster
@@ -831,6 +833,8 @@ kubectl get pods -n argocd -o wide   # NODE column = worker node names, not the 
 ```
 
 ### Is Argo CD installed on every worker node?
+
+![Argo CD pods spread across worker nodes](images/eks-terraform-argocd-architecture.png)
 
 **No.** Argo CD is a group of **pods** (Deployments + one StatefulSet), usually **1 copy of each** by default. The **scheduler** places each pod on **one** worker node that has free CPU/RAM. So the pods are **spread across** the nodes, not copied to every node.
 
