@@ -1223,6 +1223,87 @@ helm rollback argocd 1 -n argocd
 helm uninstall argocd -n argocd       # removes Argo CD pods and the LB
 ```
 
+### Check a release and roll back (helm list, kubectl get pods, helm rollback)
+
+All commands run on the **🖥️ BASTION**.
+
+**Important difference:**
+
+| Command | Shows | Does NOT show |
+|---|---|---|
+| `helm list` | **Releases** (installed charts): name, revision, chart version, app version | Pods |
+| `kubectl get pods` | **Pods** running in the cluster | Chart version / revision |
+
+> One Helm **release** creates **many pods**. Argo CD = 1 release → ~7 pods. So use `helm list` for "which version is installed?" and `kubectl get pods` for "how many pods are running?"
+
+**Step 1 — Which release and version is installed?**
+
+```bash
+# 🖥️ BASTION
+helm list -n argocd        # releases in the argocd namespace
+helm list -A               # releases in ALL namespaces
+```
+
+```
+NAME    NAMESPACE  REVISION  STATUS    CHART           APP VERSION
+argocd  argocd     2         deployed  argo-cd-8.x.x   v3.x.x
+```
+
+| Column | Meaning |
+|---|---|
+| `NAME` | Release name you gave in `helm install argocd ...` |
+| `REVISION` | How many times it was installed/upgraded (1 = first install) |
+| `STATUS` | `deployed` = working, `failed` = install/upgrade broke |
+| `CHART` | Chart name + **chart version** (from `Chart.yaml` `version`) |
+| `APP VERSION` | Version of **Argo CD itself** (from `Chart.yaml` `appVersion`) |
+
+**Step 2 — Which pods are running?**
+
+```bash
+# 🖥️ BASTION
+kubectl get pods -n argocd          # list the pods
+kubectl get pods -n argocd -o wide  # + which worker node each pod is on
+```
+
+**Step 3 — See all revisions (history) before rolling back**
+
+```bash
+# 🖥️ BASTION
+helm history argocd -n argocd
+```
+
+```
+REVISION  STATUS      CHART          DESCRIPTION
+1         superseded  argo-cd-8.x.x  Install complete
+2         deployed    argo-cd-8.x.x  Upgrade complete
+```
+
+**Step 4 — Roll back to revision 1**
+
+```bash
+# 🖥️ BASTION
+helm rollback argocd 1 -n argocd
+#             ^^^^^^ ^
+#             release revision number to go back to
+```
+
+**Step 5 — Check it worked**
+
+```bash
+# 🖥️ BASTION
+helm history argocd -n argocd   # new row: revision 3 "Rollback to 1"
+kubectl get pods -n argocd      # pods restart with the old settings
+```
+
+> **Rollback does not delete history.** Going back to revision 1 creates a **new revision 3** that is a copy of revision 1. Revision numbers only go up.
+
+```
+rev 1 (install) ──► rev 2 (upgrade, broken) ──► rev 3 (= copy of rev 1)
+                                                  helm rollback argocd 1
+```
+
+> **Interview one-liner:** `helm list` shows releases with their revision, chart version and app version. `kubectl get pods` shows the pods the release created. `helm history` shows all revisions, and `helm rollback <release> <revision>` goes back to an old one, saved as a new revision.
+
 ---
 
 ## 10. Destroy everything
@@ -1287,6 +1368,17 @@ terraform destroy -auto-approve
 ---
 
 ## 13. Interview Questions
+
+### ⭐ Very Important
+
+**Q1. How do you check which Helm releases are installed and their version?**
+`helm list -n <ns>` (or `helm list -A` for all namespaces). It shows release name, revision, status, chart version and app version. It does not list pods; use `kubectl get pods -n <ns>` for that.
+
+**Q2. How do you roll back a Helm release?**
+`helm history <release> -n <ns>` to see revisions, then `helm rollback <release> <revision> -n <ns>`, e.g. `helm rollback argocd 1 -n argocd`. The rollback is saved as a new revision (rev 3 = copy of rev 1).
+
+**Q3. What is the difference between chart version and app version?**
+Chart version (`version` in Chart.yaml) is the version of the Helm package. App version (`appVersion`) is the version of the app inside it, e.g. Argo CD v3.
 
 ### Other Questions
 
