@@ -122,6 +122,8 @@ eks-terraform/
 
 Class code: [devopsbyraham/eks-code](https://github.com/devopsbyraham/eks-code). Names changed to mine in `terraform.tfvars`.
 
+> **My runnable code:** [k8s-eks-projects / 01-eks-terraform](https://github.com/Abhignadumpala/k8s-eks-projects/tree/main/01-eks-terraform)
+
 ### terraform.tfvars (my values)
 
 ```hcl
@@ -560,9 +562,9 @@ chown ubuntu:ubuntu /home/ubuntu/.profile
 **Step 1: get the code and set my values**
 
 ```bash
-git clone https://github.com/devopsbyraham/eks-code.git
-cd eks-code
-vim terraform.tfvars        # put my names: abhigna, abhigna-cluster, abhigna-eks-key
+git clone git@github.com:Abhignadumpala/k8s-eks-projects.git
+cd k8s-eks-projects/01-eks-terraform
+cat terraform.tfvars        # my names already set: abhigna, abhigna-cluster, abhigna-eks-key
 ```
 
 **Step 2: init, plan, apply**
