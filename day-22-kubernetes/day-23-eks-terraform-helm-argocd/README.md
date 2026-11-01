@@ -979,6 +979,68 @@ Worker node 1                        Worker node 2
 | Something that runs on **every** node? | That's a **DaemonSet** (e.g. `kube-proxy`, `aws-node`). Argo CD is **not** a DaemonSet |
 | Production (high availability)? | Run **2+ copies** of each pod (Helm values, e.g. `server.replicas=2`) so they sit on different nodes |
 
+### Why are different Argo CD pods on node 1 and node 2?
+
+**Argo CD is not one program.** It is about **7 small programs (microservices)**, each in its **own pod** with its own job. Same idea as **RoboShop**: `catalogue`, `cart`, `user`, `payment` were separate services.
+
+| Argo CD pod | Job |
+|---|---|
+| `argocd-server` | Website (UI) + API I open in the browser |
+| `argocd-repo-server` | Reads my Git repo, builds the YAML |
+| `argocd-application-controller` | Compares Git vs cluster, applies changes |
+| `argocd-redis` | Cache (fast memory) |
+| `argocd-dex-server` | Login (GitHub / SSO) |
+| `argocd-notifications-controller` | Slack / email alerts |
+| `argocd-applicationset-controller` | Creates many apps from one template |
+
+**Step by step:**
+
+1. Helm creates **7 different pods**, 1 copy each.
+2. The **scheduler** places **each pod on one node** (checks free CPU/RAM, spreads them out).
+3. So node 1 gets some pods, node 2 gets the others → **different pods on each node**.
+4. **All 7 together = one working Argo CD.**
+
+> The split in the diagram is **only an example**. My real cluster may differ. Check with `kubectl get pods -n argocd -o wide` (NODE column).
+
+### What if I have 20 worker nodes?
+
+**No problem.** Argo CD still has only 7 pods, so at most 7 nodes get one. The other 13 nodes have **no** Argo CD pod, and that is **normal**. Argo CD still deploys apps to **all 20 nodes**.
+
+```
+Node 1: argocd-server          Node 8 ... Node 20:
+Node 2: argocd-repo-server       no Argo CD pods → fine ✅
+Node 3: argocd-controller
+...
+```
+
+**Why it works from any node (cluster level):**
+
+| # | Reason |
+|---|---|
+| 1 | **Argo CD talks to the API server, not to nodes.** It sends YAML to the API server (like I do with `kubectl`); the **scheduler** picks a node (any of the 20) for the app pods |
+| 2 | **Pods reach each other across nodes.** `argocd-server` (node 1) calls `argocd-repo-server` (node 2) by **Service name**, not IP. The **VPC CNI** gives every pod a VPC IP, so any pod can reach any pod. Same as RoboShop: `cart` reached `catalogue` by DNS name |
+| 3 | **The load balancer finds the UI pod** wherever `argocd-server` runs |
+
+```
+Argo CD (on any node) ──► API server ──► scheduler picks any node ──► kubelet runs the app pod
+```
+
+| Question | Answer |
+|---|---|
+| Must Argo CD be on a particular node? | ❌ No, any node works |
+| Must it be on all nodes? | ❌ No. "One per node" = **DaemonSet** (`kube-proxy`, log agents) |
+| Does it manage the whole cluster? | ✅ Yes, through the API server |
+| A node with Argo CD pods dies? | Pods are **recreated on another node** |
+
+**When companies do choose the node (real time):**
+
+| Want | How |
+|---|---|
+| Keep Argo CD on separate "tools" nodes | `nodeSelector` / node affinity (e.g. node group labeled `role=tools`) |
+| No downtime if a node dies (HA) | **2+ copies** (`server.replicas=2`) + **pod anti-affinity** so copies land on **different** nodes |
+
+> **Interview one-liner:** Argo CD is a set of microservice pods that can run on any node. It manages the whole cluster through the API server, and the scheduler places app pods on any node. Pods talk across nodes by Service name. For HA, run 2+ replicas with anti-affinity.
+
 ### Class demo (Killercoda) vs my EKS: why did the trainer install Helm on the control plane?
 
 In class the trainer ran `curl ... get-helm-4 | ./get_helm.sh` at the prompt `root@controlplane`. That does **not** install Helm *into* the cluster. It installs the **`helm` program** on the machine they were typing on.
@@ -1297,6 +1359,12 @@ The node group launches EC2s with the EKS AMI. User data holds the API endpoint 
 
 **Q23. How does the EKS control plane reach the worker nodes?**
 kubelet calls the API server on 443 (register, watch pods). For logs/exec, the API server reaches kubelet on 10250 through EKS-managed ENIs placed in my subnets.
+
+**Q24. Why are different Argo CD pods on different nodes?**
+Argo CD is ~7 microservices, each its own pod (1 copy by default). The scheduler puts each pod on one node, so they spread across nodes.
+
+**Q25. With 20 nodes, does Argo CD need to be on every node?**
+No. It runs on a few nodes and manages the whole cluster through the API server; the scheduler places app pods on any node. One-pod-per-node is a DaemonSet, which Argo CD is not.
 ---
 
 **Source:** [Class code: devopsbyraham/eks-code](https://github.com/devopsbyraham/eks-code) · [terraform-aws-modules/eks](https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest) · [terraform-aws-modules/vpc](https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/latest) · [Helm docs](https://helm.sh/docs/) · [Argo CD Helm chart](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) · [Argo CD getting started](https://argo-cd.readthedocs.io/en/stable/getting_started/)
