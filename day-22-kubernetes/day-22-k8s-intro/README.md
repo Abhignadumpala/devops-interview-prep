@@ -104,8 +104,6 @@ Kubernetes **orchestrates** containers. It does five main jobs:
    + IAM · VPC · ALB/NLB integration
 ```
 
-> **Interview one-liner:** Kubernetes schedules, scales, heals and updates containers. **EKS** is AWS's managed Kubernetes: AWS runs the control plane (API server + etcd), and EKS works with IAM, VPC and load balancers, so the team does less ops work.
-
 ---
 
 ## 3. Kubernetes in Real Time
