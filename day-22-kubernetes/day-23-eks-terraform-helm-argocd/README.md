@@ -898,6 +898,70 @@ templates/ ───┘
 
 > **Interview one-liner:** Helm is the package manager for Kubernetes. A **chart** is a package of templated YAML, **values.yaml** holds the settings, and a **release** is one installed copy. It gives one-command install, upgrade and rollback.
 
+### Helm use cases (2 main ones)
+
+| Use case | What | Example |
+|---|---|---|
+| **1. Manage releases** | Install, check, upgrade and roll back an app with one command | `helm list`, `helm upgrade`, `helm rollback argocd 1` (see [section 9](#check-a-release-and-roll-back-helm-list-kubectl-get-pods-helm-rollback)) |
+| **2. Install ready-made tools** | Every popular tool already has a chart. Find it on **Artifact Hub**, copy the commands, install | Argo CD, Jenkins, Prometheus, Grafana, ingress-nginx |
+
+### Use case 2: Artifact Hub (the "app store" for Helm charts)
+
+**Definition:** **Artifact Hub** ([artifacthub.io](https://artifacthub.io)) is a public website where tool publishers list their Helm charts. Whatever tool you want **inside the K8s cluster**, search it there and you get the ready-made install commands.
+
+> Artifact Hub is the **catalog** (search page). The chart itself is stored in the **publisher's repo**. `helm repo add` points Helm to that repo, and `helm install` downloads the chart from it and installs it.
+
+**Steps:**
+
+| Step | Where | What to do |
+|---|---|---|
+| 1 | 💻 Laptop browser | Open [artifacthub.io](https://artifacthub.io), search the tool (e.g. `argo-cd`) |
+| 2 | 💻 Laptop browser | Pick the chart from the **official / Verified Publisher** (see below) |
+| 3 | 💻 Laptop browser | Click **INSTALL** → it shows the `helm repo add` + `helm install` commands. Copy them |
+| 4 | 🖥️ Bastion | Paste and run: add repo → update → install |
+| 5 | 🖥️ Bastion | Check: `helm list -n <ns>` and `kubectl get pods -n <ns>` |
+
+**How to pick the right chart (many people publish charts with the same name):**
+
+| Badge / check | Meaning |
+|---|---|
+| ✅ **Verified Publisher** | Artifact Hub confirmed the publisher really owns that repo |
+| 🏅 **Official** | Published by the tool's own team (e.g. Argo project for Argo CD) |
+| ⭐ Stars + recent updates | Popular and maintained |
+
+> Always use the **official / Verified Publisher** chart. A random chart could be old, broken or unsafe.
+
+**Official charts for common tools:**
+
+| Tool | Repo add (name + URL) | Install chart |
+|---|---|---|
+| Argo CD | `argo https://argoproj.github.io/argo-helm` | `argo/argo-cd` |
+| Jenkins | `jenkins https://charts.jenkins.io` | `jenkins/jenkins` |
+| Prometheus + Grafana | `prometheus-community https://prometheus-community.github.io/helm-charts` | `prometheus-community/kube-prometheus-stack` |
+| Grafana only | `grafana https://grafana.github.io/helm-charts` | `grafana/grafana` |
+
+**Example: install Jenkins the same way as Argo CD**
+
+```bash
+# 🖥️ BASTION (commands copied from Artifact Hub → INSTALL)
+helm repo add jenkins https://charts.jenkins.io   # 1. tell Helm where the chart lives
+helm repo update                                  # 2. get the latest chart list
+helm install jenkins jenkins/jenkins -n jenkins --create-namespace   # 3. install
+helm list -n jenkins                              # 4. check the release
+kubectl get pods -n jenkins                       # 5. check the pods
+```
+
+**Useful extra commands:**
+
+```bash
+# 🖥️ BASTION
+helm search repo jenkins                          # find charts in repos you added
+helm show values jenkins/jenkins > values.yaml    # see all settings you can change
+helm pull jenkins/jenkins --untar                 # download the chart folder to look inside
+```
+
+> **Interview one-liner:** Helm has two main uses: managing releases (install, upgrade, rollback) and installing ready-made tools. Every popular tool (Argo CD, Jenkins, Prometheus) publishes an official chart on Artifact Hub; I pick the Verified Publisher chart, copy the `helm repo add` and `helm install` commands and run them on the bastion.
+
 ---
 
 ## 9. Install Argo CD with Helm
@@ -1379,6 +1443,12 @@ terraform destroy -auto-approve
 
 **Q3. What is the difference between chart version and app version?**
 Chart version (`version` in Chart.yaml) is the version of the Helm package. App version (`appVersion`) is the version of the app inside it, e.g. Argo CD v3.
+
+**Q4. How do you install a tool like Jenkins or Prometheus in a K8s cluster?**
+With Helm. Search the tool on Artifact Hub, choose the official / Verified Publisher chart, then run its `helm repo add`, `helm repo update` and `helm install` commands from the admin machine (bastion).
+
+**Q5. What is Artifact Hub?**
+A public catalog of Helm charts. It lists each chart's repo, install commands, values and badges (Verified Publisher, Official). The chart is downloaded from the publisher's repo, not from Artifact Hub.
 
 ### Other Questions
 
