@@ -147,62 +147,116 @@ Example: I want 2 nginx pods (`kubectl apply -f deploy.yaml`).
 
 > **In one line:** I SSH into the bastion → `kubectl` makes HTTPS API calls (443) to the API server in the AWS-managed control plane → the API server talks to the kubelet on a worker node → kubelet tells the container runtime to pull the image and run the container.
 
-### How do worker nodes join the control plane? (kubeadm join vs EKS)
+### How do worker nodes join the control plane? (kubeadm vs EKS)
 
-**Normal self-managed cluster (kubeadm):** I join each worker **by hand**.
+A worker node is just a normal machine until it **joins** the cluster. Joining means: the node finds the control plane, proves who it is, and registers itself.
+
+#### A) Normal self-managed cluster (kubeadm): I do it by hand
+
+**Step 1: create the control plane** (on the control-plane machine)
 
 ```bash
-# on the control plane
-kubeadm init                       # prints a join command with a token
-# on each worker node
-kubeadm join 10.0.0.10:6443 --token abc123.xyz --discovery-token-ca-cert-hash sha256:...
+kubeadm init
 ```
 
-| Part of the join command | Meaning |
+At the end it prints a **join command**. Copy it.
+
+**Step 2: run the join command** (on each worker machine)
+
+```bash
+kubeadm join 10.0.0.10:6443 --token abc123.xyz \
+  --discovery-token-ca-cert-hash sha256:1a2b3c...
+```
+
+| Part | Simple meaning |
 |---|---|
-| `10.0.0.10:6443` | Where the API server is |
-| `--token` | Temporary password so the worker can say "let me in" |
-| `--discovery-token-ca-cert-hash` | Proof that it's the **real** control plane (not a fake one) |
+| `10.0.0.10:6443` | **Address** of the API server (where to go) |
+| `--token abc123.xyz` | **Temporary password**: "let me in" |
+| `--discovery-token-ca-cert-hash` | **Proof the control plane is real**, not a fake one |
 
-After `join`, the worker's **kubelet** gets its own certificate and **registers the node** with the API server.
+**Step 3: kubelet registers the node**
 
-**EKS (my lab): no `join` command. The node group does it automatically.**
+The worker's **kubelet** gets its own certificate and tells the API server: *"I'm node01, I'm ready."*
 
-| Step | What happens |
-|---|---|
-| 1 | Terraform creates the **node group** → AWS launches EC2s from the **EKS-optimized AMI** (Amazon Linux 2023) |
-| 2 | Each EC2 boots with **user data** that already contains the cluster **name**, **API endpoint** and **CA certificate** (this replaces the address + hash in `kubeadm join`) |
-| 3 | The bootstrap tool on the node (`nodeadm` on AL2023) writes the kubelet config and starts **kubelet** |
-| 4 | kubelet logs in to the API server with the node's **IAM role**, not a token (this replaces `--token`). An **EKS access entry** lets that role in as a node (`system:nodes`) |
-| 5 | kubelet **registers the node** → `kubectl get nodes` shows it **Ready** |
+**Step 4: check** (on the control plane)
 
-| | kubeadm (self-managed) | EKS (my lab) |
+```bash
+kubectl get nodes        # node01   Ready
+```
+
+#### B) EKS (my lab): no join command, it's automatic
+
+**Step 1: Terraform creates the node group**
+
+`terraform apply` → the EKS module creates a **managed node group** → AWS launches 2 EC2 instances from the **EKS-optimized AMI** (Amazon Linux 2023). This AMI already has **kubelet** and **containerd** installed.
+
+**Step 2: each EC2 boots with user data**
+
+AWS gives every new node a small config (user data) that already contains:
+
+- the **cluster name**
+- the **API endpoint** (replaces the `10.0.0.10:6443` address)
+- the **CA certificate** (replaces `--discovery-token-ca-cert-hash`)
+
+**Step 3: kubelet starts**
+
+A bootstrap tool on the node (`nodeadm`) reads that config, writes the kubelet settings and **starts kubelet**.
+
+**Step 4: kubelet logs in with the node's IAM role**
+
+No token. kubelet proves who it is using the **IAM role attached to the EC2** (replaces `--token`). An **EKS access entry** (created by the module) says: *"this IAM role is allowed in as a node."*
+
+**Step 5: the node registers**
+
+kubelet tells the API server *"I'm ready"*. Check from the bastion:
+
+```bash
+kubectl get nodes        # 2 nodes   Ready
+```
+
+#### Side by side
+
+| What the node needs | kubeadm (by hand) | EKS (automatic) |
 |---|---|---|
-| Who joins the node | Me, `kubeadm join` | Automatic, node group + user data |
-| Where to find the API server | Address in the join command | Cluster endpoint in user data |
-| How the node proves who it is | Bootstrap **token** | **IAM role** of the EC2 |
-| How the node trusts the control plane | `--discovery-token-ca-cert-hash` | Cluster **CA certificate** in user data |
+| Who starts the join | Me: `kubeadm join` | Node group + user data |
+| Where is the API server? | Address in the join command | **API endpoint** in user data |
+| How do I prove who I am? | **Token** | **IAM role** of the EC2 |
+| Is the control plane real? | CA **hash** in the join command | **CA certificate** in user data |
+| kubelet + containerd installed by | Me | Already in the **EKS AMI** |
 
 ### How does the AWS control plane talk to my worker nodes?
 
-The control plane is in an **AWS-owned VPC**; my nodes are in **my VPC**. EKS connects them like this:
+The control plane lives in an **AWS-owned VPC**. My worker nodes live in **my VPC**. They still talk to each other, in **2 directions**.
 
-| Direction | How | Used for |
-|---|---|---|
-| **kubelet → API server** | HTTPS **443** to the cluster endpoint | Register node, **watch for new pods**, report status. kubelet **pulls** its work: the API server doesn't push orders |
-| **API server → kubelet** | Port **10250** through **EKS-managed network interfaces (ENIs)** that EKS puts in **my subnets** | `kubectl logs`, `kubectl exec`, `kubectl port-forward` |
+**Direction 1: kubelet → API server** (most of the traffic)
+
+1. kubelet connects to the API server endpoint on **HTTPS 443**.
+2. It **registers** the node and sends **status** (Ready, CPU, memory).
+3. It keeps **watching** the API server: *"any new pod for me?"*
+4. When the scheduler gives it a pod, kubelet tells **containerd** to pull the image and run it.
+
+> kubelet **pulls** its work. The API server doesn't push orders to it.
+
+**Direction 2: API server → kubelet** (only for some commands)
+
+1. I run `kubectl logs`, `kubectl exec` or `kubectl port-forward` on the bastion.
+2. The API server must reach the kubelet **directly**, on port **10250**.
+3. EKS places its own **network interfaces (ENIs)** inside **my subnets**. The API server uses them to reach my nodes.
 
 ```
- AWS-owned VPC                                My VPC (private subnets)
-┌──────────────────────┐                     ┌──────────────────────────┐
-│ EKS control plane    │ ◄── HTTPS 443 ───── │ kubelet (worker node)    │  register, watch pods, report
-│ API server           │                     │                          │
-│                      │ ── EKS ENIs ──────► │ kubelet :10250           │  logs, exec, port-forward
-└──────────────────────┘                     └──────────────────────────┘
-          Security groups (created by the EKS module) allow this traffic
+ AWS-owned VPC                                     My VPC (private subnets)
+┌───────────────────────┐                         ┌───────────────────────────┐
+│ EKS control plane     │ ◄── 1. HTTPS 443 ────── │ kubelet (worker node)     │
+│ API server            │   register, watch pods, │                           │
+│                       │   report status         │                           │
+│                       │ ── 2. port 10250 ─────► │ kubelet                   │
+│                       │   via EKS ENIs in my    │ (logs, exec,              │
+│                       │   subnets               │  port-forward)            │
+└───────────────────────┘                         └───────────────────────────┘
+        The security groups created by the EKS module allow both directions
 ```
 
-> **One line:** In kubeadm I run `kubeadm join` with a token. In EKS the node group launches nodes that already know the API endpoint and CA cert, and kubelet logs in with the node's IAM role. kubelet talks to the API server on 443; the API server reaches kubelet on 10250 through EKS-managed ENIs in my subnets.
+> **In short:** kubeadm → I run `kubeadm join` with a token. EKS → the node group launches nodes that already know the API endpoint and CA cert; kubelet logs in with the EC2's IAM role and registers itself. After that, kubelet talks to the API server on **443**, and the API server reaches kubelet on **10250** through EKS ENIs in my subnets.
 
 ### Where each command runs
 
