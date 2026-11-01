@@ -830,6 +830,40 @@ Developer ──push YAML──► Git repo ◄──watches── Argo CD (in c
 kubectl get pods -n argocd -o wide   # NODE column = worker node names, not the bastion
 ```
 
+### Is Argo CD installed on every worker node?
+
+**No.** Argo CD is a group of **pods** (Deployments + one StatefulSet), usually **1 copy of each** by default. The **scheduler** places each pod on **one** worker node that has free CPU/RAM. So the pods are **spread across** the nodes, not copied to every node.
+
+| Argo CD pod | Job | Copies (default) |
+|---|---|---|
+| `argocd-server` | UI + API (what I open in the browser) | 1 |
+| `argocd-repo-server` | Reads my Git repo, builds the YAML | 1 |
+| `argocd-application-controller` | Compares Git vs cluster, applies changes (StatefulSet) | 1 |
+| `argocd-applicationset-controller` | Creates many Argo CD apps from one template | 1 |
+| `argocd-redis` | Cache | 1 |
+| `argocd-dex-server` | Login with GitHub / SSO | 1 |
+| `argocd-notifications-controller` | Sends Slack / email alerts | 1 |
+
+Example with my 2 worker nodes:
+
+```
+Worker node 1                        Worker node 2
+┌───────────────────────────┐       ┌───────────────────────────┐
+│ argocd-server             │       │ argocd-repo-server        │
+│ argocd-redis              │       │ argocd-application-ctrl   │
+│ argocd-dex-server         │       │ argocd-applicationset-ctrl│
+│                           │       │ argocd-notifications-ctrl │
+└───────────────────────────┘       └───────────────────────────┘
+        (scheduler decides; your layout may be different)
+```
+
+| Question | Answer |
+|---|---|
+| Who decides which node? | The **scheduler** in the control plane |
+| What if a node dies? | Its Argo CD pods are **recreated on the other node** |
+| Something that runs on **every** node? | That's a **DaemonSet** (e.g. `kube-proxy`, `aws-node`). Argo CD is **not** a DaemonSet |
+| Production (high availability)? | Run **2+ copies** of each pod (Helm values, e.g. `server.replicas=2`) so they sit on different nodes |
+
 ### Common questions
 
 | Question | Answer |
@@ -1077,6 +1111,9 @@ No. Helm 3 is only a client tool on the machine that runs it (the bastion). It s
 **Q19. Where does Argo CD run?**
 Inside the cluster, as pods in the `argocd` namespace on the worker nodes. The bastion only runs the `helm install` command.
 
+
+**Q20. Is Argo CD installed on every worker node?**
+No. It's a set of pods (1 copy each by default) that the scheduler spreads across nodes. Pods that run on every node are DaemonSets, like kube-proxy and aws-node.
 ---
 
 **Source:** [Class code: devopsbyraham/eks-code](https://github.com/devopsbyraham/eks-code) · [terraform-aws-modules/eks](https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest) · [terraform-aws-modules/vpc](https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/latest) · [Helm docs](https://helm.sh/docs/) · [Argo CD Helm chart](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) · [Argo CD getting started](https://argo-cd.readthedocs.io/en/stable/getting_started/)
