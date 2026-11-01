@@ -48,6 +48,8 @@
 
 ## 2. Why Kubernetes? (problems with only Docker)
 
+> **In short (say this in interviews):** Kubernetes orchestrates containers by scheduling them across nodes, scaling them, restarting failed ones, handling service discovery, and performing rolling updates. Amazon EKS is AWS's managed Kubernetes service. AWS runs and patches the control plane, so your team doesn't operate the API server or etcd. EKS also integrates with IAM, VPC networking, and load balancers, which reduces operational burden.
+
 **Docker alone** is great on one server. In production with many containers and servers, these problems appear:
 
 | Problem with only Docker | What Kubernetes does |
