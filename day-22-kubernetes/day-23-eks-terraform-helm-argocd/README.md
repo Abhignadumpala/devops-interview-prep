@@ -898,6 +898,33 @@ helm version
 
 > My bastion bootstrap script already does this automatically (it uses `get-helm-3` → Helm 3; the trainer used Helm 4). Both work for Argo CD with the same commands.
 
+### Do I need kubeadm on the bastion?
+
+**No.** The bastion needs only **kubectl, helm and AWS CLI**, and the bootstrap script installs them automatically.
+
+**kubeadm** = a tool to **build your own cluster by hand** (`kubeadm init` makes a control plane, `kubeadm join` adds worker nodes). Killercoda's cluster was built this way. In EKS, **AWS builds the control plane** and **Terraform's node group** creates the worker nodes, so kubeadm has no job.
+
+| Tool | On bastion? | Why |
+|---|---|---|
+| **kubectl** | ✅ auto-installed | Sends commands to the EKS API server |
+| **helm** | ✅ auto-installed | Installs apps like Argo CD |
+| **AWS CLI** | ✅ auto-installed | `aws eks update-kubeconfig` logs kubectl in to EKS |
+| **eksctl** | Optional, auto-installed | Extra EKS helper |
+| **kubeadm** | ❌ No | Only for self-built clusters |
+
+| | Self-managed (Killercoda, kubeadm) | EKS (my setup) |
+|---|---|---|
+| Who builds the control plane | Me: `kubeadm init` | AWS |
+| Who adds worker nodes | Me: `kubeadm join` | Terraform node group |
+| Tools on my admin machine | kubeadm, kubelet, kubectl, helm | kubectl, helm, AWS CLI |
+
+```bash
+# 🖥️ BASTION: check tools
+kubectl version --client
+helm version
+aws --version
+```
+
 ### Common questions
 
 | Question | Answer |
@@ -1148,6 +1175,9 @@ Inside the cluster, as pods in the `argocd` namespace on the worker nodes. The b
 
 **Q20. Is Argo CD installed on every worker node?**
 No. It's a set of pods (1 copy each by default) that the scheduler spreads across nodes. Pods that run on every node are DaemonSets, like kube-proxy and aws-node.
+
+**Q21. Do you need kubeadm for EKS?**
+No. kubeadm builds self-managed clusters (`kubeadm init` / `join`). In EKS, AWS runs the control plane and node groups create the worker nodes. The admin machine only needs kubectl, helm and AWS CLI.
 ---
 
 **Source:** [Class code: devopsbyraham/eks-code](https://github.com/devopsbyraham/eks-code) · [terraform-aws-modules/eks](https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest) · [terraform-aws-modules/vpc](https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/latest) · [Helm docs](https://helm.sh/docs/) · [Argo CD Helm chart](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) · [Argo CD getting started](https://argo-cd.readthedocs.io/en/stable/getting_started/)
