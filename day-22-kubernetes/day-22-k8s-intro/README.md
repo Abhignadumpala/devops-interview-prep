@@ -9,18 +9,19 @@
 1. [What is Kubernetes?](#1-what-is-kubernetes)
 2. [Why Kubernetes? (problems with only Docker)](#2-why-kubernetes-problems-with-only-docker)
 3. [Kubernetes in Real Time](#3-kubernetes-in-real-time)
-4. [Kubernetes Architecture](#4-kubernetes-architecture)
-5. [Pod](#5-pod)
-6. [ReplicaSet](#6-replicaset)
-7. [Deployment](#7-deployment)
-8. [Pod vs ReplicaSet vs Deployment](#8-pod-vs-replicaset-vs-deployment)
-9. [Multi-Container Pod](#9-multi-container-pod)
-10. [Init Container](#10-init-container)
-11. [Sidecar Container](#11-sidecar-container)
-12. [Job](#12-job)
-13. [CronJob](#13-cronjob)
-14. [Commands Cheat Sheet](#14-commands-cheat-sheet)
-15. [Interview Questions](#15-interview-questions)
+4. [EKS Cluster Creation (Manual, Console)](#4-eks-cluster-creation-manual-console)
+5. [Kubernetes Architecture](#5-kubernetes-architecture)
+6. [Pod](#6-pod)
+7. [ReplicaSet](#7-replicaset)
+8. [Deployment](#8-deployment)
+9. [Pod vs ReplicaSet vs Deployment](#9-pod-vs-replicaset-vs-deployment)
+10. [Multi-Container Pod](#10-multi-container-pod)
+11. [Init Container](#11-init-container)
+12. [Sidecar Container](#12-sidecar-container)
+13. [Job](#13-job)
+14. [CronJob](#14-cronjob)
+15. [Commands Cheat Sheet](#15-commands-cheat-sheet)
+16. [Interview Questions](#16-interview-questions)
 
 ---
 
@@ -136,7 +137,73 @@ Local practice: **minikube**, **kind**, **k3s**.
 
 ---
 
-## 4. Kubernetes Architecture
+## 4. EKS Cluster Creation (Manual, Console)
+
+**Definition:** The settings you pick when you create an EKS cluster: Kubernetes version, support type, observability, add-ons and worker nodes.
+
+> **Real time:** in class we created the cluster by hand in the **AWS console (GUI)**. In real jobs we create it with **Terraform modules** (e.g. `terraform-aws-modules/eks/aws`), so the setup is repeatable, reviewed in Git and the same in every environment. See [Day 23: EKS with Terraform](../day-23-eks-terraform-helm-argocd/README.md).
+
+### 1. Kubernetes version: upgrade policy
+
+| Option | Support period | Cost | Real time |
+|---|---|---|---|
+| **Standard support** ✅ | **14 months** after the version is released on EKS | Normal price | **We choose this** and upgrade on time |
+| **Extended support** | 12 more months (26 in total) | Extra hourly charge per cluster | Only if you can't upgrade in time |
+
+> After standard support ends, a cluster on **extended** keeps running the old version but costs more. On **standard**, AWS auto-upgrades the control plane to the next version. So plan upgrades before the 14 months end.
+
+### 2. Control plane configuration
+
+A newer option: you pick a **control plane size/tier**. Default (standard) scales automatically; bigger tiers are for very large or busy clusters. AWS still runs it either way.
+
+### 3. Observability: metrics
+
+| Option | What it is | We chose |
+|---|---|---|
+| **Amazon CloudWatch** | AWS's own monitoring service | |
+| **Prometheus** | Open-source metrics tool (Amazon Managed Service for Prometheus scrapes the cluster) | ✅ |
+| **Network monitoring** | Shows traffic between pods, nodes and AWS services | ✅ enabled |
+
+### 4. Add-ons to install
+
+**Definition:** An **add-on** is extra software EKS installs and updates for you to give the cluster key features (networking, DNS, storage, metrics).
+
+| Add-on | What it does | Needed? |
+|---|---|---|
+| **Amazon VPC CNI** | Gives each pod an IP from your VPC (pod networking) | ✅ Must (default) |
+| **kube-proxy** | Network rules on each node so Services route traffic to pods | ✅ Must (default) |
+| **CoreDNS** | DNS inside the cluster: `cart` → pod IP (service discovery) | ✅ Must (default) |
+| **EKS Pod Identity Agent** | Lets pods get IAM permissions (e.g. EBS driver, S3 access) | ✅ Recommended |
+| **Amazon EBS CSI Driver** | Creates **EBS volumes** for pods that need storage (databases) | ✅ If you store data |
+| **Metrics Server** | CPU/RAM usage of pods and nodes → needed for `kubectl top` and **HPA** auto-scaling | ✅ |
+| **Prometheus Node Exporter** | Exports node metrics (CPU, memory, disk, network) for Prometheus | ✅ With Prometheus |
+| **Network Flow Monitor agent** | Collects network data for network monitoring | If network monitoring is on |
+
+```
+            EKS cluster add-ons
+Networking  → VPC CNI · kube-proxy · CoreDNS
+Security    → Pod Identity Agent
+Storage     → EBS CSI Driver
+Metrics     → Metrics Server · Node Exporter · (Prometheus)
+```
+
+### 5. Worker nodes: who creates them?
+
+**Definition:** **Worker nodes** are the EC2 machines where your pods run.
+
+| Option | Who creates and manages nodes | How |
+|---|---|---|
+| **EKS Auto Mode** | **AWS**: nodes are created **automatically** when pods need them, and removed when not needed | Turn on Auto Mode when creating the cluster |
+| **Managed node group** | **You** choose instance type, size, min/max count; AWS helps with launch and updates | Cluster → **Compute** tab → **Node groups** → **Add node group** |
+| **Fargate** | AWS, serverless: no EC2 to see, each pod runs on its own | Create a Fargate profile |
+
+> **Simple rule:** With Auto Mode, AWS creates the nodes for you. If you want to create the worker nodes yourself, go to **Node groups** and create one.
+
+> **Interview one-liner:** I pick **standard support** (14 months) and upgrade on time. The must-have add-ons are **VPC CNI, kube-proxy and CoreDNS**. I add the **EBS CSI driver** for storage, **Metrics Server** for HPA, and **Node Exporter** for Prometheus. Nodes come from **Auto Mode** (AWS creates them) or **node groups** (we create them). In real projects the cluster is created with **Terraform modules**, not the console.
+
+---
+
+## 5. Kubernetes Architecture
 
 **Definition:** a cluster has 2 parts: the **control plane** (the brain that **decides**) and **worker nodes** (the muscle that **runs** your pods).
 
@@ -177,12 +244,12 @@ Local practice: **minikube**, **kind**, **k3s**.
 
 ---
 
-## 5. Pod
+## 6. Pod
 
 **Definition:** a **Pod** is the **smallest deployable unit** in Kubernetes. It wraps **one or more containers** that share the same **IP address, network and storage**.
 
 - Pods are **ephemeral** (short-living objects).
-- Usually **1 container per pod**, but you can run **multiple containers** in the same pod if needed (see [Multi-Container Pod](#9-multi-container-pod)).
+- Usually **1 container per pod**, but you can run **multiple containers** in the same pod if needed (see [Multi-Container Pod](#10-multi-container-pod)).
 - Containers in a pod share the **same network namespace** (same IP, talk on `localhost`) and can share the **same storage volumes**.
 - When creating a pod, you specify the **image** along with **configuration** and **resource limits** (CPU / memory).
 - Pods are **temporary**: if a pod dies, it is **not** brought back by itself. A new pod (new name, new IP) must replace it → that's why we use ReplicaSet / Deployment.
@@ -210,7 +277,7 @@ kubectl delete pod nginx-pod     # it is gone for good, nobody recreates it
 
 ---
 
-## 6. ReplicaSet
+## 7. ReplicaSet
 
 **Definition:** a **ReplicaSet** makes sure a **fixed number of identical pods** (replicas) is **always running**. A pod dies → it creates a new one. Too many → it deletes extras.
 
@@ -260,7 +327,7 @@ kubectl scale rs nginx-rs --replicas=5   # now 5
 
 ---
 
-## 7. Deployment
+## 8. Deployment
 
 **Definition:** a **Deployment** manages **ReplicaSets** for you and adds **rolling updates** and **rollbacks**. It's what we use in real projects for stateless apps.
 
@@ -353,7 +420,7 @@ kubectl rollout undo deployment/web                  # back to the previous vers
 
 ---
 
-## 8. Pod vs ReplicaSet vs Deployment
+## 9. Pod vs ReplicaSet vs Deployment
 
 | | Pod | ReplicaSet | Deployment |
 |---|---|---|---|
@@ -368,7 +435,7 @@ kubectl rollout undo deployment/web                  # back to the previous vers
 
 ---
 
-## 9. Multi-Container Pod
+## 10. Multi-Container Pod
 
 **Definition:** a **multi-container pod** = **more than one container in a single pod**, working together for **one application**. One word: **teamwork**.
 
@@ -402,7 +469,7 @@ kubectl rollout undo deployment/web                  # back to the previous vers
 
 ---
 
-## 10. Init Container
+## 11. Init Container
 
 **Definition:** an **init container** runs **before** the app containers, does setup work, and **exits**. The main containers start **only after it completes successfully**. It **prepares the environment** so the app starts in the right conditions.
 
@@ -524,7 +591,7 @@ kubectl logs init-demo -c init-container    # "Preparing App"
 
 ---
 
-## 11. Sidecar Container
+## 12. Sidecar Container
 
 **Definition:** a **sidecar** is a helper container that runs **together with the main container in the same pod**, the whole time, to **support** it. One word: **assistant**.
 
@@ -668,7 +735,7 @@ kubectl exec <pod> -c myapp -- cat /opt/logs.txt
 
 ---
 
-## 12. Job
+## 13. Job
 
 **Definition:** a **Job** runs a pod for a **one-time or batch task** and makes sure it **runs until it completes successfully**, then **stops**. One word: **task**.
 
@@ -713,7 +780,7 @@ kubectl logs job/db-migration
 
 ---
 
-## 13. CronJob
+## 14. CronJob
 
 **Definition:** a **CronJob** creates **Jobs automatically on a schedule**, using **Linux cron syntax**. Schedule → automate → repeat.
 
@@ -784,7 +851,7 @@ kubectl create job test-run --from=cronjob/daily-backup   # run it now to test
 
 ---
 
-## 14. Commands Cheat Sheet
+## 15. Commands Cheat Sheet
 
 | Command | What it does |
 |---|---|
@@ -806,7 +873,7 @@ kubectl create job test-run --from=cronjob/daily-backup   # run it now to test
 
 ---
 
-## 15. Interview Questions
+## 16. Interview Questions
 
 ### ⭐ Very Important (asked in class)
 
@@ -906,6 +973,21 @@ backoffLimit = retries before the Job fails; completions = successful runs neede
 **Q18. CronJob concurrencyPolicy options?**
 Allow (run together), Forbid (skip if still running), Replace (stop old, start new).
 
+**Q19. EKS standard vs extended support?**
+Standard = 14 months of support per version at normal price. Extended = 12 more months at extra cost. Use standard and upgrade on time.
+
+**Q20. Which add-ons does an EKS cluster need?**
+Must: VPC CNI, kube-proxy, CoreDNS. Common extras: EKS Pod Identity Agent, EBS CSI driver (storage), Metrics Server (HPA), Prometheus Node Exporter (node metrics).
+
+**Q21. Why is HPA not scaling? (`kubectl top` shows an error)**
+Metrics Server is not installed. HPA needs it to read pod CPU/RAM.
+
+**Q22. How do you create an EKS cluster in real projects?**
+With Terraform modules (infrastructure as code), not the console, so it is repeatable and reviewed in Git.
+
+**Q23. EKS Auto Mode vs managed node group?**
+Auto Mode: AWS creates, scales and manages the worker nodes automatically. Managed node group: you choose the instance type and min/max count (Compute → Node groups → Add node group).
+
 ---
 
-**Source:** [Kubernetes docs: components](https://kubernetes.io/docs/concepts/overview/components/) · [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) · [ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/) · [Init containers](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) · [Sidecar containers](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) · [Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/) · [CronJob](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/)
+**Source:** [Kubernetes docs: components](https://kubernetes.io/docs/concepts/overview/components/) · [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/) · [ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/) · [Init containers](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) · [Sidecar containers](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) · [Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/) · [CronJob](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/) · [EKS version support](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html) · [EKS add-ons](https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html)
