@@ -649,7 +649,7 @@ chown ubuntu:ubuntu /home/ubuntu/.profile
 | AWS credentials (admin-level for VPC, EC2, EKS, IAM) | `aws sts get-caller-identity` |
 | Key pair `abhigna-eks-key` in `us-east-1` | EC2 → Key pairs → Create → download `.pem` |
 
-**Step 0: create the key pair (once, by hand)**
+**Step 0 — 💻 run on LAPTOP: create the key pair (once, by hand)**
 
 The only thing the code does **not** create. Terraform uses it to let me SSH into the bastion.
 
@@ -662,7 +662,7 @@ chmod 400 ~/.ssh/abhigna-eks-key.pem      # SSH refuses keys others can read
 
 Or console: EC2 → region **N. Virginia** → Key pairs → Create → name `abhigna-eks-key`, RSA, `.pem`.
 
-**Step 1: get the code**
+**Step 1 — 💻 run on LAPTOP: get the code**
 
 ```bash
 # 💻 LAPTOP
@@ -671,7 +671,7 @@ cd k8s-eks-projects/01-eks-terraform
 cat terraform.tfvars        # my values already set: abhigna-cluster, abhigna-eks-key, us-east-1
 ```
 
-**Step 2: create everything with Terraform**
+**Step 2 — 💻 run on LAPTOP: create everything with Terraform**
 
 ```bash
 # 💻 LAPTOP (inside 01-eks-terraform)
@@ -697,7 +697,7 @@ What `apply` creates, in order:
 | 3 | IAM OIDC provider + **node group** (2 worker EC2s) | AWS launches, I own |
 | 4 | **Bastion** EC2 → installs AWS CLI, kubectl, eksctl, helm + sets kubeconfig | Me |
 
-**Step 3: SSH into the bastion**
+**Step 3 — 💻 run on LAPTOP: SSH into the bastion**
 
 ```bash
 # 💻 LAPTOP
@@ -707,7 +707,7 @@ ssh -i ~/.ssh/abhigna-eks-key.pem ubuntu@$(terraform output -raw bastion_public_
 
 `$(terraform output -raw bastion_public_ip)` = put the bastion's IP here automatically.
 
-**Step 4: talk to the cluster**
+**Step 4 — 🖥️ run on BASTION: talk to the cluster**
 
 ```bash
 # 🖥️ BASTION (prompt changes to ubuntu@ip-10-0-1-x)
@@ -835,9 +835,11 @@ Developer ──push YAML──► Git repo ◄──watches── Argo CD (in c
 
 > **Simple:** Helm lives on the bastion and only sends orders. Argo CD lives **inside the cluster**, as pods on the **worker nodes**.
 
-### Steps (all on 🖥️ bastion)
+### Steps
 
-**Step 0: SSH in and check tools**
+> Step 0 starts on your **💻 laptop** (to SSH in). **Every step after that runs on the 🖥️ bastion.**
+
+**Step 0 — 💻 LAPTOP → 🖥️ BASTION: SSH in and check tools**
 
 ```bash
 # 💻 LAPTOP
@@ -848,7 +850,7 @@ helm version                # Helm is installed
 kubectl get nodes           # cluster reachable, 2 nodes Ready
 ```
 
-**Step 1: add the Argo Helm repo** (like adding a yum/apt repo)
+**Step 1 — 🖥️ run on BASTION: add the Argo Helm repo** (like adding a yum/apt repo)
 
 ```bash
 # 🖥️ BASTION
@@ -857,7 +859,7 @@ helm repo update
 helm search repo argo/argo-cd          # see chart versions
 ```
 
-**Step 2: install Argo CD into the cluster**
+**Step 2 — 🖥️ run on BASTION: install Argo CD into the cluster**
 
 ```bash
 # 🖥️ BASTION
@@ -874,7 +876,7 @@ helm install argocd argo/argo-cd \
 | `--namespace argocd --create-namespace` | Put everything in its own namespace |
 | `--set server.service.type=LoadBalancer` | Change one value: create an AWS load balancer so I can open the UI |
 
-**Step 3: check it is running in the cluster**
+**Step 3 — 🖥️ run on BASTION: check it is running in the cluster**
 
 ```bash
 # 🖥️ BASTION
@@ -885,7 +887,7 @@ kubectl get svc -n argocd argocd-server   # EXTERNAL-IP = load balancer DNS
 
 > `-o wide` shows the **NODE** column, proof that Argo CD pods run on the **worker nodes**.
 
-**Step 4: get the admin password**
+**Step 4 — 🖥️ run on BASTION: get the admin password**
 
 ```bash
 # 🖥️ BASTION
@@ -893,7 +895,7 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d; echo
 ```
 
-**Step 5: open the UI**
+**Step 5 — 💻 on LAPTOP browser: open the Argo CD UI**
 
 - 💻 **Laptop browser:** open `https://<EXTERNAL-IP from step 3>` (wait 2–3 min for the LB DNS).
 - Accept the self-signed certificate warning.
@@ -908,7 +910,7 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 > ```
 > Then open `https://localhost:8080` on the laptop.
 
-**Upgrade / remove**
+**Upgrade / remove — 🖥️ run on BASTION**
 
 ```bash
 # 🖥️ BASTION
