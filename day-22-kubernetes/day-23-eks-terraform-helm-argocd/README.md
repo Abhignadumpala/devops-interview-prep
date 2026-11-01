@@ -797,7 +797,40 @@ templates/ ───┘
 Developer ──push YAML──► Git repo ◄──watches── Argo CD (in cluster) ──applies──► Pods
 ```
 
-### Where does everything run? (read this first)
+### Helm vs Argo CD: what is installed where?
+
+> **Helm is on the bastion. Argo CD is inside the cluster.** We do **not** install Argo CD on the bastion.
+
+| Tool | Installed where | Who installs it |
+|---|---|---|
+| **Helm** | 🖥️ **Bastion** | Already installed by the bootstrap script when the bastion starts. Nothing to do |
+| **kubectl** | 🖥️ **Bastion** | Same, already installed |
+| **Argo CD** | ☸️ **Inside the EKS cluster**, as pods on the **worker nodes** | Me, by running `helm install` **from** the bastion |
+
+**Think of it like an app store:**
+
+1. **Helm** = the app store program. It sits on the **bastion**.
+2. I type `helm install argocd ...` on the **bastion**.
+3. Helm sends the Argo CD YAML files to the cluster's **API server** (HTTPS 443).
+4. Argo CD gets **installed and runs in the cluster** (worker nodes), **not on the bastion**.
+
+```
+🖥️ Bastion                         ☸️ EKS cluster
+┌──────────────┐   helm install   ┌───────────────────────────────┐
+│ helm     ✅   │ ───────────────► │ Worker nodes                  │
+│ kubectl  ✅   │   (HTTPS 443)    │   argocd-server pod       ✅   │
+│ argocd   ❌   │                  │   argocd-repo-server pod  ✅   │
+└──────────────┘                  │   argocd-controller pod   ✅   │
+                                  └───────────────────────────────┘
+```
+
+**Proof (run on 🖥️ bastion):**
+
+```bash
+kubectl get pods -n argocd -o wide   # NODE column = worker node names, not the bastion
+```
+
+### Common questions
 
 | Question | Answer |
 |---|---|
@@ -809,7 +842,7 @@ Developer ──push YAML──► Git repo ◄──watches── Argo CD (in c
 | Is Argo CD installed on the bastion? | ❌ No. The bastion only **sends** the install command |
 | How do I open the Argo CD UI? | Browser → **AWS load balancer** (public subnet) → `argocd-server` pod on a worker node |
 
-**How `helm install` works, step by step**
+### How `helm install` works, step by step
 
 | Step | Where | What happens |
 |---|---|---|
