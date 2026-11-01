@@ -868,6 +868,36 @@ Worker node 1                        Worker node 2
 | Something that runs on **every** node? | That's a **DaemonSet** (e.g. `kube-proxy`, `aws-node`). Argo CD is **not** a DaemonSet |
 | Production (high availability)? | Run **2+ copies** of each pod (Helm values, e.g. `server.replicas=2`) so they sit on different nodes |
 
+### Class demo (Killercoda) vs my EKS: why did the trainer install Helm on the control plane?
+
+In class the trainer ran `curl ... get-helm-4 | ./get_helm.sh` at the prompt `root@controlplane`. That does **not** install Helm *into* the cluster. It installs the **`helm` program** on the machine they were typing on.
+
+| | Killercoda (class demo) | My EKS setup |
+|---|---|---|
+| Cluster type | Self-managed (kubeadm): I get a shell **on the control-plane machine** | AWS-managed: control plane is **hidden**, no login |
+| Where I type commands | `root@controlplane` | `ubuntu@bastion` |
+| Where `kubectl` + `helm` are installed | On the control-plane node's Linux | On the **bastion** |
+| What `helm` does | Sends YAML to the API server | Same |
+
+```
+Killercoda:  root@controlplane ── helm ──► API server (same machine) ──► node01 pods
+EKS:         ubuntu@bastion    ── helm ──► API server (AWS-managed)  ──► worker node pods
+```
+
+> **Rule:** Helm goes on **whatever machine I type commands on** (like `kubectl`). In EKS I can't get into the control plane, so the **bastion** plays that role.
+
+**Install Helm by hand (same as the trainer):**
+
+```bash
+# 🖥️ on the machine where I run kubectl (bastion in EKS)
+curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
+chmod 700 get_helm.sh
+./get_helm.sh            # installs /usr/local/bin/helm
+helm version
+```
+
+> My bastion bootstrap script already does this automatically (it uses `get-helm-3` → Helm 3; the trainer used Helm 4). Both work for Argo CD with the same commands.
+
 ### Common questions
 
 | Question | Answer |
