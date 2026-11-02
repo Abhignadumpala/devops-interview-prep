@@ -214,6 +214,18 @@ kubectl get endpoints <service>   # only Ready pod IPs are listed
 | 🔁 | After success, **liveness and readiness probes take over** |
 | ❌ | If it **keeps failing**, Kubernetes **restarts the container** |
 
+**In real time (where it's used):**
+
+| | |
+|---|---|
+| 🏢 | Commonly used for **large Java, Spring Boot or database-based applications** with long startup times (1–5 min) |
+| 🔁 | Helps **avoid unnecessary restarts** and **application CrashLoops** |
+| 💡 | **Why it matters:** prevents premature (too early) restarts, saves resources, and ensures smooth application startup |
+
+![Startup probe: real-time use (class slide)](images/startup-probe-realtime-class.png)
+
+**Example problem without startup probe:** Spring Boot app needs **2 min** to start. Liveness checks after 15s → fails 3 times → restart → starts again from 0 → fails again → **CrashLoopBackOff forever**. With a startup probe allowing 5 min, the app boots fully, then liveness takes over.
+
 **How it works, step by step:**
 
 1. **Application starts** (booting).
@@ -269,17 +281,32 @@ spec:
 
 ## 5. Liveness vs Readiness vs Startup
 
-| | Startup | Liveness | Readiness |
+| | 🚀 Startup | ❤️ Liveness | 🚦 Readiness |
 |---|---|---|---|
-| Order | **1st** | After startup succeeds | After startup succeeds |
-| Question | Has the app **finished starting**? | Is the app **alive**? | Is the app **ready** for traffic? |
-| Runs | Only during startup, then stops | Whole life of container | Whole life of container |
-| On failure | **Restarts** container | **Restarts** container | **Stops traffic** to pod |
-| Restart? | ✅ Yes | ✅ Yes | ❌ No |
-| Fixes | Slow-starting app killed while booting | Stuck / frozen app | Loading data, temporary busy |
-| Simple word | **Boot check** | **Self-healing** | **Traffic control** |
-| YAML key | `startupProbe:` | `livenessProbe:` | `readinessProbe:` |
-| Methods | HTTP / TCP / EXEC | HTTP / TCP / EXEC | HTTP / TCP / EXEC |
+| **Simple word** | **Boot check** | **Self-healing** | **Traffic control** |
+| **Question** | Has the app **finished starting**? | Is the app **alive**? | Is the app **ready** for user traffic? |
+| **Order** | **1st** | After startup succeeds | After startup succeeds |
+| **Runs when** | Only during startup, then **stops forever** | Whole life of the container | Whole life of the container |
+| **On failure** | **Restarts** container | **Restarts** container | **Removes pod from Service endpoints** (no traffic) |
+| **Restart?** | ✅ Yes | ✅ Yes | ❌ No, pod keeps running |
+| **Pod status when failing** | Restarts → CrashLoopBackOff if it never starts | Restarts → CrashLoopBackOff if always failing | `0/1 Running` |
+| **Problem it solves** | Slow app killed while still booting | App stuck / frozen (process alive, app not responding) | Users sent to a pod that is still loading / busy |
+| **Real-time use** | Large **Java, Spring Boot, DB** apps with long startup | Every app (web, API) to auto-recover from hangs | Apps that load data, cache, connect to DB before serving |
+| **Methods** | HTTP / TCP / EXEC | HTTP / TCP / EXEC | HTTP / TCP / EXEC |
+| **YAML key** | `startupProbe:` | `livenessProbe:` | `readinessProbe:` |
+
+```
+Container starts
+     │
+     ▼
+🚀 Startup probe ── keeps failing ──► restart
+     │ success (stops)
+     ▼
+❤️ Liveness  (alive?  no → restart)        ─┐  both run together
+🚦 Readiness (ready?  no → no traffic)      ─┘  for the whole life
+```
+
+> **Interview one-liner:** Startup checks if the app has finished booting (runs once, first); liveness checks if it's alive and restarts it if not; readiness checks if it's ready for traffic and removes it from the Service if not, without restarting.
 
 > Use **both** together: readiness keeps users away from a pod that isn't ready; liveness restarts it if it's truly stuck.
 
@@ -753,15 +780,18 @@ The very first probe. It checks whether the application has finished starting. U
 **Q11. What is the order of the 3 probes?**
 Startup first. Liveness and readiness are paused until startup succeeds, then both run for the life of the container.
 
+**Q12. Where is a startup probe used in real time?**
+For large Java, Spring Boot or database-based apps with long startup times. It avoids unnecessary restarts and CrashLoopBackOff by giving the app time to boot (max time = `failureThreshold` × `periodSeconds`) before liveness starts.
+
+**Q13. Difference between startup, liveness and readiness probes?**
+Startup: has the app finished starting? Runs first, once; failure → restart. Liveness: is the app alive? Runs all the time; failure → restart (self-healing). Readiness: is it ready for traffic? Runs all the time; failure → removed from Service endpoints, no restart (traffic control).
+
 ### Other Questions
 
-**Q12. Difference between liveness and readiness probes?**
-Liveness failure → container restart (self-healing). Readiness failure → traffic stops to that pod, no restart (traffic control).
-
-**Q13. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q14. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
 
-**Q14. What can go wrong with a badly set liveness probe?**
+**Q15. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
 
 ---
