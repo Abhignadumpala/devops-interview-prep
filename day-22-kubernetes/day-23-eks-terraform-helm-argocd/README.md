@@ -1254,6 +1254,55 @@ kubectl get svc -n argocd argocd-server   # EXTERNAL-IP = load balancer DNS
 
 > `-o wide` shows the **NODE** column, proof that Argo CD pods run on the **worker nodes**.
 
+**Why is the Argo CD service type LoadBalancer?**
+
+In EKS, a Service of type **LoadBalancer** makes AWS create a real **load balancer** with a public DNS name. That lets you open the Argo CD **dashboard from the internet** (your laptop browser).
+
+| Service type | Who can reach Argo CD UI? |
+|---|---|
+| `ClusterIP` (chart default) | Only inside the cluster → need port-forward |
+| `NodePort` | Node IP + port (our nodes are private, so not from laptop) |
+| **`LoadBalancer`** (we use) | **Anyone on the internet** via the LB DNS |
+
+```
+💻 Laptop browser ──► AWS Load Balancer (public DNS) ──► argocd-server Service ──► argocd-server pod (worker node)
+```
+
+> ⚠️ Public dashboard = anyone can reach the login page. Use a strong password, and in real jobs restrict it (security group / internal LB / ingress with HTTPS).
+
+**Installed it as ClusterIP by mistake? Change it with `kubectl patch`:**
+
+```bash
+# 🖥️ BASTION
+kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
+kubectl get svc argocd-server -n argocd     # EXTERNAL-IP shows the LB DNS after 1-2 min
+```
+
+### What is `kubectl patch`? (⭐ interview)
+
+**Definition:** `kubectl patch` **changes one property of an existing object** (Service, Deployment, etc.) **in place**, without deleting it and without editing the whole YAML.
+
+```bash
+kubectl patch <type> <name> -n <namespace> -p '<only the field to change>'
+```
+
+| Example | What it changes |
+|---|---|
+| `kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"LoadBalancer"}}'` | Service type ClusterIP → LoadBalancer |
+| `kubectl patch deployment nginx -p '{"spec":{"replicas":3}}'` | Replicas → 3 |
+
+**patch vs edit vs apply:**
+
+| Command | How | Use when |
+|---|---|---|
+| `kubectl patch` | Send **only the changed field** in one command | Quick one-field change, scripts |
+| `kubectl edit` | Opens the full live YAML in an editor (vi) | Look and change by hand |
+| `kubectl apply -f file.yaml` | Apply the full YAML file | Normal way, file kept in Git |
+
+> **Helm note:** Argo CD was installed by Helm. A patch changes only the live cluster, and the next `helm upgrade` can undo it. The permanent fix is `helm upgrade argocd argo/argo-cd -n argocd --set server.service.type=LoadBalancer` (or `values.yaml`).
+
+> **Interview one-liner:** `kubectl patch` updates a specific field of an existing Kubernetes object in place, e.g. changing a Service from ClusterIP to LoadBalancer, without deleting or re-applying the whole YAML.
+
 **Step 4 — 🖥️ run on BASTION: get the admin password**
 
 ```bash
@@ -1449,6 +1498,12 @@ With Helm. Search the tool on Artifact Hub, choose the official / Verified Publi
 
 **Q5. What is Artifact Hub?**
 A public catalog of Helm charts. It lists each chart's repo, install commands, values and badges (Verified Publisher, Official). The chart is downloaded from the publisher's repo, not from Artifact Hub.
+
+**Q6. What is the `kubectl patch` command?**
+It modifies a property of an existing object in place, without deleting it or re-applying the full YAML. Example: `kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"LoadBalancer"}}'` changes the Service type to LoadBalancer.
+
+**Q7. Why is the Argo CD server Service type LoadBalancer in EKS?**
+So AWS creates a load balancer with a public DNS name and we can open the Argo CD dashboard from the internet. The default ClusterIP is reachable only inside the cluster (port-forward needed).
 
 ### Other Questions
 
