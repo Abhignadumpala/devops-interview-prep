@@ -718,6 +718,33 @@ Warning  Unhealthy  Liveness probe failed: cat: can't open '/tmp/health': No suc
 | **EXEC** | Wrong **command** (`cat /tmp/health`) | `cat: can't open '/tmp/health': No such file or directory` | Correct command / file |
 | Any | App too slow to start | Fails in the first seconds only | Increase `initialDelaySeconds` |
 
+### Single pod: which probe is failing? (read `kubectl get pods`)
+
+| READY | STATUS | RESTARTS | Meaning |
+|---|---|---|---|
+| `1/1` | `Running` | 0 | ✅ All good, gets traffic |
+| `0/1` | `Running` → **`CrashLoopBackOff`** | **Going up** | ❌ **Liveness** or **Startup** failing (restarts) |
+| `0/1` | `Running` | **Stays the same** | ❌ **Readiness** failing (no restart, no traffic) |
+
+```
+NAME     READY   STATUS             RESTARTS
+pod-a    1/1     Running            0          ✅ all good
+pod-b    0/1     CrashLoopBackOff   4          ❌ liveness or startup
+pod-c    0/1     Running            0          ❌ readiness → no traffic
+```
+
+**Always confirm with `kubectl describe pod`** (Events show the exact probe):
+
+| Event message | Probe |
+|---|---|
+| `Liveness probe failed: ...` + `failed liveness probe, will be restarted` | ❤️ Liveness |
+| `Startup probe failed: ...` + `failed startup probe, will be restarted` | 🚀 Startup |
+| `Readiness probe failed: ...` (no "will be restarted") | 🚦 Readiness |
+
+> ⚠️ `0/1 Running` with RESTARTS 0 can also be **normal for a few seconds** right after start (startup probe still checking, or `initialDelaySeconds` not over). It's a readiness problem only if it **stays** `0/1`.
+
+> With **one pod** and readiness failing, the pod shows no error, but **users get errors** because the Service has no ready pod: `kubectl get endpoints <svc>` is empty.
+
 ### Troubleshooting steps (in order)
 
 1. `kubectl get pods` → see `CrashLoopBackOff` and RESTARTS count.
@@ -786,12 +813,15 @@ For large Java, Spring Boot or database-based apps with long startup times. It a
 **Q13. Difference between startup, liveness and readiness probes?**
 Startup: has the app finished starting? Runs first, once; failure → restart. Liveness: is the app alive? Runs all the time; failure → restart (self-healing). Readiness: is it ready for traffic? Runs all the time; failure → removed from Service endpoints, no restart (traffic control).
 
+**Q14. How do you identify which probe is failing from `kubectl get pods`?**
+`1/1 Running` = all good. `0/1` with RESTARTS going up / CrashLoopBackOff = liveness or startup failing. `0/1 Running` with RESTARTS not changing = readiness failing (no restart, no traffic). Confirm with `kubectl describe pod`: Events say `Liveness`, `Startup` or `Readiness probe failed`.
+
 ### Other Questions
 
-**Q14. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q15. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
 
-**Q15. What can go wrong with a badly set liveness probe?**
+**Q16. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
 
 ---
