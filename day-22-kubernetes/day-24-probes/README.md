@@ -14,8 +14,9 @@
 6. [Probe timing settings](#6-probe-timing-settings)
 7. [Example YAML](#7-example-yaml)
 8. [Lab: liveness probe with httpGet (nginx)](#8-lab-liveness-probe-with-httpget-nginx)
-9. [Commands](#9-commands)
-10. [Interview Questions](#10-interview-questions)
+9. [Lab: troubleshoot CrashLoopBackOff (wrong path, port, command)](#9-lab-troubleshoot-crashloopbackoff-wrong-path-port-command)
+10. [Commands](#10-commands)
+11. [Interview Questions](#11-interview-questions)
 
 ---
 
@@ -400,7 +401,146 @@ kubectl delete -f liveness-http.yaml
 
 ---
 
-## 9. Commands
+## 9. Lab: troubleshoot CrashLoopBackOff (wrong path, port, command)
+
+**Goal:** in class we **broke the liveness probe on purpose** 3 ways (HTTP, TCP, EXEC) to see **CrashLoopBackOff** and learn how a DevOps engineer finds the cause.
+
+### ⭐ First step as a DevOps engineer: `kubectl describe pod`
+
+```bash
+kubectl get pods                    # STATUS: CrashLoopBackOff, RESTARTS going up
+kubectl describe pod <pod-name>     # go to the Events section at the bottom
+```
+
+The **Events** section tells you **exactly why** the probe failed:
+
+| Event | Meaning |
+|---|---|
+| `Warning  Unhealthy  Liveness probe failed: ...` | **The reason** (wrong path / port / command) ⬅️ read this line |
+| `Normal  Killing  Container ... failed liveness probe, will be restarted` | Kubelet restarted the container |
+| `Warning  BackOff  Back-off restarting failed container` | It keeps failing → **CrashLoopBackOff** |
+
+### Test 1: HTTP probe, wrong path
+
+Same `liveness-http` pod as [section 8](#8-lab-liveness-probe-with-httpget-nginx), but with a path nginx doesn't have:
+
+```yaml
+    livenessProbe:
+      httpGet:
+        path: /health     # ❌ wrong: default nginx has no /health page
+        port: 80
+```
+
+`kubectl describe pod` shows:
+
+```
+Warning  Unhealthy  Liveness probe failed: HTTP probe failed with statuscode: 404
+```
+
+**Fix:** use a path the app really serves (`path: /`).
+
+### Test 2: TCP probe, wrong port
+
+Correct TCP probe (nginx listens on port 80):
+
+![TCP liveness probe YAML (class)](images/liveness-tcp-yaml-class.png)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-http-1
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+
+    livenessProbe:
+      tcpSocket:
+        port: 80               # ✅ nginx port
+      initialDelaySeconds: 10  # wait 10s before 1st check
+      periodSeconds: 5         # check every 5s
+      timeoutSeconds: 2
+      failureThreshold: 3      # 3 fails (~15s) → restart
+```
+
+Then we created `liveness-http-2` with **`port: 81`** ❌ (nothing listens on 81). `kubectl describe pod`:
+
+![describe pod: wrong port (class)](images/describe-wrong-port-class.png)
+
+```
+Warning  Unhealthy  Liveness probe failed: dial tcp 192.168.1.74:81: connect: connection refused
+Normal   Killing    Container nginx failed liveness probe, will be restarted
+Warning  BackOff    Back-off restarting failed container nginx in pod liveness-http-2
+```
+
+`connection refused` on port **81** → wrong port. **Fix:** `port: 80`.
+
+### Test 3: EXEC probe, wrong command
+
+Correct EXEC probe: the container creates `/tmp/healthy`, the probe reads it with `cat`.
+
+![EXEC liveness probe YAML (class)](images/liveness-exec-yaml-class.png)
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-exec-2
+spec:
+  containers:
+    - name: busybox
+      image: busybox
+      command:                  # what the container runs
+        - sh
+        - -c
+        - |
+          echo "hello all" >> /tmp/healthy   # create the file
+          sleep 3600                         # keep container alive 1 hour
+      livenessProbe:
+        exec:
+          command:              # probe runs: cat /tmp/healthy
+            - cat
+            - /tmp/healthy      # ✅ file exists → exit 0 → healthy
+        initialDelaySeconds: 5
+        periodSeconds: 5
+```
+
+Then we changed the probe to read a file that doesn't exist: **`/tmp/health`** ❌
+
+![EXEC probe with wrong command (class)](images/liveness-exec-wrong-command-class.png)
+
+`cat /tmp/health` → file not found → exit code 1 → probe fails. `kubectl describe pod`:
+
+```
+Warning  Unhealthy  Liveness probe failed: cat: can't open '/tmp/health': No such file or directory
+```
+
+**Fix:** correct the command (`/tmp/healthy`).
+
+### Summary: CrashLoopBackOff from a liveness probe
+
+| Probe | What we broke | `describe pod` error | Fix |
+|---|---|---|---|
+| **HTTP** | Wrong **path** (`/health`) | `HTTP probe failed with statuscode: 404` | Path the app serves (`/`) |
+| **TCP** | Wrong **port** (81) | `dial tcp <ip>:81: connect: connection refused` | App's real port (80) |
+| **EXEC** | Wrong **command** (`cat /tmp/health`) | `cat: can't open '/tmp/health': No such file or directory` | Correct command / file |
+| Any | App too slow to start | Fails in the first seconds only | Increase `initialDelaySeconds` |
+
+### Troubleshooting steps (in order)
+
+1. `kubectl get pods` → see `CrashLoopBackOff` and RESTARTS count.
+2. `kubectl describe pod <pod>` → read the **Events**: `Liveness probe failed: ...` tells you path, port or command.
+3. `kubectl logs <pod> --previous` → app logs from **before** the last restart (did the app itself crash?).
+4. Fix the YAML (path / port / command / delay).
+5. Pod probe settings can't be edited in place → `kubectl delete pod <pod>` then `kubectl apply -f <file>.yaml`.
+6. `kubectl get pods -w` → `Running`, RESTARTS stops going up ✅
+
+> **Interview one-liner:** When a pod is in CrashLoopBackOff, I first run `kubectl describe pod` and read the Events. A liveness probe failure shows the exact reason: 404 for a wrong path, connection refused for a wrong port, or a command error for a wrong exec command. Then I check `kubectl logs --previous`, fix the YAML and re-apply.
+
+---
+
+## 10. Commands
 
 | Command | Use |
 |---|---|
@@ -412,7 +552,7 @@ kubectl delete -f liveness-http.yaml
 
 ---
 
-## 10. Interview Questions
+## 11. Interview Questions
 
 ### ⭐ Very Important
 
@@ -431,21 +571,24 @@ Every 10 s the kubelet sends `GET http://<pod-ip>:80/` to nginx (nginx listens o
 **Q5. What happens if the liveness probe never gets a response?**
 After `failureThreshold` failures in a row the container is restarted. If it keeps failing after every restart, Kubernetes waits longer between restarts (10s, 20s, 40s ... up to 5 min) and the pod shows **CrashLoopBackOff**. Check `kubectl describe pod` events and `kubectl logs --previous`, then fix the path, port or initial delay.
 
+**Q6. A pod is in CrashLoopBackOff. What is your first step and what can cause it with liveness probes?**
+First `kubectl describe pod <pod>` and read the Events (`Liveness probe failed: ...`). Common causes: wrong path in httpGet (404), wrong port in httpGet/tcpSocket (connection refused), wrong command in exec (e.g. file not found), or too short `initialDelaySeconds`. Then check `kubectl logs --previous`, fix the YAML and re-create the pod.
+
 ### Other Questions
 
-**Q6. What is a readiness probe?**
+**Q7. What is a readiness probe?**
 It checks if the app is ready to receive traffic. If not, the pod is removed from the Service endpoints (no traffic), but it is not restarted.
 
-**Q7. Difference between liveness and readiness probes?**
+**Q8. Difference between liveness and readiness probes?**
 Liveness failure → container restart (self-healing). Readiness failure → traffic stops to that pod, no restart (traffic control).
 
-**Q8. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q9. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
 
-**Q9. What is a startup probe?**
+**Q10. What is a startup probe?**
 A probe for slow-starting apps. Liveness and readiness checks wait until it passes, so the app isn't restarted while still booting.
 
-**Q10. What can go wrong with a badly set liveness probe?**
+**Q11. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
 
 ---
