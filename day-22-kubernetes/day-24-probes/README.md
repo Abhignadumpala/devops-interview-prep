@@ -9,14 +9,15 @@
 1. [What is a probe?](#1-what-is-a-probe)
 2. [Liveness probe](#2-liveness-probe)
 3. [Readiness probe](#3-readiness-probe)
-4. [Liveness vs Readiness](#4-liveness-vs-readiness)
-5. [How a probe checks the app (3 ways)](#5-how-a-probe-checks-the-app-3-ways)
-6. [Probe timing settings](#6-probe-timing-settings)
-7. [Example YAML](#7-example-yaml)
-8. [Lab: liveness probe with httpGet (nginx)](#8-lab-liveness-probe-with-httpget-nginx)
-9. [Lab: troubleshoot CrashLoopBackOff (wrong path, port, command)](#9-lab-troubleshoot-crashloopbackoff-wrong-path-port-command)
-10. [Commands](#10-commands)
-11. [Interview Questions](#11-interview-questions)
+4. [Startup probe](#4-startup-probe)
+5. [Liveness vs Readiness vs Startup](#5-liveness-vs-readiness-vs-startup)
+6. [How a probe checks the app (3 ways)](#6-how-a-probe-checks-the-app-3-ways)
+7. [Probe timing settings](#7-probe-timing-settings)
+8. [Example YAML](#8-example-yaml)
+9. [Lab: liveness probe with httpGet (nginx)](#9-lab-liveness-probe-with-httpget-nginx)
+10. [Lab: troubleshoot CrashLoopBackOff (wrong path, port, command)](#10-lab-troubleshoot-crashloopbackoff-wrong-path-port-command)
+11. [Commands](#11-commands)
+12. [Interview Questions](#12-interview-questions)
 
 ---
 
@@ -124,13 +125,22 @@ Liveness only says the app is **alive**. Alive is not the same as **ready**. An 
 | 🚫 | Prevents users from reaching apps that are **still starting up** |
 | ⏱️ | Used when apps need **time to load data, cache or dependencies** (DB, other services) |
 
-**Probe types (same 3 as liveness):**
+**Probe types: the SAME 3 methods as liveness (HTTP endpoint, TCP port, EXEC command). Only the probe name changes** (`livenessProbe:` → `readinessProbe:`):
 
-| Type | Checks |
-|---|---|
-| **HTTP** | A web URL (e.g. `/ready`) returns 200–399 |
-| **TCP** | A port is open |
-| **Exec** | A command inside the container exits 0 |
+| Type | Checks | Liveness | Readiness |
+|---|---|---|---|
+| **HTTP** | A web URL (endpoint) returns 200–399 | `livenessProbe:` + `httpGet:` | `readinessProbe:` + `httpGet:` |
+| **TCP** | A port is open | `livenessProbe:` + `tcpSocket:` | `readinessProbe:` + `tcpSocket:` |
+| **Exec** | A command inside the container exits 0 | `livenessProbe:` + `exec:` | `readinessProbe:` + `exec:` |
+
+```yaml
+readinessProbe:          # only this name is different
+  httpGet:               # or tcpSocket: / exec: — same as liveness
+    path: /
+    port: 80
+```
+
+> Same check, **different action on failure**: liveness → **restart**, readiness → **no traffic**.
 
 **Common parameters:**
 
@@ -185,23 +195,99 @@ kubectl get endpoints <service>   # only Ready pod IPs are listed
 
 ---
 
-## 4. Liveness vs Readiness
+## 4. Startup probe
 
-| | Liveness | Readiness |
-|---|---|---|
-| Question | Is the app **alive**? | Is the app **ready** for traffic? |
-| On failure | **Restarts** container | **Stops traffic** to pod |
-| Restart? | ✅ Yes | ❌ No |
-| Fixes | Stuck / frozen app | Slow startup, temporary busy |
-| Simple word | **Self-healing** | **Traffic control** |
+**Definition:** A **startup probe** is the **very first probe**. It checks **whether the application has finished starting**.
 
-> Use **both** together: readiness keeps users away from a pod that isn't ready; liveness restarts it if it's truly stuck.
+![Startup probe (class slide)](images/startup-probe-class.png)
 
-> **Bonus — startup probe:** For **slow-starting apps**. Liveness and readiness wait until the startup probe passes, so a slow app isn't restarted while still booting.
+**Why?** Some apps (big Java apps, apps loading lots of data) take minutes to start. Without a startup probe, the **liveness probe** may check too early, fail, and **restart the container while it is still booting** → it never finishes starting → restart loop.
+
+**Key points:**
+
+| | |
+|---|---|
+| ⏱️ | Used for **slow-starting applications** that need extra startup time |
+| 🛡️ | Prevents Kubernetes from **restarting a container while it is still booting** |
+| ▶️ | Runs **only during the startup phase** |
+| ✅ | Once it **succeeds**, it **stops running permanently** |
+| 🔁 | After success, **liveness and readiness probes take over** |
+| ❌ | If it **keeps failing**, Kubernetes **restarts the container** |
+
+**How it works, step by step:**
+
+1. **Application starts** (booting).
+2. **Startup probe** checks if the app has started (liveness and readiness are **paused** for now).
+3. **Success** → "startup complete" → startup probe **stops** forever.
+   **Failure** (keeps failing `failureThreshold` times) → container is **restarted** → back to step 1.
+4. **Other probes take over:** liveness (alive?) and readiness (ready for traffic?) manage the app from now on.
+
+```
+ App starts ──► Startup probe ──► Success ──► stops ──► Liveness + Readiness take over
+      ▲               │
+      │               ▼
+      └──── restart ◄─ Keeps failing
+```
+
+**Same 3 methods (HTTP / TCP / EXEC). Only the name changes:** `startupProbe:`
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: startup-demo
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+
+    startupProbe:              # 1st: has the app finished starting?
+      httpGet:
+        path: /
+        port: 80
+      periodSeconds: 10        # check every 10s
+      failureThreshold: 30     # allow 30 x 10s = 300s (5 min) to start
+
+    livenessProbe:             # starts only AFTER startup probe succeeds
+      httpGet:
+        path: /
+        port: 80
+      periodSeconds: 10
+
+    readinessProbe:            # starts only AFTER startup probe succeeds
+      httpGet:
+        path: /
+        port: 80
+      periodSeconds: 5
+```
+
+**Max startup time = `failureThreshold` × `periodSeconds`** → here 30 × 10s = **5 minutes**. If the app isn't up in 5 min → restart.
+
+> **Interview one-liner:** A startup probe is the first probe; it checks whether a slow-starting app has finished starting. Until it succeeds, liveness and readiness are paused, so Kubernetes doesn't restart the app while it boots. After it succeeds it stops, and liveness and readiness take over.
 
 ---
 
-## 5. How a probe checks the app (3 ways)
+## 5. Liveness vs Readiness vs Startup
+
+| | Startup | Liveness | Readiness |
+|---|---|---|---|
+| Order | **1st** | After startup succeeds | After startup succeeds |
+| Question | Has the app **finished starting**? | Is the app **alive**? | Is the app **ready** for traffic? |
+| Runs | Only during startup, then stops | Whole life of container | Whole life of container |
+| On failure | **Restarts** container | **Restarts** container | **Stops traffic** to pod |
+| Restart? | ✅ Yes | ✅ Yes | ❌ No |
+| Fixes | Slow-starting app killed while booting | Stuck / frozen app | Loading data, temporary busy |
+| Simple word | **Boot check** | **Self-healing** | **Traffic control** |
+| YAML key | `startupProbe:` | `livenessProbe:` | `readinessProbe:` |
+| Methods | HTTP / TCP / EXEC | HTTP / TCP / EXEC | HTTP / TCP / EXEC |
+
+> Use **both** together: readiness keeps users away from a pod that isn't ready; liveness restarts it if it's truly stuck.
+
+> **Order:** startup probe runs **first** → when it passes, liveness and readiness start. See [section 4](#4-startup-probe).
+
+---
+
+## 6. How a probe checks the app (3 ways)
 
 > ⭐ **One-liner:** There are **three ways to check if your app is alive: HTTP, TCP, EXEC.**
 > **HTTP = endpoint | TCP = port | EXEC = command**
@@ -266,7 +352,7 @@ livenessProbe:
 
 ---
 
-## 6. Probe timing settings
+## 7. Probe timing settings
 
 | Setting | Meaning | Default |
 |---|---|---|
@@ -280,7 +366,7 @@ Example: `periodSeconds: 10` + `failureThreshold: 3` → app must fail for **~30
 
 ---
 
-## 7. Example YAML
+## 8. Example YAML
 
 ```yaml
 apiVersion: apps/v1
@@ -333,7 +419,7 @@ Delete the file inside the container (`kubectl exec <pod> -- rm /tmp/healthy`) �
 
 ---
 
-## 8. Lab: liveness probe with httpGet (nginx)
+## 9. Lab: liveness probe with httpGet (nginx)
 
 **Goal:** check if the nginx app is alive using a **liveness probe** with the **HTTP (`httpGet`)** method.
 
@@ -479,7 +565,7 @@ kubectl delete -f liveness-http.yaml
 
 ---
 
-## 9. Lab: troubleshoot CrashLoopBackOff (wrong path, port, command)
+## 10. Lab: troubleshoot CrashLoopBackOff (wrong path, port, command)
 
 **Goal:** in class we **broke the liveness probe on purpose** 3 ways (HTTP, TCP, EXEC) to see **CrashLoopBackOff** and learn how a DevOps engineer finds the cause.
 
@@ -500,7 +586,7 @@ The **Events** section tells you **exactly why** the probe failed:
 
 ### Test 1: HTTP probe, wrong path
 
-Same `liveness-http` pod as [section 8](#8-lab-liveness-probe-with-httpget-nginx), but with a path nginx doesn't have:
+Same `liveness-http` pod as [section 9](#9-lab-liveness-probe-with-httpget-nginx), but with a path nginx doesn't have:
 
 ```yaml
     livenessProbe:
@@ -618,7 +704,7 @@ Warning  Unhealthy  Liveness probe failed: cat: can't open '/tmp/health': No suc
 
 ---
 
-## 10. Commands
+## 11. Commands
 
 | Command | Use |
 |---|---|
@@ -630,7 +716,7 @@ Warning  Unhealthy  Liveness probe failed: cat: can't open '/tmp/health': No suc
 
 ---
 
-## 11. Interview Questions
+## 12. Interview Questions
 
 ### ⭐ Very Important
 
@@ -658,18 +744,24 @@ It checks whether a pod is ready to receive user traffic. If the check fails, Ku
 **Q8. If a readiness probe fails, is the pod restarted?**
 No. It shows `READY 0/1` and `Running`, is removed from the Service endpoints, and gets traffic back when the check passes again. Only a liveness failure restarts the container.
 
+**Q9. Do readiness probes use different check methods from liveness?**
+No. Both use the same 3 methods: HTTP (endpoint), TCP (port), EXEC (command). Only the key name changes (`livenessProbe:` / `readinessProbe:` / `startupProbe:`) and the action on failure (restart vs no traffic).
+
+**Q10. What is a startup probe?**
+The very first probe. It checks whether the application has finished starting. Used for slow-starting apps so Kubernetes doesn't restart them while booting. Once it succeeds it stops, and liveness and readiness take over. If it keeps failing, the container is restarted.
+
+**Q11. What is the order of the 3 probes?**
+Startup first. Liveness and readiness are paused until startup succeeds, then both run for the life of the container.
+
 ### Other Questions
 
-**Q9. Difference between liveness and readiness probes?**
+**Q12. Difference between liveness and readiness probes?**
 Liveness failure → container restart (self-healing). Readiness failure → traffic stops to that pod, no restart (traffic control).
 
-**Q10. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q13. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
 
-**Q11. What is a startup probe?**
-A probe for slow-starting apps. Liveness and readiness checks wait until it passes, so the app isn't restarted while still booting.
-
-**Q12. What can go wrong with a badly set liveness probe?**
+**Q14. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
 
 ---
