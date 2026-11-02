@@ -757,6 +757,93 @@ pod-c    0/1     Running            0          ❌ readiness → no traffic
 
 > **Interview one-liner:** When a pod is in CrashLoopBackOff, I first run `kubectl describe pod` and read the Events. A liveness probe failure shows the exact reason: 404 for a wrong path, connection refused for a wrong port, or a command error for a wrong exec command. Then I check `kubectl logs --previous`, fix the YAML and re-apply.
 
+### Other reasons for CrashLoopBackOff (not probes)
+
+**Definition:** **CrashLoopBackOff** = the container **starts → crashes/exits → K8s restarts it → crashes again**, so K8s waits longer each time (10s, 20s, 40s ... 5 min). Probes are only **one** reason. Any reason the container **keeps stopping** gives the same status.
+
+| # | Reason | Example | How you find it | Fix |
+|---|---|---|---|---|
+| 1 | **Missing environment variable** | App needs `DB_HOST`, it isn't set → app exits on start | `logs --previous`: `DB_HOST is not set` / `KeyError` | Add `env:` in the YAML (or ConfigMap/Secret) |
+| 2 | **Wrong env value / config** | Wrong DB password, wrong URL in ConfigMap | `logs --previous`: `authentication failed`, `invalid config` | Correct the ConfigMap / Secret value |
+| 3 | **Dependency not reachable** | DB / Redis / other service down or wrong host name | `logs --previous`: `connection refused`, `unknown host` | Start the dependency, fix Service name/port, add init container to wait |
+| 4 | **App code error** | Bug, exception, missing library at startup | `logs --previous`: stack trace, `Exception` | Fix code, build new image |
+| 5 | **Out of memory (OOMKilled)** | App uses more than `resources.limits.memory` | `describe pod`: `Reason: OOMKilled`, `Exit Code: 137` | Increase memory limit or fix memory leak |
+| 6 | **Wrong command / args** | Typo in `command:` or the program doesn't exist in the image | `describe pod`: `Exit Code: 127` / `executable file not found` | Correct `command:` / `args:` |
+| 7 | **Container finishes and exits** | `busybox` with no long-running command, script that just ends | `describe pod`: `Reason: Completed`, `Exit Code: 0` | Run a long-running process (`sleep 3600`, server), or use a **Job** for one-time tasks |
+| 8 | **Permission denied** | Runs as non-root but writes to `/var/...`, file not executable | `logs --previous`: `permission denied`; Exit Code 126 | Fix file permissions, `securityContext`, writable volume |
+| 9 | **Missing file / wrong volume mount** | Config file expected at `/app/config.yaml`, volume mounted elsewhere | `logs --previous`: `no such file or directory` | Fix `volumeMounts.mountPath` / ConfigMap key |
+| 10 | **Port already in use** | Two containers in the same pod both use port 80 | `logs --previous`: `address already in use` | Use different ports |
+| 11 | **Wrong image architecture** | ARM image on x86 node (or opposite) | `logs --previous`: `exec format error` | Build multi-arch image / correct tag |
+| 12 | **Init container keeps failing** | Init container can't finish its task | `get pods`: `Init:CrashLoopBackOff` | `kubectl logs <pod> -c <init-container>` and fix it |
+| 13 | **Liveness / startup probe failing** | Wrong path, port, command, short delay | `describe pod` Events: `Liveness probe failed` | See tests above |
+
+### Exit codes (from `kubectl describe pod` → `Last State: Terminated`)
+
+```
+Last State:     Terminated
+  Reason:       OOMKilled      ← why it stopped
+  Exit Code:    137            ← number tells the reason
+```
+
+| Exit Code | Meaning | Usual cause |
+|---|---|---|
+| `0` | Finished normally | Container has no long-running process (reason 7) |
+| `1` | App error | Missing env var, config error, code exception (reasons 1–4) |
+| `126` | Command can't run | Permission denied (reason 8) |
+| `127` | Command not found | Wrong `command:` (reason 6) |
+| `137` | Killed (SIGKILL) | **OOMKilled** (reason 5) or killed after failed liveness probe |
+| `139` | Segmentation fault | App crash in native code |
+| `143` | Terminated (SIGTERM) | Stopped gracefully by K8s (e.g. liveness restart) |
+
+### Example: missing environment variable
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: env-demo
+spec:
+  containers:
+  - name: app
+    image: busybox
+    command: ["sh", "-c", "if [ -z \"$DB_HOST\" ]; then echo 'ERROR: DB_HOST not set'; exit 1; fi; sleep 3600"]
+    # ❌ no env: → app exits with code 1 → CrashLoopBackOff
+```
+
+```bash
+kubectl get pods                 # env-demo  0/1  CrashLoopBackOff  3
+kubectl logs env-demo --previous # ERROR: DB_HOST not set
+```
+
+**Fix:** add the variable and re-create the pod:
+
+```yaml
+    env:
+    - name: DB_HOST
+      value: "mysql"
+```
+
+### Not CrashLoopBackOff (similar-looking errors)
+
+| Status | Meaning | Not the same because |
+|---|---|---|
+| `ImagePullBackOff` / `ErrImagePull` | Can't download the image (wrong name/tag, private registry, no login) | Container **never started** |
+| `CreateContainerConfigError` | Referenced **ConfigMap / Secret doesn't exist** (or key missing) | Container **never started** |
+| `Pending` | No node has enough CPU/memory, or nodeSelector doesn't match | Pod **not scheduled** yet |
+| `0/1 Running` | Readiness probe failing | Container **running**, no restart |
+
+> Missing **env var the app needs** → app starts and exits → **CrashLoopBackOff**. Env from a **ConfigMap/Secret that doesn't exist** → container never starts → **CreateContainerConfigError**.
+
+### Golden rule for CrashLoopBackOff
+
+```bash
+kubectl describe pod <pod>           # Events + Last State (Reason, Exit Code)
+kubectl logs <pod> --previous        # what the app printed BEFORE it crashed
+kubectl logs <pod> -c <container>    # multi-container / init container
+```
+
+> **Interview one-liner:** CrashLoopBackOff means the container keeps crashing and K8s keeps restarting it with a growing delay. Common causes are missing env vars or config, an unreachable dependency, app errors, OOMKilled (exit 137), a wrong command (exit 127), a container with nothing long-running (exit 0), permission issues and failing liveness probes. I check `kubectl describe pod` for the reason and exit code, then `kubectl logs --previous` for the app error.
+
 ---
 
 ## 11. Falco: Kubernetes runtime security
@@ -932,12 +1019,18 @@ It runs as a DaemonSet (one pod per node), reads system calls with an eBPF drive
 **Q17. Difference between Trivy and Falco?**
 Trivy scans images for known vulnerabilities before they run (build/CI). Falco detects threats while containers are running (runtime). Falco alerts; it does not block.
 
+**Q18. Other than probes, what causes CrashLoopBackOff?**
+Missing environment variable or wrong config, dependency (DB) not reachable, app code error, OOMKilled (exit 137), wrong command (exit 127), container with no long-running process (exit 0), permission denied, missing file/volume, port already in use, wrong image architecture, failing init container. Check `kubectl describe pod` (Reason, Exit Code) and `kubectl logs --previous`.
+
+**Q19. Difference between CrashLoopBackOff, ImagePullBackOff and CreateContainerConfigError?**
+CrashLoopBackOff: container starts and keeps crashing. ImagePullBackOff: image can't be downloaded, container never starts. CreateContainerConfigError: referenced ConfigMap/Secret is missing, container never starts.
+
 ### Other Questions
 
-**Q18. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q20. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
 
-**Q19. What can go wrong with a badly set liveness probe?**
+**Q21. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
 
 ---
