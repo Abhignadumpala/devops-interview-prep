@@ -13,8 +13,9 @@
 5. [How a probe checks the app (3 ways)](#5-how-a-probe-checks-the-app-3-ways)
 6. [Probe timing settings](#6-probe-timing-settings)
 7. [Example YAML](#7-example-yaml)
-8. [Commands](#8-commands)
-9. [Interview Questions](#9-interview-questions)
+8. [Lab: liveness probe with httpGet (nginx)](#8-lab-liveness-probe-with-httpget-nginx)
+9. [Commands](#9-commands)
+10. [Interview Questions](#10-interview-questions)
 
 ---
 
@@ -253,7 +254,126 @@ Delete the file inside the container (`kubectl exec <pod> -- rm /tmp/healthy`) �
 
 ---
 
-## 8. Commands
+## 8. Lab: liveness probe with httpGet (nginx)
+
+**Goal:** check if the nginx app is alive using a **liveness probe** with the **HTTP (`httpGet`)** method.
+
+![liveness-http YAML (class)](images/liveness-http-yaml-class.png)
+
+### The code: `liveness-http.yaml`
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-http
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+
+    livenessProbe:
+      httpGet:
+        path: /
+        port: 80
+
+      initialDelaySeconds: 15
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+```
+
+### Line by line
+
+| Line | Meaning |
+|---|---|
+| `kind: Pod`, `name: liveness-http` | Create one pod named `liveness-http` |
+| `name: nginx`, `image: nginx` | One container running the nginx web server |
+| `livenessProbe:` | Check if the container is **alive**; if not → restart it |
+| `httpGet:` | Use the **HTTP** method (call a web endpoint) |
+| `path: /` | The **endpoint** to call. `/` = nginx home page |
+| `port: 80` | **nginx listens on port 80**, so we check port 80 |
+| `initialDelaySeconds: 15` | Wait **15 s** after the container starts before the 1st check (give nginx time to start) |
+| `periodSeconds: 10` | Then check **every 10 s** |
+| `timeoutSeconds: 2` | Wait max **2 s** for an answer; slower = failed |
+| `failureThreshold: 3` | **3 failures in a row** → restart the container |
+
+### What the probe actually does
+
+Every 10 s, the **kubelet** (on the worker node) sends this request to the container:
+
+```
+GET http://<pod-ip>:80/
+```
+
+| nginx answers | Result |
+|---|---|
+| **200 OK** (path `/` exists, home page returned) | ✅ Healthy → keep running |
+| **404 Not Found** (path doesn't exist), **500** error, or no answer in 2 s | ❌ Failed. 3 times in a row → **restart container** |
+
+> **Path can be anything the app really serves:** `/`, `/dev`, `/health`, `/login`... The rule: the path must return **200–399**. Default nginx serves only `/`, so `path: /health` would get **404** → nginx would be restarted again and again even though it works fine.
+
+> **Port must match the app:** nginx works on **80**. If you put `port: 8080`, nothing listens there → probe fails → restart loop.
+
+### Timeline
+
+```
+0s    container starts
+15s   1st check  GET /  → 200 ✅
+25s   2nd check  GET /  → 200 ✅
+35s   ...every 10s, keeps running
+
+If nginx breaks:
+ fail 1 ❌ → fail 2 ❌ → fail 3 ❌  (~30 s)  → kubelet RESTARTS the container
+```
+
+### Steps (run where kubectl works: Killercoda control plane / EKS bastion)
+
+**Step 1 — create the file and the pod**
+
+```bash
+vi liveness-http.yaml          # paste the YAML above
+kubectl apply -f liveness-http.yaml
+```
+
+**Step 2 — check it's healthy**
+
+```bash
+kubectl get pods               # STATUS Running, RESTARTS 0
+kubectl describe pod liveness-http
+#   Liveness: http-get http://:80/ delay=15s timeout=2s period=10s #success=1 #failure=3
+```
+
+**Step 3 — break it (test self-healing)**
+
+Delete nginx's home page, so `/` stops returning 200 (nginx returns **403**):
+
+```bash
+kubectl exec liveness-http -- rm /usr/share/nginx/html/index.html
+```
+
+**Step 4 — watch Kubernetes restart it**
+
+```bash
+kubectl get pods -w            # after ~30 s RESTARTS goes 0 → 1
+kubectl describe pod liveness-http
+#   Warning  Unhealthy  Liveness probe failed: HTTP probe failed with statuscode: 403
+#   Normal   Killing    Container nginx failed liveness probe, will be restarted
+```
+
+The restarted container starts fresh from the image, so `index.html` is back → `/` returns 200 → healthy again. **That's self-healing.**
+
+**Step 5 — clean up**
+
+```bash
+kubectl delete -f liveness-http.yaml
+```
+
+> **Interview one-liner:** I used an `httpGet` liveness probe on nginx: path `/` on port 80, first check after 15 s, then every 10 s with a 2 s timeout. After 3 failures in a row the kubelet restarts the container.
+
+---
+
+## 9. Commands
 
 | Command | Use |
 |---|---|
@@ -265,7 +385,7 @@ Delete the file inside the container (`kubectl exec <pod> -- rm /tmp/healthy`) �
 
 ---
 
-## 9. Interview Questions
+## 10. Interview Questions
 
 ### ⭐ Very Important
 
@@ -278,21 +398,24 @@ After `failureThreshold` failures in a row, the kubelet restarts the container. 
 **Q3. What are the 3 ways to check if your app is alive (probe types)?**
 HTTP checks a web endpoint like `/health` (200–399 = healthy). TCP checks whether a port is accepting connections. EXEC runs a command inside the container and checks the result (exit 0 = healthy). HTTP = endpoint, TCP = port, EXEC = command.
 
+**Q4. Explain the `liveness-http` probe: path `/`, port 80, initialDelaySeconds 15.**
+Every 10 s the kubelet sends `GET http://<pod-ip>:80/` to nginx (nginx listens on 80). A 200–399 answer means healthy. The first check waits 15 s so nginx can start. If it fails 3 times in a row (no answer within 2 s, or an error like 404), the container is restarted. The path can be any endpoint the app serves (`/`, `/dev`, `/health`).
+
 ### Other Questions
 
-**Q4. What is a readiness probe?**
+**Q5. What is a readiness probe?**
 It checks if the app is ready to receive traffic. If not, the pod is removed from the Service endpoints (no traffic), but it is not restarted.
 
-**Q5. Difference between liveness and readiness probes?**
+**Q6. Difference between liveness and readiness probes?**
 Liveness failure → container restart (self-healing). Readiness failure → traffic stops to that pod, no restart (traffic control).
 
-**Q6. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q7. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
 
-**Q7. What is a startup probe?**
+**Q8. What is a startup probe?**
 A probe for slow-starting apps. Liveness and readiness checks wait until it passes, so the app isn't restarted while still booting.
 
-**Q8. What can go wrong with a badly set liveness probe?**
+**Q9. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
 
 ---
