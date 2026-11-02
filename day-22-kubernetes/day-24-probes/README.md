@@ -123,11 +123,66 @@
 
 ## 5. How a probe checks the app (3 ways)
 
-| Type | How it checks | Healthy if | Example use |
-|---|---|---|---|
-| **httpGet** | HTTP request to a path + port | Status **200–399** | Web apps / APIs (`/health`) |
-| **tcpSocket** | Open a TCP connection to a port | Port **accepts** connection | DBs, Redis |
-| **exec** | Run a command inside the container | Command exits **0** | `cat /tmp/healthy` |
+> ⭐ **One-liner:** There are **three ways to check if your app is alive: HTTP, TCP, EXEC.**
+> **HTTP = endpoint | TCP = port | EXEC = command**
+
+![Liveness probe types (class slide)](images/liveness-probe-types-class.png)
+
+| # | Type | Checks | Healthy if | Use for |
+|---|---|---|---|---|
+| 1 | **HTTP** (`httpGet`) | A **web endpoint** like `/health` | Response code **200–399** | Web apps, APIs |
+| 2 | **TCP** (`tcpSocket`) | Whether a **port** is accepting connections | Port **opens** | Databases (MySQL 3306), Redis 6379 |
+| 3 | **EXEC** (`exec`) | Runs a **command inside the container** | Command **exit code 0** | Apps without HTTP/port, custom checks |
+
+### 1. HTTP probe = endpoint
+
+The kubelet calls a URL of the app, like a browser: `GET http://<pod-ip>:8080/health`.
+- Answer `200 OK` → alive ✅
+- Error (500), no answer, timeout → failed ❌ → restart
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health      # the endpoint
+    port: 8080
+  periodSeconds: 10
+```
+
+### 2. TCP probe = port
+
+The kubelet only tries to **connect to the port**. It doesn't send a request or read a reply.
+- Port accepts the connection → alive ✅
+- Connection refused → failed ❌ → restart
+
+```yaml
+livenessProbe:
+  tcpSocket:
+    port: 3306         # the port (MySQL)
+  periodSeconds: 10
+```
+
+### 3. EXEC probe = command
+
+The kubelet **runs a command inside the container** and checks its result (exit code).
+- Exit code `0` → alive ✅
+- Any other exit code → failed ❌ → restart
+
+```yaml
+livenessProbe:
+  exec:
+    command: ["cat", "/tmp/healthy"]   # the command
+  periodSeconds: 10
+```
+
+**Which one to choose?**
+
+| My app is... | Use |
+|---|---|
+| A website / API with a `/health` URL | **HTTP** |
+| A DB or service that only listens on a port | **TCP** |
+| Something that needs a custom check (script, file) | **EXEC** |
+
+> The same 3 types work for **readiness** and **startup** probes too; only the action on failure is different.
 
 ---
 
@@ -220,19 +275,19 @@ It checks if the application is alive at an interval we set. If it gets no respo
 **Q2. What happens when a liveness probe fails?**
 After `failureThreshold` failures in a row, the kubelet restarts the container. The pod's `RESTARTS` count goes up.
 
+**Q3. What are the 3 ways to check if your app is alive (probe types)?**
+HTTP checks a web endpoint like `/health` (200–399 = healthy). TCP checks whether a port is accepting connections. EXEC runs a command inside the container and checks the result (exit 0 = healthy). HTTP = endpoint, TCP = port, EXEC = command.
+
 ### Other Questions
 
-**Q3. What is a readiness probe?**
+**Q4. What is a readiness probe?**
 It checks if the app is ready to receive traffic. If not, the pod is removed from the Service endpoints (no traffic), but it is not restarted.
 
-**Q4. Difference between liveness and readiness probes?**
+**Q5. Difference between liveness and readiness probes?**
 Liveness failure → container restart (self-healing). Readiness failure → traffic stops to that pod, no restart (traffic control).
 
-**Q5. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q6. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
-
-**Q6. What are the 3 probe types?**
-`httpGet` (HTTP status 200–399), `tcpSocket` (port accepts connection), `exec` (command exits 0).
 
 **Q7. What is a startup probe?**
 A probe for slow-starting apps. Liveness and readiness checks wait until it passes, so the app isn't restarted while still booting.
