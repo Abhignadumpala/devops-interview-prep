@@ -84,26 +84,104 @@
 
 ## 3. Readiness probe
 
-**Definition:** A **readiness probe** checks **if the application is ready to receive traffic**. If not ready, Kubernetes **stops sending traffic** to that pod (removes it from the Service endpoints). It does **not** restart the container.
+**Definition:** A **readiness probe** checks **whether a pod is ready to receive user traffic**.
+- If the check **fails**, Kubernetes **removes the pod from the Service endpoint list**.
+- The pod **keeps running** (no restart) but **does not receive traffic until it becomes ready**.
 
-**When is an app "not ready"?**
-- Still starting up (loading config, cache, connecting to DB).
-- Temporarily busy or its DB is down.
+![Readiness probe (class slide)](images/readiness-probe-class.png)
+
+**Why do we need it after liveness?**
+Liveness only says the app is **alive**. Alive is not the same as **ready**. An app can be running but still loading data, cache or a DB connection. If users are sent to it now, they get errors. Readiness makes sure **traffic goes only to pods that are ready**.
+
+| | Alive? (liveness) | Ready? (readiness) | Gets traffic? |
+|---|---|---|---|
+| App starting, loading data | ✅ | ❌ | ❌ No |
+| App fully started | ✅ | ✅ | ✅ Yes |
+| DB connection lost for a while | ✅ | ❌ | ❌ No (comes back when ready) |
+| App stuck / frozen | ❌ → restart | ❌ | ❌ No |
+
+**Service endpoint list** = the list of pod IPs a Service sends traffic to. Only **Ready** pods are in it.
 
 **How it works, step by step:**
 
-1. Pod starts → **not ready** → Service sends it **no traffic**.
-2. Kubelet runs the readiness check every `periodSeconds`.
-3. **Response OK** → pod marked **Ready** → Service sends traffic.
-4. **Fails later** → pod marked **Not Ready** → traffic stops. When it passes again → traffic comes back.
+1. Pod starts → **not ready yet** → not in the endpoint list → **no traffic**.
+2. After `initialDelaySeconds`, the kubelet runs the readiness check every `periodSeconds`.
+3. **Check passes** → pod marked **Ready** → added to the endpoint list → **gets traffic**.
+4. **Check fails** `failureThreshold` times → pod marked **Not Ready** → **removed** from the endpoint list → no traffic. The pod **keeps running**.
+5. Check passes again → added back → traffic comes back. **No restart at any point.**
 
 ```
  User ──► Service ──┬──► Pod 1 (Ready ✅)      gets traffic
                     ├──► Pod 2 (Ready ✅)      gets traffic
-                    └──✖ Pod 3 (Not Ready ❌)  no traffic, NOT restarted
+                    └──✖ Pod 3 (Not Ready ❌)  running, but NO traffic, NOT restarted
 ```
 
-> **Interview one-liner:** A readiness probe checks if the app is ready to serve traffic; if not, Kubernetes removes the pod from the Service so users don't hit it, without restarting it.
+**Important points:**
+
+| | |
+|---|---|
+| ✅ | Ensures traffic goes **only to healthy and ready pods** |
+| 🚫 | Prevents users from reaching apps that are **still starting up** |
+| ⏱️ | Used when apps need **time to load data, cache or dependencies** (DB, other services) |
+
+**Probe types (same 3 as liveness):**
+
+| Type | Checks |
+|---|---|
+| **HTTP** | A web URL (e.g. `/ready`) returns 200–399 |
+| **TCP** | A port is open |
+| **Exec** | A command inside the container exits 0 |
+
+**Common parameters:**
+
+| Parameter | Meaning |
+|---|---|
+| `initialDelaySeconds` | Wait before the first check |
+| `periodSeconds` | How often to check |
+| `failureThreshold` | Number of failures before marking the pod **Not Ready** |
+
+**Example YAML:**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: readiness-http
+  labels:
+    app: web
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+    ports:
+    - containerPort: 80
+
+    readinessProbe:           # ready? if not → NO TRAFFIC (no restart)
+      httpGet:
+        path: /
+        port: 80
+      initialDelaySeconds: 5  # wait 5s before 1st check
+      periodSeconds: 5        # check every 5s
+      failureThreshold: 3     # 3 fails → Not Ready
+```
+
+**How to see it:**
+
+```bash
+kubectl get pods                  # READY 0/1 = not ready (no traffic), 1/1 = ready
+kubectl describe pod readiness-http
+#   Warning  Unhealthy  Readiness probe failed: ...
+kubectl get endpoints <service>   # only Ready pod IPs are listed
+```
+
+| `kubectl get pods` shows | Meaning |
+|---|---|
+| `READY 1/1`, `Running` | Ready → gets traffic |
+| `READY 0/1`, `Running` | Running but **not ready** → no traffic, RESTARTS stays the same |
+
+> Readiness failing gives **`0/1 Running`**, **not** CrashLoopBackOff, because there is no restart.
+
+> **Interview one-liner:** A readiness probe checks whether a pod is ready to receive user traffic. If it fails, Kubernetes removes the pod from the Service endpoint list; the pod keeps running but gets no traffic until it becomes ready.
 
 ---
 
@@ -574,21 +652,24 @@ After `failureThreshold` failures in a row the container is restarted. If it kee
 **Q6. A pod is in CrashLoopBackOff. What is your first step and what can cause it with liveness probes?**
 First `kubectl describe pod <pod>` and read the Events (`Liveness probe failed: ...`). Common causes: wrong path in httpGet (404), wrong port in httpGet/tcpSocket (connection refused), wrong command in exec (e.g. file not found), or too short `initialDelaySeconds`. Then check `kubectl logs --previous`, fix the YAML and re-create the pod.
 
+**Q7. What is a readiness probe?**
+It checks whether a pod is ready to receive user traffic. If the check fails, Kubernetes removes the pod from the Service endpoint list. The pod keeps running but does not receive traffic until it becomes ready. Used when apps need time to load data, cache or dependencies.
+
+**Q8. If a readiness probe fails, is the pod restarted?**
+No. It shows `READY 0/1` and `Running`, is removed from the Service endpoints, and gets traffic back when the check passes again. Only a liveness failure restarts the container.
+
 ### Other Questions
 
-**Q7. What is a readiness probe?**
-It checks if the app is ready to receive traffic. If not, the pod is removed from the Service endpoints (no traffic), but it is not restarted.
-
-**Q8. Difference between liveness and readiness probes?**
+**Q9. Difference between liveness and readiness probes?**
 Liveness failure → container restart (self-healing). Readiness failure → traffic stops to that pod, no restart (traffic control).
 
-**Q9. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q10. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
 
-**Q10. What is a startup probe?**
+**Q11. What is a startup probe?**
 A probe for slow-starting apps. Liveness and readiness checks wait until it passes, so the app isn't restarted while still booting.
 
-**Q11. What can go wrong with a badly set liveness probe?**
+**Q12. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
 
 ---
