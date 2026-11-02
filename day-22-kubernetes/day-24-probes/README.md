@@ -327,6 +327,33 @@ If nginx breaks:
  fail 1 ❌ → fail 2 ❌ → fail 3 ❌  (~30 s)  → kubelet RESTARTS the container
 ```
 
+### failureThreshold → restart → CrashLoopBackOff
+
+**Not on the 1st restart.** CrashLoopBackOff comes when the probe **keeps failing after every restart**.
+
+| Situation | What happens | `kubectl get pods` STATUS |
+|---|---|---|
+| Fails 3 times (`failureThreshold`) **once**, then OK after restart | Container restarted 1 time → healthy | `Running`, RESTARTS 1 |
+| Fails **every time**, even after restarts (wrong path, wrong port, app always broken) | Restart → fail → restart → fail... K8s waits **longer each time** (10s, 20s, 40s ... max 5 min) | **`CrashLoopBackOff`**, RESTARTS keeps going up |
+
+```
+fail x3 → restart #1 → fail x3 → restart #2 (wait 10s) → fail x3 → restart #3 (wait 20s) ...
+                                                         └─► STATUS: CrashLoopBackOff
+```
+
+**CrashLoopBackOff** = "the container keeps failing, so Kubernetes is **backing off** (waiting longer) before the next restart."
+
+**Example:** `path: /health` on default nginx → always 404 → CrashLoopBackOff.
+
+**How to fix:**
+
+```bash
+kubectl describe pod liveness-http      # Events: "Liveness probe failed: HTTP probe failed with statuscode: 404"
+kubectl logs liveness-http --previous   # logs of the container BEFORE the last restart
+```
+
+Then fix the probe (correct `path` / `port`, bigger `initialDelaySeconds` if the app is slow) and re-apply.
+
 ### Steps (run where kubectl works: Killercoda control plane / EKS bastion)
 
 **Step 1 — create the file and the pod**
@@ -401,21 +428,24 @@ HTTP checks a web endpoint like `/health` (200–399 = healthy). TCP checks whet
 **Q4. Explain the `liveness-http` probe: path `/`, port 80, initialDelaySeconds 15.**
 Every 10 s the kubelet sends `GET http://<pod-ip>:80/` to nginx (nginx listens on 80). A 200–399 answer means healthy. The first check waits 15 s so nginx can start. If it fails 3 times in a row (no answer within 2 s, or an error like 404), the container is restarted. The path can be any endpoint the app serves (`/`, `/dev`, `/health`).
 
+**Q5. What happens if the liveness probe never gets a response?**
+After `failureThreshold` failures in a row the container is restarted. If it keeps failing after every restart, Kubernetes waits longer between restarts (10s, 20s, 40s ... up to 5 min) and the pod shows **CrashLoopBackOff**. Check `kubectl describe pod` events and `kubectl logs --previous`, then fix the path, port or initial delay.
+
 ### Other Questions
 
-**Q5. What is a readiness probe?**
+**Q6. What is a readiness probe?**
 It checks if the app is ready to receive traffic. If not, the pod is removed from the Service endpoints (no traffic), but it is not restarted.
 
-**Q6. Difference between liveness and readiness probes?**
+**Q7. Difference between liveness and readiness probes?**
 Liveness failure → container restart (self-healing). Readiness failure → traffic stops to that pod, no restart (traffic control).
 
-**Q7. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
+**Q8. Why do we need a liveness probe if Kubernetes already restarts crashed containers?**
 A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps the process alive, so only a liveness probe can detect it.
 
-**Q8. What is a startup probe?**
+**Q9. What is a startup probe?**
 A probe for slow-starting apps. Liveness and readiness checks wait until it passes, so the app isn't restarted while still booting.
 
-**Q9. What can go wrong with a badly set liveness probe?**
+**Q10. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
 
 ---
