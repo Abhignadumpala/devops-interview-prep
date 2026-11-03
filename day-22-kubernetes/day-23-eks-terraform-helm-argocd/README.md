@@ -1105,11 +1105,11 @@ Argo CD (on any node) ──► API server ──► scheduler picks any node �
 
 > **Interview one-liner:** Argo CD is a set of microservice pods that can run on any node. It manages the whole cluster through the API server, and the scheduler places app pods on any node. Pods talk across nodes by Service name. For HA, run 2+ replicas with anti-affinity.
 
-### Class demo (Killercoda) vs my EKS: why did the trainer install Helm on the control plane?
+### Self-managed cluster vs EKS: where does Helm get installed?
 
-In class the trainer ran `curl ... get-helm-4 | ./get_helm.sh` at the prompt `root@controlplane`. That does **not** install Helm *into* the cluster. It installs the **`helm` program** on the machine they were typing on.
+On a self-managed cluster (built with kubeadm) you often log in to the control-plane machine and run `curl ... get-helm-4 | ./get_helm.sh` at `root@controlplane`. That does **not** install Helm *into* the cluster. It installs the **`helm` program** on the machine you are typing on.
 
-| | Killercoda (class demo) | My EKS setup |
+| | Self-managed (kubeadm) | My EKS setup |
 |---|---|---|
 | Cluster type | Self-managed (kubeadm): I get a shell **on the control-plane machine** | AWS-managed: control plane is **hidden**, no login |
 | Where I type commands | `root@controlplane` | `ubuntu@bastion` |
@@ -1117,13 +1117,13 @@ In class the trainer ran `curl ... get-helm-4 | ./get_helm.sh` at the prompt `ro
 | What `helm` does | Sends YAML to the API server | Same |
 
 ```
-Killercoda:  root@controlplane ── helm ──► API server (same machine) ──► node01 pods
-EKS:         ubuntu@bastion    ── helm ──► API server (AWS-managed)  ──► worker node pods
+Self-managed: root@controlplane ── helm ──► API server (same machine) ──► worker node pods
+EKS:          ubuntu@bastion    ── helm ──► API server (AWS-managed)  ──► worker node pods
 ```
 
 > **Rule:** Helm goes on **whatever machine I type commands on** (like `kubectl`). In EKS I can't get into the control plane, so the **bastion** plays that role.
 
-**Install Helm by hand (same as the trainer):**
+**Install Helm by hand:**
 
 ```bash
 # 🖥️ on the machine where I run kubectl (bastion in EKS)
@@ -1133,13 +1133,13 @@ chmod 700 get_helm.sh
 helm version
 ```
 
-> My bastion bootstrap script already does this automatically (it uses `get-helm-3` → Helm 3; the trainer used Helm 4). Both work for Argo CD with the same commands.
+> My bastion bootstrap script already does this automatically (it uses `get-helm-3` → Helm 3; the command above gives Helm 4). Both work for Argo CD with the same commands.
 
 ### Do I need kubeadm on the bastion?
 
 **No.** The bastion needs only **kubectl, helm and AWS CLI**, and the bootstrap script installs them automatically.
 
-**kubeadm** = a tool to **build your own cluster by hand** (`kubeadm init` makes a control plane, `kubeadm join` adds worker nodes). Killercoda's cluster was built this way. In EKS, **AWS builds the control plane** and **Terraform's node group** creates the worker nodes, so kubeadm has no job.
+**kubeadm** = a tool to **build your own cluster by hand** (`kubeadm init` makes a control plane, `kubeadm join` adds worker nodes). Self-managed clusters are built this way. In EKS, **AWS builds the control plane** and **Terraform's node group** creates the worker nodes, so kubeadm has no job.
 
 | Tool | On bastion? | Why |
 |---|---|---|
@@ -1149,7 +1149,7 @@ helm version
 | **eksctl** | Optional, auto-installed | Extra EKS helper |
 | **kubeadm** | ❌ No | Only for self-built clusters |
 
-| | Self-managed (Killercoda, kubeadm) | EKS (my setup) |
+| | Self-managed (kubeadm) | EKS (my setup) |
 |---|---|---|
 | Who builds the control plane | Me: `kubeadm init` | AWS |
 | Who adds worker nodes | Me: `kubeadm join` | Terraform node group |
