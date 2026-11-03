@@ -284,7 +284,16 @@ spec:
  User ──► <node-ip>:30080 ──► Service ──► Ready Pod
 ```
 
-**Why it's rare in production:** users would need a **node IP** and a **high port**. Node IPs change when nodes are replaced or scaled, and if that node dies the address breaks.
+**Why it's rare in production:**
+
+| Problem | Why it matters |
+|---|---|
+| **Weird address** | Users would have to type `http://54.12.34.56:30080`. Nobody gives customers an IP and a port. Real users type a **domain name** like `shop.com` |
+| **Node IPs change** | Nodes are replaced, scaled or upgraded, so the IP you shared stops working |
+| **One node dies = address breaks** | The user is pointed at one node; if it goes down, the app looks down |
+| **No HTTPS, no health checks** | There's no single stable entry point to attach a certificate or skip unhealthy targets |
+
+> In production users open **`https://shop.com`**. Route 53 points that **domain name** to a **load balancer** (the ALB from the Ingress), which has a stable DNS name, HTTPS and health checks. That's why we use Ingress, not NodePort, for real users.
 
 **Where it's still used:** on-prem clusters behind your own hardware load balancer, and **under the hood** (an ALB with `target-type: instance` sends traffic to NodePorts).
 
@@ -625,7 +634,7 @@ curl http://<node-internal-ip>:<nodePort>
 
 **Expected:** the nginx page ✅ (the bastion is in the same VPC). If it **hangs**, the node security group doesn't allow that port from the bastion: allow TCP 30000–32767 from the bastion's security group.
 
-> This is why NodePort is rare in production: users would need a node IP and port 3xxxx.
+> This is why NodePort is rare in production: users would need a node IP and port 3xxxx. Real users type a **domain name** (`shop.com`), which points to a load balancer, not to a node.
 
 ### Step 4: Check what's in AWS so far
 
