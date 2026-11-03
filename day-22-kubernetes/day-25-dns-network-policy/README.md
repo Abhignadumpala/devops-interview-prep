@@ -1,4 +1,4 @@
-# Day 25 — Kubernetes Networking: CNI, CoreDNS (DNS), nslookup and Network Policies
+# Day 25 — Kubernetes Networking: CNI, CoreDNS (DNS), Services and Ingress, nslookup and Network Policies
 
 [← Kubernetes notes](../README.md)
 
@@ -20,6 +20,13 @@ Here we learn how Pods get IPs and talk to each other, how they find each other 
 1. [CNI: how Pods get IPs and talk](#1-cni-how-pods-get-ips-and-talk)
 2. [CoreDNS: the phonebook of Kubernetes](#2-coredns-the-phonebook-of-kubernetes)
 3. [Services: why we need them and which type to use](#3-services-why-we-need-them-and-which-type-to-use)
+   - [Why Services are important](#why-services-are-important)
+   - [ClusterIP](#clusterip-internal-only) · [NodePort](#nodeport-a-port-on-every-node) · [LoadBalancer](#loadbalancer-a-cloud-load-balancer-per-service)
+   - [Ingress: one load balancer for many apps](#ingress-one-load-balancer-for-many-apps-best-for-web-apps)
+   - [Which one to use in real projects?](#which-one-to-use-in-real-projects)
+   - [How production serves real traffic (EKS)](#how-production-serves-real-traffic-end-to-end-on-eks)
+   - [Overview: how traffic reaches a Pod](#overview-how-traffic-reaches-a-pod)
+   - [Other Service types: Headless, ExternalName](#other-service-types-youll-meet-in-production)
 4. [nslookup: the DNS checker](#4-nslookup-the-dns-checker)
 5. [Network Policy: a firewall for Pods](#5-network-policy-a-firewall-for-pods)
 
