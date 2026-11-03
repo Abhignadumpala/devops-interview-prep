@@ -651,7 +651,7 @@ kubectl logs liveness-http --previous   # logs of the container BEFORE the last 
 
 Then fix the probe (correct `path` / `port`, bigger `initialDelaySeconds` if the app is slow) and re-apply.
 
-### Steps (run where kubectl works: Killercoda control plane / EKS bastion)
+### Steps (run where kubectl is set up, e.g. the EKS bastion)
 
 **Step 1 — create the file and the pod**
 
@@ -1007,7 +1007,7 @@ kubectl logs <pod> -c <container>    # multi-container / init container
 
 ### Install Falco with Helm (from Artifact Hub, Helm use case 2)
 
-All commands on the **🖥️ bastion** (or Killercoda control plane):
+All commands on the **🖥️ bastion** (where kubectl is set up):
 
 ```bash
 # 1. Add the official Falco chart repo (Verified Publisher: falcosecurity)

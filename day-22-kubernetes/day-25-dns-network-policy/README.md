@@ -2,7 +2,7 @@
 
 [← Kubernetes notes](../README.md)
 
-> **In short:** **CNI** gives every Pod an **IP address** and connects all Pods together. Pod IPs change, so **CoreDNS** lets Pods find Services **by name** (like a phonebook). **nslookup** checks that a name resolves. By default every Pod can talk to every Pod. A **Network Policy** is a **firewall** that allows only the traffic we want (frontend → backend → db).
+> **In short:** **CNI** gives every Pod an **IP address** and connects all Pods together. Pod IPs change, so a **Service** gives a fixed IP and **CoreDNS** lets Pods find it **by name** (like a phonebook). For users outside, production apps use an **Ingress** (one load balancer) in front of **ClusterIP** Services. **nslookup** checks that a name resolves. By default every Pod can talk to every Pod. A **Network Policy** is a **firewall** that allows only the traffic we want (frontend → backend → db).
 
 ## About this class
 
@@ -10,7 +10,7 @@ Here we learn how Pods get IPs and talk to each other, how they find each other 
 
 | Part | Topic | What you learn |
 |---|---|---|
-| **Part 1: Concepts** | CNI, CoreDNS, nslookup, Network Policy | What each one is, why we need it, how it works |
+| **Part 1: Concepts** | CNI, CoreDNS, Service types (ClusterIP, NodePort, LoadBalancer, Ingress), nslookup, Network Policy | What each one is, why we need it, which one to use in real projects |
 | **Part 2: Lab** | 3-tier app: frontend, backend, db | Create pods and Services, test DNS with nslookup, then block traffic with 2 Network Policies |
 | **Part 3: More policy patterns** | Default deny, egress + DNS | Two common policies you'll see in real clusters and the CKA exam |
 
@@ -19,19 +19,20 @@ Here we learn how Pods get IPs and talk to each other, how they find each other 
 **Part 1: Concepts**
 1. [CNI: how Pods get IPs and talk](#1-cni-how-pods-get-ips-and-talk)
 2. [CoreDNS: the phonebook of Kubernetes](#2-coredns-the-phonebook-of-kubernetes)
-3. [nslookup: the DNS checker](#3-nslookup-the-dns-checker)
-4. [Network Policy: a firewall for Pods](#4-network-policy-a-firewall-for-pods)
+3. [Service types: ClusterIP, NodePort, LoadBalancer, Ingress](#3-service-types-reaching-pods-from-inside-and-outside)
+4. [nslookup: the DNS checker](#4-nslookup-the-dns-checker)
+5. [Network Policy: a firewall for Pods](#5-network-policy-a-firewall-for-pods)
 
 **Part 2: Lab**
-5. [Lab: DNS and Network Policies step by step](#5-lab-dns-and-network-policies-step-by-step)
+6. [Lab: DNS and Network Policies step by step](#6-lab-dns-and-network-policies-step-by-step)
 
 **Part 3: More policy patterns**
-6. [Default deny and egress with DNS](#6-default-deny-and-egress-with-dns)
+7. [Default deny and egress with DNS](#7-default-deny-and-egress-with-dns)
 
 **Wrap-up**
-7. [What I learned](#7-what-i-learned)
-8. [Commands](#8-commands)
-9. [Interview Questions](#9-interview-questions)
+8. [What I learned](#8-what-i-learned)
+9. [Commands](#9-commands)
+10. [Interview Questions](#10-interview-questions)
 
 ---
 
@@ -59,7 +60,7 @@ Here we learn how Pods get IPs and talk to each other, how they find each other 
 
 | Plugin | Supports Network Policy? | Where you see it |
 |---|---|---|
-| **Calico** | ✅ Yes | Very common, self-managed clusters, Killercoda |
+| **Calico** | ✅ Yes | Very common in self-managed (kubeadm) clusters; can also run on EKS |
 | **Cilium** | ✅ Yes | Modern clusters (eBPF) |
 | **Flannel** | ❌ No (only connects Pods) | Simple / learning clusters |
 | **AWS VPC CNI** | ✅ Yes (turn on network policy in the add-on) | EKS: Pods get real VPC IPs |
@@ -140,7 +141,180 @@ search default.svc.cluster.local svc.cluster.local cluster.local   # why the sho
 
 ---
 
-## 3. nslookup: the DNS checker
+## 3. Service types: reaching Pods from inside and outside
+
+**Definition:** A **Service** is a **fixed IP + DNS name** in front of a group of Pods (picked by labels). It load-balances traffic to those Pods. The Service **type** decides **who can reach it**: only the cluster, or users on the internet.
+
+| Type | Who can reach it | Address you use | Real-world use |
+|---|---|---|---|
+| **ClusterIP** (default) | Only **inside** the cluster | `backend:80` | Backend APIs, databases, caches: most Services |
+| **NodePort** | Outside, through **any node's IP** + port 30000–32767 | `<node-ip>:30080` | Rare in production: debugging, or behind your own external load balancer (on-prem) |
+| **LoadBalancer** | Outside, through a **cloud load balancer** | `a1b2c3.elb.amazonaws.com` | One app that needs its own public address, mainly **non-HTTP (TCP)** apps |
+| **Ingress** (not a Service type) | Outside, **one** load balancer for **many** Services | `shop.com/api`, `shop.com/` | ✅ **Standard for web apps and APIs in production** |
+
+Each type builds on the one before: **LoadBalancer → NodePort → ClusterIP → Pods**.
+
+### ClusterIP: internal only
+
+**Definition:** the **default** type. The Service gets an **internal IP** (e.g. `10.96.45.12`) and a DNS name, reachable **only from inside** the cluster.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  type: ClusterIP       # default, can be left out
+  selector:
+    app: backend        # send traffic to Pods with this label
+  ports:
+  - port: 80            # Service port
+    targetPort: 80      # container port
+```
+
+> ⭐ In real projects, **backend and db are always ClusterIP**. They should never be reachable from the internet.
+
+### NodePort: a port on every node
+
+**Definition:** opens the **same port (30000–32767) on every node**. Traffic to `<any-node-ip>:<nodePort>` goes to the Service, then to the Pods.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080     # opened on every node (30000-32767)
+```
+
+```
+ User ──► <node-ip>:30080 ──► Service ──► Pod
+```
+
+| ✅ Good | ❌ Bad |
+|---|---|
+| Simple, no cloud load balancer needed | Odd port (30080), not 80/443 |
+| Building block that LoadBalancer uses behind the scenes | Users must know a **node IP**, and node IPs change (autoscaling, node replaced) |
+| | If that node dies, the URL breaks |
+| | You must open 30000–32767 in the node security group |
+
+### LoadBalancer: a cloud load balancer per Service
+
+**Definition:** asks the **cloud provider** (AWS, Azure, GCP) to create a **real load balancer** with an external DNS name / IP. It spreads traffic across healthy nodes or Pods.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: external          # AWS Load Balancer Controller → NLB
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing # public
+spec:
+  type: LoadBalancer
+  selector:
+    app: web
+  ports:
+  - port: 80
+    targetPort: 80
+```
+
+```
+ User ──► AWS NLB (a1b2c3.elb.amazonaws.com:80) ──► Service ──► Pod
+```
+
+```bash
+kubectl get svc web
+```
+
+**Expected:** `EXTERNAL-IP` shows the load balancer DNS name, e.g. `a1b2c3.elb.amazonaws.com` (it shows `<pending>` for a minute or two while AWS creates it).
+
+| ✅ Good | ❌ Bad |
+|---|---|
+| Real external address on port 80/443 | **One load balancer per Service**: 10 apps = 10 load balancers |
+| Health checks, survives a node failure | Each load balancer is billed per hour (about **$16/month each** on AWS, plus traffic) |
+| Works for any TCP/UDP app | No path or host routing, no shared HTTPS setup |
+
+### Ingress: one load balancer for many apps (best for web apps)
+
+**Definition:** an **Ingress** is a set of **HTTP routing rules** (by host name and path) in front of many **ClusterIP** Services. An **Ingress controller** turns those rules into **one** load balancer. On EKS this is the **AWS Load Balancer Controller**, which creates an **ALB**.
+
+```
+                         ┌─► shop.com/api ──► backend Service (ClusterIP) ──► backend Pods
+ User ──► ONE AWS ALB ───┤
+   (HTTPS, ACM cert)     └─► shop.com/    ──► frontend Service (ClusterIP) ──► frontend Pods
+```
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shop
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing   # public ALB
+    alb.ingress.kubernetes.io/target-type: ip           # ALB sends traffic straight to Pod IPs
+spec:
+  ingressClassName: alb          # handled by the AWS Load Balancer Controller
+  rules:
+  - host: shop.example.com
+    http:
+      paths:
+      - path: /api               # shop.example.com/api → backend
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 80
+      - path: /                  # everything else → frontend
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+```
+
+| ✅ Why it's the production choice |
+|---|
+| **One** ALB for many apps → much lower cost than one load balancer per Service |
+| Routing by **path** (`/api`, `/`) and **host** (`shop.com`, `admin.shop.com`) |
+| **HTTPS** in one place (ACM certificate on the ALB) |
+| All app Services stay **ClusterIP**, so nothing else is exposed |
+
+### Which one to use in real projects?
+
+| Situation | Best choice |
+|---|---|
+| Internal APIs, databases, caches | **ClusterIP** |
+| Websites and HTTP/HTTPS APIs (most apps) | ✅ **Ingress** (one ALB) + ClusterIP Services |
+| A single TCP/UDP app that must be public (MQTT, game server, SFTP, gRPC without HTTP routing) | **LoadBalancer** (NLB on AWS) |
+| On-prem cluster with your own hardware load balancer | **NodePort** behind that load balancer |
+| Quick debugging of one Service | `kubectl port-forward svc/web 8080:80` (no Service change needed) |
+
+**A real 3-tier app on EKS** (puts this whole page together):
+
+```
+ Internet ──► ALB (Ingress, HTTPS) ──► frontend (ClusterIP)
+                                          │  calls "backend" by name (CoreDNS)
+                                          ▼
+                                       backend (ClusterIP) ──► db (ClusterIP)
+                Network Policies: only frontend → backend, only backend → db
+```
+
+> 💡 **About `externalIPs:`** in a Service YAML: it's a rarely used field that only works if you route that IP to a node yourself. Normally you never write the external IP: AWS fills it in for `type: LoadBalancer`, and for an Ingress it appears in `kubectl get ingress` (`ADDRESS`).
+
+> **Interview one-liner:** ClusterIP is internal only; NodePort opens a port on every node; LoadBalancer creates one cloud load balancer per Service. In production we expose HTTP apps through an Ingress (one ALB on EKS) and keep all Services as ClusterIP; LoadBalancer is for non-HTTP apps that need their own address.
+
+---
+
+## 4. nslookup: the DNS checker
 
 **Definition:** **nslookup** is a command that **asks a DNS server for the IP of a name**. Run inside a Pod, it shows whether a **Service name resolves** through CoreDNS.
 
@@ -177,7 +351,7 @@ Address 1: 10.96.45.12 backend.default.svc.cluster.local   ← the Service IP �
 
 ---
 
-## 4. Network Policy: a firewall for Pods
+## 5. Network Policy: a firewall for Pods
 
 **Definition:** A **Network Policy** is a Kubernetes object that acts as a **firewall for Pod traffic**. It decides **which Pods can talk to which Pods** (and on which ports).
 
@@ -259,11 +433,11 @@ spec:
 
 # Part 2: Lab
 
-## 5. Lab: DNS and Network Policies step by step
+## 6. Lab: DNS and Network Policies step by step
 
 **Goal:** build a 3-tier app (frontend, backend, db), reach Pods by **name** through CoreDNS, then allow only **frontend → backend → db**.
 
-**Where:** any cluster with a CNI that supports Network Policies. We use the free [Killercoda Kubernetes playground](https://killercoda.com/playgrounds/scenario/kubernetes) (control plane + `node01`).
+**Where:** any cluster whose CNI enforces Network Policies: **EKS** with the VPC CNI network policy option turned on, or a self-managed cluster with **Calico** / **Cilium**. Run the commands where `kubectl` is set up (e.g. the bastion for EKS).
 
 ```
  frontend ──✅──► backend ──✅──► db
@@ -276,13 +450,13 @@ spec:
 kubectl get nodes
 ```
 
-**Expected:** `controlplane` and `node01` are `Ready`.
+**Expected:** all nodes are `Ready`.
 
 ```bash
 kubectl get pods -n kube-system
 ```
 
-**What it does:** lists the system Pods. Look for the CNI (`calico-*` / `canal-*` / `cilium-*`) and DNS (`coredns-*`).
+**What it does:** lists the system Pods. Look for the CNI (`aws-node-*` on EKS, or `calico-*` / `cilium-*`) and DNS (`coredns-*`).
 
 **Expected:** CNI Pods and 2 `coredns` Pods are `Running`.
 
@@ -377,7 +551,7 @@ kubectl expose pod db --port=80 --name=db
 kubectl get svc
 ```
 
-**Expected:** `backend` and `db` with a `CLUSTER-IP` like `10.96.x.x` (this IP doesn't change).
+**Expected:** `backend` and `db` with `TYPE ClusterIP` and a `CLUSTER-IP` like `10.96.x.x` (this IP doesn't change). ClusterIP = internal only, which is right for backend and db ([section 3](#3-service-types-reaching-pods-from-inside-and-outside)).
 
 ### Step 5: Call by name (CoreDNS at work)
 
@@ -553,7 +727,7 @@ kubectl describe networkpolicy allow-backend-db
 |---|---|---|
 | Policy created but **nothing is blocked** | CNI doesn't enforce policies (e.g. Flannel) | Use Calico / Cilium; on EKS enable network policy in the VPC CNI add-on |
 | **Allowed** traffic is blocked too | Label in `podSelector` doesn't match the Pod | `kubectl get pods --show-labels`, fix the label (typos like `fronted`) |
-| Works by IP, fails by name after an **egress** policy | Egress blocks DNS (port 53 to CoreDNS) | Allow egress to port 53 ([Part 3](#6-default-deny-and-egress-with-dns)) |
+| Works by IP, fails by name after an **egress** policy | Egress blocks DNS (port 53 to CoreDNS) | Allow egress to port 53 ([Part 3](#7-default-deny-and-egress-with-dns)) |
 | `connection refused` (not a timeout) | Not a policy: app not listening on that port | Check `containerPort` / Service `targetPort` |
 | Policy in the wrong namespace | A policy only works in **its own** namespace | Create it in the Pods' namespace (`-n`) |
 
@@ -581,7 +755,7 @@ kubectl delete pod dns-test
 
 # Part 3: More policy patterns
 
-## 6. Default deny and egress with DNS
+## 7. Default deny and egress with DNS
 
 ### Default deny all ingress
 
@@ -649,11 +823,12 @@ spec:
 
 # Wrap-up
 
-## 7. What I learned
+## 8. What I learned
 
 **Part 1: Concepts**
 - **CNI** gives Pods IPs and connects them (Calico, Cilium, Flannel, AWS VPC CNI). Pod IPs change.
 - **CoreDNS** (kube-system, Service `kube-dns`, `10.96.0.10`) turns `backend` into the Service IP. Full name: `<svc>.<ns>.svc.cluster.local`.
+- **Service types:** ClusterIP = internal, NodePort = port on every node, LoadBalancer = one cloud LB per Service. **Production:** Ingress (one ALB) + ClusterIP Services; LoadBalancer only for non-HTTP apps.
 - **nslookup** from a `busybox:1.28` Pod checks DNS: NXDOMAIN = wrong name/namespace, timeout = CoreDNS down or blocked.
 - **Network Policy** = firewall for Pods. Selects Pods by label, allows only listed traffic, everything else to them is blocked. Needs a CNI that enforces it.
 
@@ -665,18 +840,21 @@ spec:
 - `podSelector: {}` + no rules = default deny. With egress policies, always allow DNS on port 53.
 
 ```
- CNI (Pod IPs) ──► Service (fixed IP) ──► CoreDNS (name → IP) ──► Network Policy (who may talk)
+ CNI (Pod IPs) ──► Service (fixed IP) ──► CoreDNS (name → IP) ──► Ingress (users get in) ──► Network Policy (who may talk)
 ```
 
 ---
 
-## 8. Commands
+## 9. Commands
 
 | Command | Use |
 |---|---|
 | `kubectl get pods -o wide --show-labels` | Pod IPs, nodes and labels |
 | `kubectl get pods -n kube-system` | CNI and CoreDNS Pods |
-| `kubectl expose pod backend --port=80 --name=backend` | Create a Service for a Pod |
+| `kubectl expose pod backend --port=80 --name=backend` | Create a Service for a Pod (ClusterIP by default) |
+| `kubectl get svc` | Service `TYPE`, `CLUSTER-IP`, `EXTERNAL-IP` (load balancer DNS) |
+| `kubectl get ingress` | Ingress rules and the ALB address |
+| `kubectl port-forward svc/web 8080:80` | Reach a Service from your machine for debugging |
 | `kubectl exec -it frontend -- curl -sI --max-time 5 backend` | Test a connection by name |
 | `kubectl run dns-test --image=busybox:1.28 --restart=Never -- sleep 3600` | Test Pod with `nslookup` |
 | `kubectl exec -it dns-test -- nslookup backend` | Check a name resolves |
@@ -688,7 +866,7 @@ spec:
 
 ---
 
-## 9. Interview Questions
+## 10. Interview Questions
 
 ### Other Questions
 
@@ -725,6 +903,18 @@ Egress now blocks everything not listed, including DNS. Add an egress rule to Co
 **Q11. Blocked call: timeout or connection refused?**
 A Network Policy drops packets, so the call **times out**. `connection refused` means the destination is reachable but nothing listens on that port.
 
+**Q12. What's the difference between ClusterIP, NodePort and LoadBalancer?**
+ClusterIP is reachable only inside the cluster. NodePort opens the same port (30000–32767) on every node. LoadBalancer asks the cloud to create a load balancer with an external address that forwards to the Service.
+
+**Q13. How do you expose a web app to users in production?**
+With an Ingress: on EKS the AWS Load Balancer Controller creates one ALB that routes by host/path to ClusterIP Services, with HTTPS from an ACM certificate. Backend and database stay ClusterIP.
+
+**Q14. Why not use a LoadBalancer Service for every app?**
+Each one creates its own cloud load balancer, billed per hour, so 10 apps means 10 load balancers, each with its own HTTPS setup. One Ingress shares a single ALB and adds path/host routing. LoadBalancer is still right for non-HTTP (TCP/UDP) apps.
+
+**Q15. Why is NodePort rarely used in production?**
+Users would need a node IP and a high port (30000–32767). Node IPs change when nodes are replaced or scaled, and there's no single stable address or health-checked entry point.
+
 ---
 
-**Source:** [Kubernetes docs: Network Policies](https://kubernetes.io/docs/concepts/services-networking/network-policies/) · [DNS for Services and Pods](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/) · [Debugging DNS resolution](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) · [Network plugins (CNI)](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/)
+**Source:** [Kubernetes docs: Network Policies](https://kubernetes.io/docs/concepts/services-networking/network-policies/) · [DNS for Services and Pods](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/) · [Debugging DNS resolution](https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/) · [Network plugins (CNI)](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/) · [Service types](https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types) · [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/) · [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/)
