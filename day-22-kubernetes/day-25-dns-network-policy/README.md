@@ -366,6 +366,45 @@ spec:
 | **Security** | Only the ALB is public, app Services are ClusterIP in private subnets, plus Network Policies |
 | **Cost** | **One** ALB shared by many apps through Ingress, not one load balancer per Service |
 
+### Overview: how traffic reaches a Pod
+
+**Definition:** the path a user's request takes from typing `shop.com` to a **healthy Pod** answering.
+
+```
+ User types shop.com
+      │
+      ▼
+ 1. Route 53 (DNS)      "shop.com = this ALB"
+      │
+      ▼
+ 2. ALB + Ingress rules  /     → frontend
+                         /api  → backend
+      │
+      ▼
+ 3. Service             EndpointSlices = IPs of READY Pods only
+      │
+      ▼
+ 4. Pod                 a Ready Pod answers ✅
+```
+
+| Step | What happens | Who does it |
+|---|---|---|
+| 1 | `shop.com` is turned into the load balancer's address | **Route 53** (DNS) |
+| 2 | HTTPS ends here; the **path** picks the app (`/` → frontend, `/api` → backend) | **ALB** running the **Ingress** rules (AWS Load Balancer Controller copies them in) |
+| 3 | The Service knows **which Pods are Ready** (list of Pod IPs) | **EndpointSlices**, filled using the **readiness probe** |
+| 4 | The request goes to **one Ready Pod** | ALB → Pod IP directly (`target-type: ip`) |
+| Inside the cluster | frontend calls `backend` by name → Service IP → one Ready Pod | **CoreDNS** (name → IP) + **kube-proxy** rules on every node |
+
+**Who checks if a Pod is healthy?**
+
+| ❌ Common belief | ✅ What really happens |
+|---|---|
+| "The Service checks which Pod is healthy" | A Service is not a running program. The **kubelet** runs the **readiness probe** on each Pod |
+| "The Service has a route table" | **EndpointSlices** hold the IPs of **Ready** Pods; **kube-proxy** turns them into iptables/IPVS rules on each node |
+| "The load balancer sends to the Ingress, then the Ingress sends on" | With the ALB, the Ingress is just **rules**, and the **ALB itself** applies them. (Only with NGINX Ingress is there an extra hop: NLB → ingress-nginx Pods → Service → Pod) |
+
+> ⭐ **One line:** DNS finds the load balancer → the load balancer applies the Ingress path rules → the Service's list holds only Ready Pods → one Ready Pod answers. A broken Pod fails its readiness probe, drops out of the list, and gets no traffic.
+
 ### Other Service types you'll meet in production
 
 | Type | Definition | Real use |
@@ -1016,6 +1055,9 @@ Route 53 resolves the domain to the ALB; the ALB (created by the Ingress through
 
 **Q18. What are Headless and ExternalName Services used for?**
 Headless (`clusterIP: None`) returns each Pod's IP and gives Pods stable names, used with StatefulSets like MongoDB or Kafka. ExternalName maps a cluster name to an outside DNS name, e.g. `db` → an Amazon RDS endpoint.
+
+**Q19. Does a Service check which Pod is healthy?**
+No. The kubelet runs each Pod's readiness probe. Only Ready Pods are kept in the Service's EndpointSlices, and kube-proxy (or the ALB, with `target-type: ip`) sends traffic only to those IPs. A Pod that fails readiness is removed from the list and gets no traffic.
 
 ---
 
