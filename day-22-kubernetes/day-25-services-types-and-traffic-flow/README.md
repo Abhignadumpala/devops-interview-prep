@@ -18,20 +18,21 @@ Here we learn, step by step, how Pods are reached inside the cluster, how users 
 **Part 1: Concepts**
 1. [The problem: Pod IPs keep changing](#1-the-problem-pod-ips-keep-changing)
 2. [The fix: a Service](#2-the-fix-a-service)
-3. [ClusterIP: only inside the cluster](#3-clusterip-only-inside-the-cluster)
-4. [NodePort: a door on every node](#4-nodeport-a-door-on-every-node)
-5. [LoadBalancer: a cloud load balancer per Service](#5-loadbalancer-a-cloud-load-balancer-per-service)
-6. [Ingress: one door for all websites](#6-ingress-one-door-for-all-websites)
-7. [Which one to use (what real projects use)](#7-which-one-to-use-what-real-projects-use)
-8. [How traffic flows in production](#8-how-traffic-flows-in-production)
+3. [Types of Services](#3-types-of-services)
+   - [3.1 ClusterIP: only inside the cluster](#31-clusterip-only-inside-the-cluster)
+   - [3.2 NodePort: a door on every node](#32-nodeport-a-door-on-every-node)
+   - [3.3 LoadBalancer: a cloud load balancer per Service](#33-loadbalancer-a-cloud-load-balancer-per-service)
+4. [Ingress: one door for all websites](#4-ingress-one-door-for-all-websites)
+5. [Which one to use (what real projects use)](#5-which-one-to-use-what-real-projects-use)
+6. [How traffic flows in production](#6-how-traffic-flows-in-production)
 
 **Part 2: Lab**
-9. [Lab: expose one app 4 ways on EKS](#9-lab-expose-one-app-4-ways-on-eks)
+7. [Lab: expose one app 4 ways on EKS](#7-lab-expose-one-app-4-ways-on-eks)
 
 **Wrap-up**
-10. [What I learned](#10-what-i-learned)
-11. [Commands](#11-commands)
-12. [Interview Questions](#12-interview-questions)
+8. [What I learned](#8-what-i-learned)
+9. [Commands](#9-commands)
+10. [Interview Questions](#10-interview-questions)
 
 ---
 
@@ -73,13 +74,31 @@ So if the frontend wants to call the backend, **which IP should it use?** It can
 | **kube-proxy** | On every node, sends traffic for the Service IP to one Ready Pod |
 | **CoreDNS** | Turns the name `backend` into the Service IP |
 
-**The Service `type` answers one question: who can reach this app?** There are 3 types (sections 3–5). For websites we add an Ingress on top (section 6).
-
 > **Interview one-liner:** Pods are temporary and their IPs change, so a Service gives a stable name and IP and load-balances across the Ready Pods it selects by label.
 
 ---
 
-## 3. ClusterIP: only inside the cluster
+## 3. Types of Services
+
+**Definition:** every Service has a **type**, set with `type:` in its YAML. The type decides **who can reach the app** behind the Service: only other Pods inside the cluster, or also users from outside. Kubernetes has **3 types**: **ClusterIP**, **NodePort** and **LoadBalancer**. If we don't write a type, Kubernetes uses **ClusterIP**.
+
+| Type | Who can reach it | Why it exists |
+|---|---|---|
+| **ClusterIP** | Only Pods **inside** the cluster | So apps can call each other by a fixed name (frontend → backend) |
+| **NodePort** | Also people **outside**, via `node-ip:30080` | The simplest way to open an app to the outside, without any cloud load balancer |
+| **LoadBalancer** | Also the **internet**, via a cloud load balancer | Gives the app a proper public address, with health checks |
+
+Each type adds one more way in on top of the one before:
+
+```
+ ClusterIP     →  inside the cluster only
+ NodePort      →  ClusterIP + a port on every node
+ LoadBalancer  →  NodePort + a cloud load balancer in front
+```
+
+Let's look at each one.
+
+### 3.1 ClusterIP: only inside the cluster
 
 **Definition:** **ClusterIP** is the **default** Service type. Kubernetes gives the Service an **internal IP** (for example `10.96.45.12`) and a name (for example `backend`) that work **only inside the cluster**. Other Pods can call it, but nobody outside the cluster (no user on the internet) can reach it. We use it for apps that only other apps need to talk to.
 
@@ -107,9 +126,7 @@ spec:
 |---|---|---|
 | Only Pods inside the cluster | Nothing | ✅ **Every app**: frontend, backend, workers, internal databases |
 
----
-
-## 4. NodePort: a door on every node
+### 3.2 NodePort: a door on every node
 
 **Definition:** **NodePort** is a Service type that opens the **same port number** (between **30000 and 32767**) on **every node** (server) in the cluster. Anyone who can reach a node can open the app at `<node-ip>:<nodePort>`, and Kubernetes forwards that request to one of the Ready Pods. It still has a ClusterIP too, so Pods inside the cluster can call it by name as usual.
 
@@ -147,9 +164,7 @@ spec:
 |---|---|---|
 | Outside, via `node-ip:3xxxx` | Nothing | ❌ Quick testing, on-prem clusters |
 
----
-
-## 5. LoadBalancer: a cloud load balancer per Service
+### 3.3 LoadBalancer: a cloud load balancer per Service
 
 **Definition:** **LoadBalancer** is a Service type that asks the **cloud** (AWS) to create a **real load balancer** with a **public address** for this one Service. Users on the internet send requests to that address, and the load balancer forwards them to the Ready Pods. On EKS this load balancer is an **NLB** (Network Load Balancer), and **each** LoadBalancer Service gets **its own** NLB.
 
@@ -187,7 +202,7 @@ spec:
 
 ---
 
-## 6. Ingress: one door for all websites
+## 4. Ingress: one door for all websites
 
 **Definition:** an **Ingress** is a Kubernetes object that holds **HTTP routing rules** for our website, such as "`/api` goes to backend, `/` goes to frontend". It lets **many apps share one public load balancer**: the load balancer reads the URL **path** (`/api`) or **host** (`admin.shop.com`) of each request and sends it to the right **ClusterIP** Service. On EKS that one load balancer is an **ALB** (Application Load Balancer).
 
@@ -250,7 +265,7 @@ spec:
 
 ---
 
-## 7. Which one to use (what real projects use)
+## 5. Which one to use (what real projects use)
 
 **Definition:** choosing how to expose an app means answering two questions: **who must reach it** (only other apps inside the cluster, or users on the internet?) and **what it speaks** (a website/API over **HTTP**, or plain **TCP/UDP** like a game server). The answers decide whether we use ClusterIP, an Ingress, or a LoadBalancer Service.
 
@@ -286,7 +301,7 @@ spec:
 
 ---
 
-## 8. How traffic flows in production
+## 6. How traffic flows in production
 
 **Definition:** the **traffic flow** is every stop a user's request passes through, from the moment they type `shop.com` in the browser until a **Ready Pod** sends back the answer: first **DNS** finds the address, then the **load balancer** receives the request, then the **Ingress rules** pick the app, and finally one **Pod** of that app's Service handles it.
 
@@ -325,7 +340,7 @@ For `https://shop.com/` the rule `/` sends the request to a **frontend Pod**, an
 
 # Part 2: Lab
 
-## 9. Lab: expose one app 4 ways on EKS
+## 7. Lab: expose one app 4 ways on EKS
 
 **Goal:** run one nginx app and expose it as **ClusterIP**, **NodePort**, **LoadBalancer (NLB)** and **Ingress (ALB)**, then see what each one creates.
 
@@ -585,7 +600,7 @@ aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerName" --o
 
 # Wrap-up
 
-## 10. What I learned
+## 8. What I learned
 
 **Part 1: Concepts**
 - Pod IPs keep changing, so a **Service** gives a fixed name + IP and sends only to **Ready** Pods.
@@ -602,7 +617,7 @@ aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerName" --o
 
 ---
 
-## 11. Commands
+## 9. Commands
 
 | Command | Use |
 |---|---|
@@ -617,7 +632,7 @@ aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerName" --o
 
 ---
 
-## 12. Interview Questions
+## 10. Interview Questions
 
 ### Other Questions
 

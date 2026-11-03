@@ -755,7 +755,7 @@ A Network Policy drops packets, so the call **times out**. `connection refused` 
 **Q12. Why do we need Services if Pods already have IPs?**
 Pods are temporary: every restart, deploy or scale event gives new IPs. A Service gives one stable name and IP, finds Pods by label, and sends traffic only to Ready Pods.
 
-> More Service and Ingress questions: [Services interview questions](../day-25-services-types-and-traffic-flow/README.md#12-interview-questions)
+> More Service and Ingress questions: [Services interview questions](../day-25-services-types-and-traffic-flow/README.md#10-interview-questions)
 
 ---
 
