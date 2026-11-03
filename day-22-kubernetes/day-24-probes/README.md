@@ -2,7 +2,7 @@
 
 [← Kubernetes notes](../README.md)
 
-> **In short:** A container can be "running" but still broken (stuck, frozen, not ready). **Probes** let Kubernetes check the app by itself. **Liveness** = is it alive? If not, **restart** it. **Readiness** = is it ready for users? If not, **stop sending traffic** to it. **Falco** watches the cluster for **security threats** and sends alerts.
+> **In short:** A container can be "running" but still broken (stuck, frozen, not ready). **Probes** let Kubernetes check the app by itself. **Startup** = has it finished starting? Until then, liveness and readiness **wait**, so a slow app isn't restarted while it boots. **Liveness** = is it alive? If not, **restart** it. **Readiness** = is it ready for users? If not, **stop sending traffic** to it. **Falco** watches the cluster for **security threats** and sends alerts.
 
 ## Table of Contents
 
