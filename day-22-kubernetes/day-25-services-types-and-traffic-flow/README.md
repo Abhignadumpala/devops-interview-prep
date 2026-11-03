@@ -39,7 +39,7 @@ Here we learn, step by step, how Pods are reached inside the cluster, how users 
 
 ## 1. The problem: Pod IPs keep changing
 
-**Definition:** a **Pod** is temporary. When it's replaced, the new Pod gets a **new IP**.
+**Definition:** a **Pod** is the smallest unit that runs our app's container in Kubernetes. Pods are **temporary**: Kubernetes deletes and recreates them whenever they crash, when we deploy a new version, or when it scales the app up or down. Every new Pod gets a **new IP address**, so a Pod's IP is never something another app can rely on.
 
 | What happens | Result |
 |---|---|
@@ -53,7 +53,7 @@ So if the frontend wants to call the backend, **which IP should it use?** It can
 
 ## 2. The fix: a Service
 
-**Definition:** a **Service** is a **fixed name + fixed IP** in front of a group of Pods. It sends each request to one of the **Ready** Pods behind it.
+**Definition:** a **Service** is a Kubernetes object that gives a group of Pods **one fixed name and one fixed IP** that never change, even when the Pods behind it are replaced. It finds its Pods by **label** (for example `app: backend`), keeps a list of the ones that are **Ready**, and sends each request to one of them. So other apps always call the **Service name**, never a Pod IP.
 
 ```
  frontend ──► "backend" (Service, never changes) ──┬──► Pod 1 (Ready ✅)
@@ -81,7 +81,7 @@ So if the frontend wants to call the backend, **which IP should it use?** It can
 
 ## 3. ClusterIP: only inside the cluster
 
-**Definition:** the **default** type. The Service gets an **internal IP** and a name, reachable **only by Pods inside the cluster**.
+**Definition:** **ClusterIP** is the **default** Service type. Kubernetes gives the Service an **internal IP** (for example `10.96.45.12`) and a name (for example `backend`) that work **only inside the cluster**. Other Pods can call it, but nobody outside the cluster (no user on the internet) can reach it. We use it for apps that only other apps need to talk to.
 
 ```yaml
 apiVersion: v1
@@ -111,7 +111,7 @@ spec:
 
 ## 4. NodePort: a door on every node
 
-**Definition:** everything ClusterIP has, **plus** the same port (30000–32767) opened on **every node**. Traffic to `<node-ip>:<nodePort>` reaches the Pods.
+**Definition:** **NodePort** is a Service type that opens the **same port number** (between **30000 and 32767**) on **every node** (server) in the cluster. Anyone who can reach a node can open the app at `<node-ip>:<nodePort>`, and Kubernetes forwards that request to one of the Ready Pods. It still has a ClusterIP too, so Pods inside the cluster can call it by name as usual.
 
 ```yaml
 apiVersion: v1
@@ -151,7 +151,7 @@ spec:
 
 ## 5. LoadBalancer: a cloud load balancer per Service
 
-**Definition:** everything NodePort has, **plus** a **cloud load balancer** with a public address. On EKS, this is an **NLB** (Network Load Balancer).
+**Definition:** **LoadBalancer** is a Service type that asks the **cloud** (AWS) to create a **real load balancer** with a **public address** for this one Service. Users on the internet send requests to that address, and the load balancer forwards them to the Ready Pods. On EKS this load balancer is an **NLB** (Network Load Balancer), and **each** LoadBalancer Service gets **its own** NLB.
 
 ```yaml
 apiVersion: v1
@@ -189,7 +189,7 @@ spec:
 
 ## 6. Ingress: one door for all websites
 
-**Definition:** an **Ingress** is a set of **HTTP routing rules** that sends each request to the right **ClusterIP** Service by **path** or **host**, all through **one** load balancer.
+**Definition:** an **Ingress** is a Kubernetes object that holds **HTTP routing rules** for our website, such as "`/api` goes to backend, `/` goes to frontend". It lets **many apps share one public load balancer**: the load balancer reads the URL **path** (`/api`) or **host** (`admin.shop.com`) of each request and sends it to the right **ClusterIP** Service. On EKS that one load balancer is an **ALB** (Application Load Balancer).
 
 ```
  shop.com/api  → backend
@@ -252,7 +252,7 @@ spec:
 
 ## 7. Which one to use (what real projects use)
 
-**Definition:** choosing a type = deciding **who must reach the app** and whether it speaks **HTTP** or plain **TCP/UDP**.
+**Definition:** choosing how to expose an app means answering two questions: **who must reach it** (only other apps inside the cluster, or users on the internet?) and **what it speaks** (a website/API over **HTTP**, or plain **TCP/UDP** like a game server). The answers decide whether we use ClusterIP, an Ingress, or a LoadBalancer Service.
 
 ![Who can reach your app: Service types and Ingress](images/service-types.png)
 
@@ -288,7 +288,7 @@ spec:
 
 ## 8. How traffic flows in production
 
-**Definition:** the **traffic flow** is the path a user's request takes from typing `shop.com` to a **Ready Pod** answering.
+**Definition:** the **traffic flow** is every stop a user's request passes through, from the moment they type `shop.com` in the browser until a **Ready Pod** sends back the answer: first **DNS** finds the address, then the **load balancer** receives the request, then the **Ingress rules** pick the app, and finally one **Pod** of that app's Service handles it.
 
 ![Production traffic flow](images/production-traffic.png)
 
