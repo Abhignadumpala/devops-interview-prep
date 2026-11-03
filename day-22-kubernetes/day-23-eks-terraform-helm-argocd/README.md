@@ -14,6 +14,7 @@
 6. [The code](#6-the-code)
 7. [Steps: create the cluster](#7-steps-create-the-cluster)
 8. [Introduction to Helm](#8-introduction-to-helm)
+   - [Helm vs Ansible: which one in real projects?](#helm-vs-ansible-which-one-in-real-projects)
 9. [Install Argo CD with Helm](#9-install-argo-cd-with-helm)
 10. [Destroy everything](#10-destroy-everything)
 11. [Common problems](#11-common-problems)
@@ -962,6 +963,51 @@ helm pull jenkins/jenkins --untar                 # download the chart folder to
 
 > **Interview one-liner:** Helm has two main uses: managing releases (install, upgrade, rollback) and installing ready-made tools. Every popular tool (Argo CD, Jenkins, Prometheus) publishes an official chart on Artifact Hub; I pick the Verified Publisher chart, copy the `helm repo add` and `helm install` commands and run them on the bastion.
 
+### Helm vs Ansible: which one in real projects?
+
+**Definition:** **Ansible** is a **configuration management** tool: it logs in to **servers** (VMs, EC2) over SSH and sets them up by installing packages, creating users, copying files and starting services. **Helm** is the **package manager for Kubernetes**: it turns chart templates into Kubernetes YAML and **installs, upgrades and rolls back apps inside a cluster** through the Kubernetes API. They solve **different problems**, so they don't replace each other.
+
+| | **Ansible** | **Helm** |
+|---|---|---|
+| Manages | **Servers** (VMs, EC2, on-prem, network devices) | **Apps on Kubernetes** |
+| Talks to | The server's OS, over **SSH** | The **Kubernetes API** |
+| Files | Playbooks, roles, inventory | Charts: `Chart.yaml`, `values.yaml`, `templates/` |
+| Example | Install nginx and Java on 50 EC2 servers | Install Prometheus, or upgrade my app v1.2 → v1.3, on EKS |
+
+**Why Kubernetes companies use Ansible less:** on a VM, the server lives for months and we keep **changing** it with Ansible. With containers we **don't log in and change** anything: the software is **baked into the Docker image**, and a new version means a **new image**, deployed with Helm.
+
+**When every app is built by CI/CD, containerised and deployed to Kubernetes, Ansible has little or no part in deploying apps.** This is normal for cloud-native teams.
+
+| Job | Old way (VMs) | Kubernetes company |
+|---|---|---|
+| Install software for the app (Java, Node, nginx) | Ansible on each server | **Dockerfile** (baked into the image) |
+| Build and ship the app | Ansible copies files to servers | **CI/CD** builds the image and pushes it to ECR |
+| Deploy / upgrade | Ansible playbook | **Helm** chart (often through **Argo CD**) |
+| App config | Ansible templates | **ConfigMaps / Secrets** (values in Helm) |
+| Create servers / infra | Manual or Ansible | **Terraform** (EKS, VPC, RDS) |
+| Patch and update nodes | Ansible | **EKS managed node groups** (AWS updates the node images) |
+
+So in a Kubernetes company the main daily tools are **Docker, CI/CD, Kubernetes, Helm, Argo CD and Terraform**.
+
+**Where Ansible still appears, even in a Kubernetes company:**
+
+- Servers **outside** Kubernetes: Jenkins and its agents, bastion hosts, VPN, monitoring VMs
+- Databases running on **EC2** instead of RDS
+- **Self-managed** Kubernetes nodes (kubeadm), unlike EKS
+- Building **golden AMIs** (Packer + Ansible)
+- On-prem servers or network devices
+
+**A typical modern stack:**
+
+```
+ Terraform  → builds the infra (VPC, EKS, RDS)
+ Ansible    → configures servers / VMs / AMIs (outside Kubernetes)
+ Helm       → packages the apps for Kubernetes
+ Argo CD    → keeps the cluster in sync with Git (deploys the Helm charts)
+```
+
+> **Interview one-liner:** Ansible is configuration management for servers: it connects over SSH and installs and configures software on VMs. Helm is a package manager for Kubernetes: it templates and versions Kubernetes manifests and installs, upgrades and rolls back apps in a cluster. In a company where every app is containerised and deployed to EKS through CI/CD, Helm and Argo CD do the deployment, and Ansible is used only for servers outside Kubernetes.
+
 ---
 
 ## 9. Install Argo CD with Helm
@@ -1582,6 +1628,10 @@ Argo CD is ~7 microservices, each its own pod (1 copy by default). The scheduler
 
 **Q25. With 20 nodes, does Argo CD need to be on every node?**
 No. It runs on a few nodes and manages the whole cluster through the API server; the scheduler places app pods on any node. One-pod-per-node is a DaemonSet, which Argo CD is not.
+
+**Q26. What's the difference between Helm and Ansible? Which do you use?**
+Ansible configures servers over SSH (packages, users, files, services); Helm installs, upgrades and rolls back apps on Kubernetes. In our project every app is containerised and deployed to EKS through CI/CD with Helm and Argo CD, so Ansible isn't used for app deployment; it fits servers outside Kubernetes, like Jenkins agents, EC2 databases or golden AMIs.
+
 ---
 
 **Source:** [Class code: devopsbyraham/eks-code](https://github.com/devopsbyraham/eks-code) · [terraform-aws-modules/eks](https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest) · [terraform-aws-modules/vpc](https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws/latest) · [Helm docs](https://helm.sh/docs/) · [Argo CD Helm chart](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd) · [Argo CD getting started](https://argo-cd.readthedocs.io/en/stable/getting_started/)
