@@ -67,7 +67,7 @@
  running  container
 ```
 
-![Liveness probe (class slide)](images/liveness-probe-class.png)
+![Liveness probe](images/liveness-probe.png)
 
 **Key points:**
 
@@ -90,7 +90,7 @@
 - If the check **fails**, Kubernetes **removes the pod from the Service endpoint list**.
 - The pod **keeps running** (no restart) but **does not receive traffic until it becomes ready**.
 
-![Readiness probe](images/readiness-probe-class.png)
+![Readiness probe](images/readiness-probe.png)
 
 **Why do we need it after liveness?**
 Liveness only says the app is **alive**. Alive is not the same as **ready**. An app can be running but still loading data, cache or a DB connection. If users are sent to it now, they get errors. Readiness makes sure **traffic goes only to pods that are ready**.
@@ -200,7 +200,7 @@ kubectl get endpoints <service>   # only Ready pod IPs are listed
 
 **Definition:** A **startup probe** is the **very first probe**. It checks **whether the application has finished starting**.
 
-![Startup probe (class slide)](images/startup-probe-class.png)
+![Startup probe](images/startup-probe.png)
 
 **Why?** Some apps (big Java apps, apps loading lots of data) take minutes to start. Without a startup probe, the **liveness probe** may check too early, fail, and **restart the container while it is still booting** → it never finishes starting → restart loop.
 
@@ -222,8 +222,6 @@ kubectl get endpoints <service>   # only Ready pod IPs are listed
 | 🏢 | Commonly used for **large Java, Spring Boot or database-based applications** with long startup times (1–5 min) |
 | 🔁 | Helps **avoid unnecessary restarts** and **application CrashLoops** |
 | 💡 | **Why it matters:** prevents premature (too early) restarts, saves resources, and ensures smooth application startup |
-
-![Startup probe: real-time use (class slide)](images/startup-probe-realtime-class.png)
 
 **Example problem without startup probe:** Spring Boot app needs **2 min** to start. Liveness checks after 15s → fails 3 times → restart → starts again from 0 → fails again → **CrashLoopBackOff forever**. With a startup probe allowing 5 min, the app boots fully, then liveness takes over.
 
@@ -320,7 +318,7 @@ Container starts
 > ⭐ **One-liner:** There are **three ways to check if your app is alive: HTTP, TCP, EXEC.**
 > **HTTP = endpoint | TCP = port | EXEC = command**
 
-![Liveness probe types (class slide)](images/liveness-probe-types-class.png)
+![Probe types: HTTP, TCP, EXEC](images/liveness-probe-types.png)
 
 | # | Type | Checks | Healthy if | Use for |
 |---|---|---|---|---|
@@ -451,7 +449,7 @@ Delete the file inside the container (`kubectl exec <pod> -- rm /tmp/healthy`) �
 
 **Goal:** check if the nginx app is alive using a **liveness probe** with the **HTTP (`httpGet`)** method.
 
-![liveness-http YAML (class)](images/liveness-http-yaml-class.png)
+![liveness-http.yaml](images/liveness-http-yaml.png)
 
 ### The code: `liveness-http.yaml`
 
@@ -635,7 +633,7 @@ Warning  Unhealthy  Liveness probe failed: HTTP probe failed with statuscode: 40
 
 Correct TCP probe (nginx listens on port 80):
 
-![TCP liveness probe YAML (class)](images/liveness-tcp-yaml-class.png)
+![TCP liveness probe YAML](images/liveness-tcp-yaml.png)
 
 ```yaml
 apiVersion: v1
@@ -658,7 +656,7 @@ spec:
 
 Then we created `liveness-http-2` with **`port: 81`** ❌ (nothing listens on 81). `kubectl describe pod`:
 
-![describe pod: wrong port (class)](images/describe-wrong-port-class.png)
+![kubectl describe pod: wrong port](images/describe-wrong-port.png)
 
 ```
 Warning  Unhealthy  Liveness probe failed: dial tcp 192.168.1.74:81: connect: connection refused
@@ -672,7 +670,7 @@ Warning  BackOff    Back-off restarting failed container nginx in pod liveness-h
 
 Correct EXEC probe: the container creates `/tmp/healthy`, the probe reads it with `cat`.
 
-![EXEC liveness probe YAML (class)](images/liveness-exec-yaml-class.png)
+![EXEC liveness probe YAML](images/liveness-exec-yaml.png)
 
 ```yaml
 apiVersion: v1
@@ -700,7 +698,7 @@ spec:
 
 Then we changed the probe to read a file that doesn't exist: **`/tmp/health`** ❌
 
-![EXEC probe with wrong command (class)](images/liveness-exec-wrong-command-class.png)
+![EXEC probe with wrong file](images/liveness-exec-wrong-command.png)
 
 `cat /tmp/health` → file not found → exit code 1 → probe fails. `kubectl describe pod`:
 
@@ -852,7 +850,7 @@ kubectl logs <pod> -c <container>    # multi-container / init container
 
 > ⭐ **Falco provides real-time visibility and alerts to keep your Kubernetes workloads safe.**
 
-![Falco (class slide)](images/falco-class.png)
+![Falco](images/falco.png)
 
 **Why do we need it?** Probes check if the app is **healthy**. Nobody checks if someone is **attacking** it. Image scanning (Trivy) checks images **before** they run. Falco watches **while they run** ("runtime").
 
