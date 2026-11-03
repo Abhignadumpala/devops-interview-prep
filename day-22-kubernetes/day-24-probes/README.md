@@ -90,7 +90,7 @@
 - If the check **fails**, Kubernetes **removes the pod from the Service endpoint list**.
 - The pod **keeps running** (no restart) but **does not receive traffic until it becomes ready**.
 
-![Readiness probe (class slide)](images/readiness-probe-class.png)
+![Readiness probe](images/readiness-probe-class.png)
 
 **Why do we need it after liveness?**
 Liveness only says the app is **alive**. Alive is not the same as **ready**. An app can be running but still loading data, cache or a DB connection. If users are sent to it now, they get errors. Readiness makes sure **traffic goes only to pods that are ready**.
