@@ -80,6 +80,58 @@
 
 > ⭐ **Liveness probe = self-healing for your application.**
 
+**Common parameters:**
+
+| Parameter | Meaning |
+|---|---|
+| `initialDelaySeconds` | Wait before the first check (give the app time to boot) |
+| `periodSeconds` | How often to check |
+| `timeoutSeconds` | No answer within this time = failed check |
+| `failureThreshold` | Number of failures in a row before the container is **restarted** |
+
+**Example YAML:**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-http
+  labels:
+    app: web
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+    ports:
+    - containerPort: 80
+
+    livenessProbe:             # alive? if not → RESTART the container
+      httpGet:
+        path: /
+        port: 80
+      initialDelaySeconds: 15  # wait 15s before 1st check
+      periodSeconds: 10        # check every 10s
+      timeoutSeconds: 2        # no answer in 2s = fail
+      failureThreshold: 3      # 3 fails → restart
+```
+
+**How to see it:**
+
+```bash
+kubectl get pods                  # RESTARTS count goes up when liveness fails
+kubectl describe pod liveness-http
+#   Warning  Unhealthy  Liveness probe failed: ...
+#   Normal   Killing    Container nginx failed liveness probe, will be restarted
+```
+
+| `kubectl get pods` shows | Meaning |
+|---|---|
+| `READY 1/1`, `Running`, RESTARTS `0` | Alive → keeps running |
+| `Running`, RESTARTS keeps going up | Liveness failing → container restarted again and again |
+| `CrashLoopBackOff` | Restarted too many times → Kubernetes waits longer before each restart |
+
+> Liveness failing gives **restarts / CrashLoopBackOff**. Readiness failing gives **`0/1 Running`** with no restart.
+
 > **Interview one-liner:** A liveness probe checks if the application is alive; if not, Kubernetes restarts the container.
 
 ---
