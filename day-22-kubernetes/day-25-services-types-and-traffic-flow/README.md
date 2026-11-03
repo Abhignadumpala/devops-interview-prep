@@ -148,6 +148,8 @@ The **ClusterIP Service** still matters: it **groups the Ready Pods**, and the c
 
 ### Step 7: Cheat sheet
 
+![Who can reach your app: Service types and Ingress](images/service-types.png)
+
 | Type | Who can reach it | Creates in AWS | When to use |
 |---|---|---|---|
 | **ClusterIP** | Only Pods inside the cluster | Nothing | ✅ **Every app** (default) |
