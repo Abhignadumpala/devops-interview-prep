@@ -1,4 +1,4 @@
-# Day 25 — Kubernetes Networking: CNI, CoreDNS (DNS), Services and Ingress, nslookup and Network Policies
+# Day 25 — Kubernetes Networking: CNI, CoreDNS (DNS), Services, nslookup and Network Policies
 
 [← Kubernetes notes](../README.md)
 
@@ -10,7 +10,7 @@ Here we learn how Pods get IPs and talk to each other, how they find each other 
 
 | Part | Topic | What you learn |
 |---|---|---|
-| **Part 1: Concepts** | CNI, CoreDNS, Services (why they matter, ClusterIP, NodePort, LoadBalancer, Ingress, production traffic flow), nslookup, Network Policy | What each one is, why we need it, what we use in production |
+| **Part 1: Concepts** | CNI, CoreDNS, Services, nslookup, Network Policy | What each one is and why we need it |
 | **Part 2: Lab** | 3-tier app: frontend, backend, db | Create pods and Services, test DNS with nslookup, then block traffic with 2 Network Policies |
 | **Part 3: More policy patterns** | Default deny, egress + DNS | Two common policies you'll see in real clusters and the CKA exam |
 
@@ -19,14 +19,7 @@ Here we learn how Pods get IPs and talk to each other, how they find each other 
 **Part 1: Concepts**
 1. [CNI: how Pods get IPs and talk](#1-cni-how-pods-get-ips-and-talk)
 2. [CoreDNS: the phonebook of Kubernetes](#2-coredns-the-phonebook-of-kubernetes)
-3. [Services: why we need them and which type to use](#3-services-why-we-need-them-and-which-type-to-use)
-   - [Why Services are important](#why-services-are-important)
-   - [ClusterIP](#clusterip-internal-only) · [NodePort](#nodeport-a-port-on-every-node) · [LoadBalancer](#loadbalancer-a-cloud-load-balancer-per-service)
-   - [Ingress: one load balancer for many apps](#ingress-one-load-balancer-for-many-apps-best-for-web-apps)
-   - [Which one to use in real projects?](#which-one-to-use-in-real-projects)
-   - [How production serves real traffic (EKS)](#how-production-serves-real-traffic-end-to-end-on-eks)
-   - [Overview: how traffic reaches a Pod](#overview-how-traffic-reaches-a-pod)
-   - [Other Service types: Headless, ExternalName](#other-service-types-youll-meet-in-production)
+3. [Services: a fixed name for Pods](#3-services-a-fixed-name-for-pods)
 4. [nslookup: the DNS checker](#4-nslookup-the-dns-checker)
 5. [Network Policy: a firewall for Pods](#5-network-policy-a-firewall-for-pods)
 
@@ -148,308 +141,24 @@ search default.svc.cluster.local svc.cluster.local cluster.local   # why the sho
 
 ---
 
-## 3. Services: why we need them and which type to use
+## 3. Services: a fixed name for Pods
 
-> 📘 **Full guide with a hands-on EKS lab:** [Services: types, Ingress and traffic flow](../day-25-services-types-and-traffic-flow/README.md)
-
-**Definition:** A **Service** is a **fixed IP + DNS name** in front of a group of Pods (picked by labels). It load-balances traffic to those Pods. The Service **type** decides **who can reach it**: only the cluster, or users on the internet.
-
-### Why Services are important
-
-Pods are **temporary**. They are replaced on every deploy, crash, scale-up or node failure, and each new Pod gets a **new IP**. Without a Service, nothing could reliably find them.
-
-| Problem without a Service | How a Service fixes it |
-|---|---|
-| Pod IPs change on every restart / deploy | **Fixed IP + DNS name** that never changes (`backend`) |
-| 3 replicas = 3 IPs. Which one do I call? | **One address**, traffic **load-balanced** across all Pods |
-| Pods scale up and down (HPA) | Service finds Pods **by label** and updates its list **automatically** |
-| A starting or broken Pod still gets requests | Only **Ready** Pods get traffic (readiness probe, Day 24) |
-| Rolling update replaces every Pod | Traffic keeps flowing to whichever Pods are Ready → **zero downtime** |
-| Users outside can't reach Pod IPs | Service types / Ingress **expose** the app safely |
-
-**How it works:**
-
-1. The Service's `selector` (e.g. `app: backend`) matches Pods by label.
-2. Kubernetes keeps a list of those Pods' IPs (**EndpointSlices**), only the **Ready** ones.
-3. **kube-proxy** on every node sets up rules (iptables / IPVS) so traffic to the Service IP goes to one of those Pod IPs.
-4. **CoreDNS** gives the Service its name (`backend.default.svc.cluster.local`).
+**Definition:** a **Service** is a **fixed name + IP** in front of a group of Pods (picked by labels). It sends traffic only to the **Ready** Pods. Pod IPs change, the Service name doesn't, and **CoreDNS** turns that name into the Service IP.
 
 ```
- caller ──► backend (10.96.45.12) ──kube-proxy──┬──► Pod 1 (Ready ✅)
-                                                ├──► Pod 2 (Ready ✅)
-                                                └──✖ Pod 3 (Not Ready, skipped)
+ frontend ──► "backend" (Service) ──► Ready backend Pods
 ```
 
-> **Interview one-liner:** Pods are temporary and their IPs change, so a Service gives a stable IP and DNS name, load-balances across the Ready Pods it selects by label, and is how apps are exposed inside and outside the cluster.
-
-### Service types
-
-| Type | Who can reach it | Address you use | Real-world use |
-|---|---|---|---|
-| **ClusterIP** (default) | Only **inside** the cluster | `backend:80` | Backend APIs, databases, caches: most Services |
-| **NodePort** | Outside, through **any node's IP** + port 30000–32767 | `<node-ip>:30080` | Rare in production: debugging, or behind your own external load balancer (on-prem) |
-| **LoadBalancer** | Outside, through a **cloud load balancer** | `a1b2c3.elb.amazonaws.com` | One app that needs its own public address, mainly **non-HTTP (TCP)** apps |
-| **Ingress** (not a Service type) | Outside, **one** load balancer for **many** Services | `shop.com/api`, `shop.com/` | ✅ **Standard for web apps and APIs in production** |
-
-Each type builds on the one before: **LoadBalancer → NodePort → ClusterIP → Pods**.
-
-### ClusterIP: internal only
-
-**Definition:** the **default** type. The Service gets an **internal IP** (e.g. `10.96.45.12`) and a DNS name, reachable **only from inside** the cluster.
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: backend
-spec:
-  type: ClusterIP       # default, can be left out
-  selector:
-    app: backend        # send traffic to Pods with this label
-  ports:
-  - port: 80            # Service port
-    targetPort: 80      # container port
-```
-
-> ⭐ In real projects, **backend and db are always ClusterIP**. They should never be reachable from the internet.
-
-### NodePort: a port on every node
-
-**Definition:** opens the **same port (30000–32767) on every node**. Traffic to `<any-node-ip>:<nodePort>` goes to the Service, then to the Pods.
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: web
-spec:
-  type: NodePort
-  selector:
-    app: web
-  ports:
-  - port: 80
-    targetPort: 80
-    nodePort: 30080     # opened on every node (30000-32767)
-```
-
-```
- User ──► <node-ip>:30080 ──► Service ──► Pod
-```
-
-| ✅ Good | ❌ Bad |
-|---|---|
-| Simple, no cloud load balancer needed | Odd port (30080), not 80/443 |
-| Building block that LoadBalancer uses behind the scenes | Users must know a **node IP**, and node IPs change (autoscaling, node replaced) |
-| | If that node dies, the URL breaks |
-| | You must open 30000–32767 in the node security group |
-
-### LoadBalancer: a cloud load balancer per Service
-
-**Definition:** asks the **cloud provider** (AWS, Azure, GCP) to create a **real load balancer** with an external DNS name / IP. It spreads traffic across healthy nodes or Pods.
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: web
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-type: external          # AWS Load Balancer Controller → NLB
-    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing # public
-spec:
-  type: LoadBalancer
-  selector:
-    app: web
-  ports:
-  - port: 80
-    targetPort: 80
-```
-
-```
- User ──► AWS NLB (a1b2c3.elb.amazonaws.com:80) ──► Service ──► Pod
-```
-
-```bash
-kubectl get svc web
-```
-
-**Expected:** `EXTERNAL-IP` shows the load balancer DNS name, e.g. `a1b2c3.elb.amazonaws.com` (it shows `<pending>` for a minute or two while AWS creates it).
-
-| ✅ Good | ❌ Bad |
-|---|---|
-| Real external address on port 80/443 | **One load balancer per Service**: 10 apps = 10 load balancers |
-| Health checks, survives a node failure | Each load balancer is billed per hour (about **$16/month each** on AWS, plus traffic) |
-| Works for any TCP/UDP app | No path or host routing, no shared HTTPS setup |
-
-### Ingress: one load balancer for many apps (best for web apps)
-
-**Definition:** an **Ingress** is a set of **HTTP routing rules** (by host name and path) in front of many **ClusterIP** Services. An **Ingress controller** turns those rules into **one** load balancer. On EKS this is the **AWS Load Balancer Controller**, which creates an **ALB**.
-
-```
-                         ┌─► shop.com/api ──► backend Service (ClusterIP) ──► backend Pods
- User ──► ONE AWS ALB ───┤
-   (HTTPS, ACM cert)     └─► shop.com/    ──► frontend Service (ClusterIP) ──► frontend Pods
-```
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: shop
-  annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing   # public ALB
-    alb.ingress.kubernetes.io/target-type: ip           # ALB sends traffic straight to Pod IPs
-spec:
-  ingressClassName: alb          # handled by the AWS Load Balancer Controller
-  rules:
-  - host: shop.example.com
-    http:
-      paths:
-      - path: /api               # shop.example.com/api → backend
-        pathType: Prefix
-        backend:
-          service:
-            name: backend
-            port:
-              number: 80
-      - path: /                  # everything else → frontend
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend
-            port:
-              number: 80
-```
-
-| ✅ Why it's the production choice |
-|---|
-| **One** ALB for many apps → much lower cost than one load balancer per Service |
-| Routing by **path** (`/api`, `/`) and **host** (`shop.com`, `admin.shop.com`) |
-| **HTTPS** in one place (ACM certificate on the ALB) |
-| All app Services stay **ClusterIP**, so nothing else is exposed |
-
-### Which one to use in real projects?
-
-| Situation | Best choice |
-|---|---|
-| Internal APIs, databases, caches | **ClusterIP** |
-| Websites and HTTP/HTTPS APIs (most apps) | ✅ **Ingress** (one ALB) + ClusterIP Services |
-| A single TCP/UDP app that must be public (MQTT, game server, SFTP, gRPC without HTTP routing) | **LoadBalancer** (NLB on AWS) |
-| On-prem cluster with your own hardware load balancer | **NodePort** behind that load balancer |
-| Quick debugging of one Service | `kubectl port-forward svc/web 8080:80` (no Service change needed) |
-
-### How production serves real traffic (end to end on EKS)
-
-**Definition:** the **production traffic flow** is the path a real user's request takes from the browser to your Pods and back.
-
-![Production traffic flow](images/production-traffic.png)
-
-```
- User ──► Route 53 ──► ALB (HTTPS) ──► Ingress rules ──► frontend Pods ──► backend ──► database
-          (DNS)        (public)        (/api, /)         (ClusterIP)       (ClusterIP)  (RDS / StatefulSet)
-```
-
-| Hop | What it does | Created by |
+| Type | Who can reach it | Use for |
 |---|---|---|
-| **Route 53** | `shop.com` → ALB address | DNS record (often automatic with ExternalDNS) |
-| **ALB** (public subnets) | HTTPS with an **ACM** certificate, health checks, optional **WAF** | **Ingress** + AWS Load Balancer Controller |
-| **Ingress rules** | `/api` → backend, `/` → frontend | `Ingress` YAML |
-| **frontend / backend** (private subnets) | Run the app, call each other **by name** | `Deployment` + **ClusterIP** `Service` |
-| **Database** | Stores data | Usually **Amazon RDS** (outside the cluster), or a StatefulSet + **Headless** Service |
-| **Network Policies** | Only frontend → backend → database | `NetworkPolicy` YAML |
+| **ClusterIP** (default) | Only Pods inside the cluster | ✅ Every app (this is what our lab uses) |
+| **NodePort** | Outside, via `node-ip:3xxxx` | ❌ Testing / on-prem |
+| **LoadBalancer** | Internet, via its own cloud load balancer | ⚠️ Non-HTTP apps |
+| **Ingress** (not a Service type) | Internet, via one ALB for all apps | ✅ All websites and APIs |
 
-**What happens when a user opens `https://shop.com/api/products`:**
+> 📘 **Full step-by-step guide with an EKS lab:** [Services: ClusterIP, NodePort, LoadBalancer, Ingress and traffic flow](../day-25-services-types-and-traffic-flow/README.md)
 
-1. **Route 53** answers: `shop.com` = the ALB's address.
-2. The **ALB** ends HTTPS (ACM certificate) and matches the Ingress rule `/api` → **backend**.
-3. The ALB sends the request **straight to a Ready backend Pod IP** (`target-type: ip`). Unhealthy Pods fail the ALB health check and are skipped.
-4. The backend Pod calls the database **by name** (CoreDNS), allowed by the Network Policy.
-5. The response goes back the same way to the user.
-
-**What keeps it running in production:**
-
-| Need | How |
-|---|---|
-| **Zero downtime deploys** | Rolling update + readiness probe: new Pods get traffic only when Ready |
-| **Handle more users** | HPA adds Pods → Service and ALB targets update automatically |
-| **Survive a node or AZ failure** | Replicas spread over nodes/AZs; the ALB stops sending to dead targets |
-| **Security** | Only the ALB is public, app Services are ClusterIP in private subnets, plus Network Policies |
-| **Cost** | **One** ALB shared by many apps through Ingress, not one load balancer per Service |
-
-### Overview: how traffic reaches a Pod
-
-**Definition:** the path a user's request takes from typing `shop.com` to a **healthy Pod** answering.
-
-```
- User types shop.com
-      │
-      ▼
- 1. Route 53 (DNS)      "shop.com = this ALB"
-      │
-      ▼
- 2. ALB + Ingress rules  /     → frontend
-                         /api  → backend
-      │
-      ▼
- 3. Service             EndpointSlices = IPs of READY Pods only
-      │
-      ▼
- 4. Pod                 a Ready Pod answers ✅
-```
-
-| Step | What happens | Who does it |
-|---|---|---|
-| 1 | `shop.com` is turned into the load balancer's address | **Route 53** (DNS) |
-| 2 | HTTPS ends here; the **path** picks the app (`/` → frontend, `/api` → backend) | **ALB** running the **Ingress** rules (AWS Load Balancer Controller copies them in) |
-| 3 | The Service knows **which Pods are Ready** (list of Pod IPs) | **EndpointSlices**, filled using the **readiness probe** |
-| 4 | The request goes to **one Ready Pod** | ALB → Pod IP directly (`target-type: ip`) |
-| Inside the cluster | frontend calls `backend` by name → Service IP → one Ready Pod | **CoreDNS** (name → IP) + **kube-proxy** rules on every node |
-
-**Who checks if a Pod is healthy?**
-
-| ❌ Common belief | ✅ What really happens |
-|---|---|
-| "The Service checks which Pod is healthy" | A Service is not a running program. The **kubelet** runs the **readiness probe** on each Pod |
-| "The Service has a route table" | **EndpointSlices** hold the IPs of **Ready** Pods; **kube-proxy** turns them into iptables/IPVS rules on each node |
-| "The load balancer sends to the Ingress, then the Ingress sends on" | With the ALB, the Ingress is just **rules**, and the **ALB itself** applies them. (Only with NGINX Ingress is there an extra hop: NLB → ingress-nginx Pods → Service → Pod) |
-
-> ⭐ **One line:** DNS finds the load balancer → the load balancer applies the Ingress path rules → the Service's list holds only Ready Pods → one Ready Pod answers. A broken Pod fails its readiness probe, drops out of the list, and gets no traffic.
-
-### Other Service types you'll meet in production
-
-| Type | Definition | Real use |
-|---|---|---|
-| **Headless** (`clusterIP: None`) | No single Service IP: DNS returns **each Pod's IP**, and each Pod gets its own name | **StatefulSets** (MongoDB, Kafka, Redis cluster): `mongodb-0.mongodb` always means the same Pod |
-| **ExternalName** | A cluster DNS name that points to an **outside** DNS name (CNAME) | Apps call `db`, which points to an **Amazon RDS** endpoint. Change the database without changing app config |
-| **Internal LoadBalancer** | Load balancer **without** a public address (`scheme: internal`) | Expose a Service only to other VPCs, VPN or on-prem users |
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: db
-spec:
-  type: ExternalName
-  externalName: shop-db.abc123.us-east-1.rds.amazonaws.com   # Amazon RDS endpoint
-```
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: mongodb
-spec:
-  clusterIP: None          # headless: DNS returns the Pod IPs directly
-  selector:
-    app: mongodb
-  ports:
-  - port: 27017
-```
-
-> **Interview one-liner:** In production on EKS, Route 53 points the domain to an ALB created by an Ingress; the ALB handles HTTPS and routes by path to ClusterIP Services, which send traffic only to Ready Pods. Databases are usually RDS (reached through an ExternalName Service) or a StatefulSet with a headless Service.
-
-> 💡 **About `externalIPs:`** in a Service YAML: it's a rarely used field that only works if you route that IP to a node yourself. Normally you never write the external IP: AWS fills it in for `type: LoadBalancer`, and for an Ingress it appears in `kubectl get ingress` (`ADDRESS`).
-
-> **Interview one-liner:** ClusterIP is internal only; NodePort opens a port on every node; LoadBalancer creates one cloud load balancer per Service. In production we expose HTTP apps through an Ingress (one ALB on EKS) and keep all Services as ClusterIP; LoadBalancer is for non-HTTP apps that need their own address.
+> **Interview one-liner:** A Service gives temporary Pods a fixed name and IP and sends traffic only to Ready Pods; in production every app is ClusterIP and one Ingress (an ALB on EKS) is the public door.
 
 ---
 
@@ -690,7 +399,7 @@ kubectl expose pod db --port=80 --name=db
 kubectl get svc
 ```
 
-**Expected:** `backend` and `db` with `TYPE ClusterIP` and a `CLUSTER-IP` like `10.96.x.x` (this IP doesn't change). ClusterIP = internal only, which is right for backend and db ([section 3](#3-services-why-we-need-them-and-which-type-to-use)).
+**Expected:** `backend` and `db` with `TYPE ClusterIP` and a `CLUSTER-IP` like `10.96.x.x` (this IP doesn't change). ClusterIP = internal only, which is right for backend and db ([section 3](#3-services-a-fixed-name-for-pods)).
 
 ### Step 5: Call by name (CoreDNS at work)
 
@@ -967,8 +676,7 @@ spec:
 **Part 1: Concepts**
 - **CNI** gives Pods IPs and connects them (Calico, Cilium, Flannel, AWS VPC CNI). Pod IPs change.
 - **CoreDNS** (kube-system, Service `kube-dns`, `10.96.0.10`) turns `backend` into the Service IP. Full name: `<svc>.<ns>.svc.cluster.local`.
-- **Services** give temporary Pods a fixed IP + name and send traffic only to Ready Pods. ClusterIP = internal, NodePort = port on every node, LoadBalancer = one cloud LB per Service.
-- **Production:** Route 53 → ALB (Ingress, HTTPS) → ClusterIP Services → Pods. LoadBalancer only for non-HTTP apps; databases via RDS (ExternalName) or StatefulSet (Headless).
+- **Services** give temporary Pods a fixed name + IP and send traffic only to Ready Pods. Production: every app is ClusterIP + one Ingress (ALB). Full guide: [Services](../day-25-services-types-and-traffic-flow/README.md).
 - **nslookup** from a `busybox:1.28` Pod checks DNS: NXDOMAIN = wrong name/namespace, timeout = CoreDNS down or blocked.
 - **Network Policy** = firewall for Pods. Selects Pods by label, allows only listed traffic, everything else to them is blocked. Needs a CNI that enforces it.
 
@@ -980,7 +688,7 @@ spec:
 - `podSelector: {}` + no rules = default deny. With egress policies, always allow DNS on port 53.
 
 ```
- CNI (Pod IPs) ──► Service (fixed IP) ──► CoreDNS (name → IP) ──► Ingress (users get in) ──► Network Policy (who may talk)
+ CNI (Pod IPs) ──► Service (fixed IP) ──► CoreDNS (name → IP) ──► Network Policy (who may talk)
 ```
 
 ---
@@ -1044,29 +752,10 @@ Egress now blocks everything not listed, including DNS. Add an egress rule to Co
 **Q11. Blocked call: timeout or connection refused?**
 A Network Policy drops packets, so the call **times out**. `connection refused` means the destination is reachable but nothing listens on that port.
 
-**Q12. What's the difference between ClusterIP, NodePort and LoadBalancer?**
-ClusterIP is reachable only inside the cluster. NodePort opens the same port (30000–32767) on every node. LoadBalancer asks the cloud to create a load balancer with an external address that forwards to the Service.
+**Q12. Why do we need Services if Pods already have IPs?**
+Pods are temporary: every restart, deploy or scale event gives new IPs. A Service gives one stable name and IP, finds Pods by label, and sends traffic only to Ready Pods.
 
-**Q13. How do you expose a web app to users in production?**
-With an Ingress: on EKS the AWS Load Balancer Controller creates one ALB that routes by host/path to ClusterIP Services, with HTTPS from an ACM certificate. Backend and database stay ClusterIP.
-
-**Q14. Why not use a LoadBalancer Service for every app?**
-Each one creates its own cloud load balancer, billed per hour, so 10 apps means 10 load balancers, each with its own HTTPS setup. One Ingress shares a single ALB and adds path/host routing. LoadBalancer is still right for non-HTTP (TCP/UDP) apps.
-
-**Q15. Why is NodePort rarely used in production?**
-Users would need a node IP and a high port (30000–32767). Node IPs change when nodes are replaced or scaled, and there's no single stable address or health-checked entry point.
-
-**Q16. Why do we need Services if Pods already have IPs?**
-Pods are temporary: every restart, deploy or scale event gives new IPs, and replicas have many IPs. A Service gives one stable IP and DNS name, load-balances across the Pods it selects by label, and skips Pods that aren't Ready.
-
-**Q17. Walk me through what happens when a user opens your app in production.**
-Route 53 resolves the domain to the ALB; the ALB (created by the Ingress through the AWS Load Balancer Controller) ends HTTPS and routes by path to a Ready Pod of the right ClusterIP Service; that Pod calls other Services by name through CoreDNS; Network Policies allow only the needed paths.
-
-**Q18. What are Headless and ExternalName Services used for?**
-Headless (`clusterIP: None`) returns each Pod's IP and gives Pods stable names, used with StatefulSets like MongoDB or Kafka. ExternalName maps a cluster name to an outside DNS name, e.g. `db` → an Amazon RDS endpoint.
-
-**Q19. Does a Service check which Pod is healthy?**
-No. The kubelet runs each Pod's readiness probe. Only Ready Pods are kept in the Service's EndpointSlices, and kube-proxy (or the ALB, with `target-type: ip`) sends traffic only to those IPs. A Pod that fails readiness is removed from the list and gets no traffic.
+> More Service and Ingress questions: [Services interview questions](../day-25-services-types-and-traffic-flow/README.md#12-interview-questions)
 
 ---
 
