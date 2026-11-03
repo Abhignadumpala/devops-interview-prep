@@ -326,6 +326,27 @@ spec:
 
 **Max startup time = `failureThreshold` × `periodSeconds`** → here 30 × 10s = **5 minutes**. If the app isn't up in 5 min → restart.
 
+### Slow app: startup probe or long `initialDelaySeconds`?
+
+**Answer:** use a **startup probe**. Don't give liveness a long delay.
+
+**Example:** a Java app takes **1 to 4 min** to start (different each time).
+
+| Option | Problem |
+|---|---|
+| Liveness `initialDelaySeconds: 300` | It's a **guess**. App up in 1 min → liveness still waits 5 min (a hang in that time is missed). App takes longer than the guess → still restarted. |
+| Liveness `failureThreshold: 30` | Startup works, but this **stays forever**. Later a hang takes **5 min** to detect instead of ~30s. |
+| ✅ **Startup probe** | Allows up to 5 min, but **stops as soon as the app is up**. Then liveness runs with normal fast settings. |
+
+```
+ Long delay on liveness:   [ wait 5 min always ][ slow checks forever ]   ❌
+ Startup probe:            [ startup: up to 5 min, ends early ][ fast liveness checks ]   ✅
+```
+
+**What about readiness?** It does **not** need a long delay. A failed readiness check **doesn't restart** the container. The pod just shows `0/1 Running` (no traffic) until it's ready. The restart loop comes **only from liveness**, and the startup probe fixes it.
+
+> ⭐ **Startup probe = long time allowed only at the start. Liveness = fast checks after that.**
+
 > **Interview one-liner:** A startup probe is the first probe; it checks whether a slow-starting app has finished starting. Until it succeeds, liveness and readiness are paused, so Kubernetes doesn't restart the app while it boots. After it succeeds it stops, and liveness and readiness take over.
 
 ---
@@ -1082,6 +1103,9 @@ A crash stops the process, which K8s sees. A stuck app (deadlock, hang) keeps th
 
 **Q21. What can go wrong with a badly set liveness probe?**
 If `initialDelaySeconds` is too short or the timeout too small, a healthy but slow app gets restarted again and again (restart loop / CrashLoopBackOff).
+
+**Q22. For a slow-starting app, why use a startup probe instead of a long `initialDelaySeconds` on liveness?**
+A long delay is a fixed guess and makes liveness slow for the whole life of the pod. A startup probe allows a long start time only once (`failureThreshold × periodSeconds`), stops as soon as the app is up, and then liveness keeps fast checks to catch hangs quickly.
 
 ---
 
