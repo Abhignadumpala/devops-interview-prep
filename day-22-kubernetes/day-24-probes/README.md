@@ -447,6 +447,39 @@ livenessProbe:
 | A DB or service that only listens on a port | **TCP** |
 | Something that needs a custom check (script, file) | **EXEC** |
 
+### When a probe fails: causes and what to check
+
+A wrong probe setting makes a **healthy app look dead** → restart → restart → **CrashLoopBackOff**.
+
+**Causes (one per probe type):**
+
+| Probe | Common mistake | Error in `kubectl describe pod` | Fix |
+|---|---|---|---|
+| **HTTP** | Wrong **path** (app has no `/health`) | `HTTP probe failed with statuscode: 404` | Use a path the app really serves |
+| **HTTP** | Wrong **port** in `httpGet` | `connect: connection refused` | Use the app's real port (`containerPort`) |
+| **HTTP** | App returns an error | `statuscode: 500` / `503` | Check app logs: app or dependency (DB) problem |
+| **TCP** | Wrong **port** (nothing listens there) | `dial tcp <ip>:81: connect: connection refused` | Use the port the app listens on |
+| **EXEC** | Wrong **command / file** | `cat: can't open '/tmp/health': No such file or directory` | Correct the command or file path |
+| **EXEC** | Command not in the image | `executable file not found` | Use a command that exists in the image |
+| **Any** | App slow to start, probe too early | Fails only in the first seconds/minutes | Add a **startup probe** (or bigger `initialDelaySeconds`) |
+| **Any** | `timeoutSeconds` too small | `context deadline exceeded` / `timeout` | Increase `timeoutSeconds` |
+
+**Steps after the error (in order):**
+
+| # | Command | What you check |
+|---|---|---|
+| 1 | `kubectl get pods` | `CrashLoopBackOff` / RESTARTS going up → liveness or startup. `0/1 Running`, no restarts → readiness |
+| 2 | `kubectl describe pod <pod>` | ⭐ **Events** → `Liveness probe failed: ...` gives the exact reason (404 = path, refused = port, file error = command) |
+| 3 | `kubectl logs <pod> --previous` | App logs **before** the last restart: did the app itself crash? |
+| 4 | `kubectl get pod <pod> -o yaml` | Compare probe `path` / `port` with what the app really uses (`containerPort`) |
+| 5 | `kubectl exec -it <pod> -- curl localhost:<port>/<path>` | Test the probe by hand from inside the container (if it stays up long enough) |
+| 6 | Fix YAML → `kubectl delete pod <pod>` → `kubectl apply -f <file>.yaml` | Probe settings can't be edited on a running pod |
+| 7 | `kubectl get pods -w` | `Running`, RESTARTS stops going up ✅ |
+
+> ⭐ **Golden rule:** CrashLoopBackOff → first `kubectl describe pod` (Events), then `kubectl logs --previous`.
+
+Hands-on tests for each mistake, and **non-probe causes** of CrashLoopBackOff (missing env variable, OOMKilled, wrong command, etc.) → [section 10](#10-lab-troubleshoot-crashloopbackoff-wrong-path-port-command).
+
 > The same 3 types work for **readiness** and **startup** probes too; only the action on failure is different.
 
 ---
