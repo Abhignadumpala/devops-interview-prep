@@ -150,6 +150,8 @@ search default.svc.cluster.local svc.cluster.local cluster.local   # why the sho
 
 ## 3. Services: why we need them and which type to use
 
+> 📘 **Full guide with a hands-on EKS lab:** [Services: types, Ingress and traffic flow](../day-25-services-types-and-traffic-flow/README.md)
+
 **Definition:** A **Service** is a **fixed IP + DNS name** in front of a group of Pods (picked by labels). It load-balances traffic to those Pods. The Service **type** decides **who can reach it**: only the cluster, or users on the internet.
 
 ### Why Services are important
