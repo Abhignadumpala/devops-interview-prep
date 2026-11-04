@@ -110,12 +110,16 @@ Kubernetes **orchestrates** containers. It does five main jobs:
 
 **Where it's used:** almost every company running microservices: Netflix, Spotify, Swiggy, Zomato, banks, SaaS products.
 
-**Real example: food delivery app (like our RoboShop)**
+**Real example: my RoboShop project**
+
+RoboShop is a microservices **e-commerce app** (an online shop) that I built on AWS: first by hand, then with [shell scripts](https://github.com/Abhignadumpala/devops-notes/tree/main/day-16-roboshop-shell-scripts), then with [Ansible](https://github.com/Abhignadumpala/devops-notes/tree/main/day-22-ansible-shell-vs-ansible-aws-ec2-route53/roboshop-v1). There, every service ran on its **own EC2 server**. On Kubernetes, the same services become:
 
 ```
-Frontend · Catalogue · Cart · User · Payment · Shipping   → each is a Deployment
-MongoDB · Redis · MySQL · RabbitMQ                         → databases / queues
+Frontend · Catalogue · Cart · User · Payment · Shipping   → each is a Deployment + Service
+MongoDB · Redis · MySQL · RabbitMQ                         → databases / queues (StatefulSets or AWS managed services)
 ```
+
+> Full story of how I built it: [RoboShop Journey](https://github.com/Abhignadumpala/devops-notes/tree/main/roboshop-journey).
 
 | Real situation | Kubernetes feature |
 |---|---|
