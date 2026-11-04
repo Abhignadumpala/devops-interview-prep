@@ -19,6 +19,7 @@
 1. [Why we need Ingress](#1-why-we-need-ingress)
 2. [What is Ingress?](#2-what-is-ingress)
 3. [What is an Ingress controller?](#3-what-is-an-ingress-controller)
+   - [Security at the front door](#security-at-the-front-door)
 4. [How a user request reaches the Pod](#4-how-a-user-request-reaches-the-pod)
 5. [Sample Ingress (ALB on EKS)](#5-sample-ingress-alb-on-eks)
 6. [Ingress rules](#6-ingress-rules)
@@ -65,6 +66,13 @@ That's where **Ingress** and **Ingress controllers** come in, offering **smarter
 
 > **In simple terms:** Ingress is your app's **front door**, deciding where traffic goes.
 
+| Term | Meaning |
+|---|---|
+| **North-south traffic** | Traffic coming **into** the cluster from outside (users → apps). This is what Ingress handles |
+| **East-west traffic** | Traffic **between** Pods inside the cluster (frontend → backend). Handled by Services, not Ingress |
+
+> 💡 An Ingress is just YAML, so it lives in **Git** next to the app's manifests and is deployed by **CI/CD / Argo CD** like everything else. A new route = a reviewed pull request.
+
 ```
  shop.com/api  → backend
  shop.com/     → frontend
@@ -107,6 +115,22 @@ That's where **Ingress** and **Ingress controllers** come in, offering **smarter
 | **AWS Load Balancer Controller** ✅ (formerly "AWS ALB Ingress Controller") | AWS-native: turns each Ingress into an **Application Load Balancer** | ✅ **EKS**: what we use |
 | **NGINX Ingress Controller** | NGINX Pods behind one LoadBalancer Service act as the proxy; very configurable (rewrites, annotations) | Many existing clusters. The community `ingress-nginx` was retired in March 2026; F5's NGINX Ingress Controller is still maintained |
 | **Traefik** | Lightweight, dynamic, configures itself automatically | Microservices-heavy and smaller clusters |
+
+
+### Security at the front door
+
+**Definition:** the Ingress object only holds **routing rules**. **Security** comes from the **Ingress controller** and the load balancer it creates. Because every outside request passes through this one front door, it's the best place to add HTTPS, a firewall, login checks and limits before traffic reaches any app.
+
+| Security feature | What it does | On EKS (ALB) |
+|---|---|---|
+| **TLS termination** | Users connect over **HTTPS**; the certificate lives on the load balancer | **ACM** certificate: annotation `alb.ingress.kubernetes.io/certificate-arn` |
+| **HTTP → HTTPS redirect** | Plain `http://` requests are sent to `https://` | Annotation `alb.ingress.kubernetes.io/ssl-redirect: '443'` |
+| **WAF** (web application firewall) | Blocks attacks like SQL injection and bad bots | **AWS WAF** web ACL: annotation `alb.ingress.kubernetes.io/wafv2-acl-arn` |
+| **Rate limiting** | Blocks one client sending too many requests | AWS WAF **rate-based rule** |
+| **Login before the app** | Users must sign in before the request reaches the Pod | ALB authentication with **Cognito / OIDC** |
+| **Who can reach it** | Public or private, and from which IPs | `scheme: internet-facing` / `internal`, ALB **security groups**, `inbound-cidrs` |
+
+> **Real projects:** only the **ALB** faces the internet, with an ACM certificate and AWS WAF. Every app Service stays **ClusterIP** in private subnets, so nothing reaches a Pod without going through the front door.
 
 ---
 
@@ -235,7 +259,7 @@ If several paths match, the **longest** one wins, so `/api` beats `/`. That's wh
 
 ### 6.3 Host-based routing
 
-**Definition:** **host-based routing** sends requests to different apps based on the **domain name** the user typed. Each app gets its own subdomain, all pointing (in Route 53) to the **same** load balancer.
+**Definition:** **host-based routing** (also called **name-based virtual hosting**) sends requests to different apps based on the **domain name** (the `Host` header) the user typed. Each app gets its own subdomain, all pointing (in Route 53) to the **same** load balancer.
 
 ```yaml
   rules:
@@ -268,7 +292,7 @@ If several paths match, the **longest** one wins, so `/api` beats `/`. That's wh
 
 ### 6.4 Path-based routing
 
-**Definition:** **path-based routing** sends requests to different apps based on the **path** of the URL, all under **one** domain.
+**Definition:** **path-based routing** (also called a **fanout**: one entry point fanning out to many Services) sends requests to different apps based on the **path** of the URL, all under **one** domain.
 
 ```yaml
   rules:
@@ -579,6 +603,12 @@ The app receives the full path `/blog/...`, but it only serves pages at `/`. Fix
 
 **Q6. What does pathType do?**
 It sets how the path is matched: Prefix matches the path and everything under it, Exact matches only that path, and ImplementationSpecific leaves it to the controller (used for regex with NGINX). When several paths match, the longest one wins.
+
+**Q7. Does Ingress provide security?**
+The Ingress object only holds routing rules. The controller and its load balancer add security: on EKS the ALB ends HTTPS with an ACM certificate, can redirect HTTP to HTTPS, uses AWS WAF for attacks and rate limiting, and can require Cognito/OIDC login. App Services stay ClusterIP, so the ALB is the only way in.
+
+**Q8. What is north-south vs east-west traffic?**
+North-south is traffic entering the cluster from outside, handled by Ingress and the load balancer. East-west is traffic between Pods inside the cluster, handled by Services and controlled with Network Policies.
 
 ---
 
