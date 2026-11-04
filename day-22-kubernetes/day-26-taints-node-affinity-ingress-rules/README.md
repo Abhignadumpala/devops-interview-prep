@@ -631,6 +631,10 @@ kubectl drain <node-name> --ignore-daemonsets
 | Host-based | `app.shop.com` → frontend, `api.shop.com` → api |
 | Path-based | `shop.com/blog` → blog, `shop.com/` → frontend |
 
+**How a user request reaches the Pod:**
+
+![How a user request reaches the Pod](../ingress/images/request-flow.png)
+
 > 📘 **Full guide:** why we need Ingress, Ingress controllers, how a user request reaches the Pod, pathType, rewrite, HTTPS and a two-app ALB lab: [**Kubernetes Ingress**](../ingress/README.md).
 
 ---
