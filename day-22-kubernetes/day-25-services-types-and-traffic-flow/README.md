@@ -204,6 +204,19 @@ spec:
 
 ## 4. Ingress: one door for all websites
 
+### Why we need Ingress
+
+When you first deploy applications in Kubernetes, you typically expose them using **NodePort** or **LoadBalancer** Services. But as your architecture grows, managing **dozens of LoadBalancers** quickly becomes **inefficient and expensive**.
+
+That's where **Ingress** and **Ingress controllers** come in, offering **smarter routing**, **central management**, and **flexible control** over external HTTP/S traffic.
+
+| | One LoadBalancer Service per app | Ingress |
+|---|---|---|
+| Load balancers for 10 apps | **10** (10 bills, 10 DNS names) | **1** shared ALB |
+| Routing | None: one load balancer = one app | By **host** (`api.shop.com`) and **path** (`/api`) |
+| HTTPS certificates | Set up on every load balancer | In **one place** |
+| Adding a new app | Another load balancer | Add a rule to the Ingress |
+
 **Definition:** an **Ingress** is a Kubernetes object that holds **HTTP routing rules** for our website, such as "`/api` goes to backend, `/` goes to frontend". It lets **many apps share one public load balancer**: the load balancer reads the URL **path** (`/api`) or **host** (`admin.shop.com`) of each request and sends it to the right **ClusterIP** Service. On EKS that one load balancer is an **ALB** (Application Load Balancer).
 
 ```

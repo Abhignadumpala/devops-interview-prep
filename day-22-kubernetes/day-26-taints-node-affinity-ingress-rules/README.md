@@ -625,6 +625,8 @@ kubectl drain <node-name> --ignore-daemonsets
 
 ## 8. Ingress rules
 
+> **Why Ingress?** When you first deploy applications in Kubernetes, you typically expose them using NodePort or LoadBalancer Services. But as your architecture grows, managing dozens of LoadBalancers quickly becomes inefficient and expensive. That's where **Ingress** and **Ingress controllers** come in, offering smarter routing, central management, and flexible control over external HTTP/S traffic. ([Comparison table in Day 25](../day-25-services-types-and-traffic-flow/README.md#why-we-need-ingress))
+
 **Definition:** **Ingress rules** are the part of an Ingress (`spec.rules`) that decide **which Service** gets each HTTP request. Each rule can match the request's **host** (the domain name, like `api.shop.com`) and its **path** (the part after the domain, like `/api`). The Ingress controller turns these rules into load balancer rules, so one load balancer can serve many apps. (What an Ingress and an Ingress controller are, and why we use one ALB instead of many load balancers, is in [Day 25 section 4](../day-25-services-types-and-traffic-flow/README.md#4-ingress-one-door-for-all-websites).)
 
 ```
