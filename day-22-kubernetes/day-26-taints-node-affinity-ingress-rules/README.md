@@ -316,66 +316,120 @@ We have 2 kinds of nodes and 2 kinds of Pods:
 | **AI node** | 16 CPU · 128 GB RAM (expensive) | **Only** AI Pods |
 | **App node** | 4 CPU · 32 GB RAM | App Pods (web, APIs) |
 
-**Attempt 1: taint the AI node + toleration on the AI Pods**
+#### Step 1: Taint the AI node → no Pod can come in, not even AI Pods
 
 ```bash
 kubectl taint node ai-node pods=ai:NoSchedule
 ```
 
-| Pod | Where it can go | Result |
-|---|---|---|
-| App Pod (no toleration) | App node only | ✅ App Pods stay off the AI node |
-| AI Pod (has toleration) | AI node **or** app node | ❌ Not guaranteed: an AI Pod can land on the small app node |
+A taint blocks **every** Pod. It doesn't know which Pods are "AI Pods". It blocks all of them, unless a Pod carries a matching **toleration**.
 
-The taint **keeps others out**, but the toleration only **allows** AI Pods in. It doesn't **send** them there. So an AI Pod may still end up on the 4 CPU node and run slowly.
+```
+ AI node (taint pods=ai)
+   App Pod  ❌ blocked
+   AI Pod   ❌ blocked (it has no toleration yet)
+```
+
+#### Step 2: Add a toleration to the AI Pods → they are allowed in, but not sent there
+
+```yaml
+      tolerations:
+      - key: "pods"
+        operator: "Equal"
+        value: "ai"
+        effect: "NoSchedule"
+```
+
+The toleration is like a **gate pass**: the AI Pod *may* enter the AI node. But the scheduler can still put it on any other node, because the other nodes have no taint and anyone can go there.
+
+```
+ AI Pod (toleration) ──► AI node   ✅ allowed
+                     ──► App node  ✅ also allowed  ← the problem
+```
 
 ![Toleration only: the AI Pod lands on the small App node](images/scene-5-toleration-only.png)
 
-**Attempt 2: add a label on the node + nodeSelector on the AI Pods**
+#### Step 3: Label the node + nodeSelector on the Pod → the Pod goes only to the AI node
+
+First we put a **label** on the node:
 
 ```bash
 kubectl label node ai-node pods=ai
 ```
 
+Then, in the AI Pod's YAML (the Deployment), we add a **nodeSelector** with the same key and value:
+
 ```yaml
       nodeSelector:
-        pods: "ai"          # must run on a node labelled pods=ai
+        pods: "ai"
 ```
 
-| Pod | Where it can go | Result |
-|---|---|---|
-| App Pod (no toleration) | App node only | ✅ Taint keeps it out |
-| AI Pod (toleration + nodeSelector) | **AI node only** | ✅ nodeSelector sends it there, toleration lets it in |
+**How the Pod finds the right node:** the Pod doesn't move by itself. The **kube-scheduler** places it:
 
-> 💡 nodeSelector matches the **node's label** (`pods=ai` on the node), not the Pod's own labels. Every Pod whose nodeSelector says `pods: "ai"` goes **only** to nodes labelled `pods=ai`.
+1. The scheduler reads the Pod's `nodeSelector`: "I need a node with `pods=ai`".
+2. It checks the **labels of every node**.
+3. It drops every node without that label. Only the AI node is left.
+4. It checks the taint: the AI node has one, and the Pod has a matching toleration, so it's allowed.
+5. The Pod runs on the AI node.
+
+```
+ Pod says:  nodeSelector pods=ai
+                 │  scheduler compares it with the node labels
+                 ▼
+ AI node    label pods=ai   ✅ match     → taint? Pod tolerates ✅ → Pod runs here
+ App node   no label        ❌ no match  → skipped
+```
 
 ![Taint + toleration + nodeSelector: AI Pods only on the AI node](images/scene-6-dedicated-node.png)
 
-**What if we used only nodeSelector (no taint)?** AI Pods would go to the AI node ✅, but nothing stops App Pods from also landing there and using its CPU ❌. That's why we use **both**:
+#### All three together
+
+| Piece | Where | Job |
+|---|---|---|
+| **Taint** `pods=ai:NoSchedule` | Node | Blocks **all** Pods |
+| **Toleration** | AI Pod YAML | Gate pass: the AI Pod is **allowed** past the taint |
+| **Label** `pods=ai` | Node | A name tag the scheduler can search for |
+| **nodeSelector** `pods: "ai"` | AI Pod YAML | "Put me **only** on a node with this label" |
+
+**Result:** App Pods can't enter the AI node (taint, no pass). AI Pods can enter it (pass) and can't go anywhere else (nodeSelector).
+
+> 💡 The **taint** and the **label** are **separate things** on the node, even though both say `pods=ai`. The taint is checked against the **toleration**; the label is checked against the **nodeSelector**. They only look the same because we chose the same words.
+
+**What if we leave one out?**
 
 | We use only… | What goes wrong |
 |---|---|
-| Taint + toleration | Normal Pods stay off ✅, but AI Pods may still land on the small nodes ❌ |
-| nodeSelector / affinity | AI Pods go to the AI node ✅, but normal Pods can also fill it up ❌ |
-| **Both** | AI node runs **only** AI Pods, AI Pods run **only** there ✅ |
+| Taint + toleration | Other Pods stay off ✅, but AI Pods may still land on the small nodes ❌ |
+| Label + nodeSelector | AI Pods go to the AI node ✅, but other Pods can also fill it up ❌ |
+| Taint + label + nodeSelector (no toleration) | AI Pods are sent to the AI node but blocked by the taint → **Pending** ❌ |
+| **All of them** | The AI node runs **only** AI Pods, and AI Pods run **only** there ✅ |
 
 ![Dedicated nodes: taint + toleration + nodeSelector](images/pod-placement.png)
 
-**Step by step:**
-
-1. **Label** the AI node: `pods=ai` (so AI Pods can find it).
-2. **Taint** the AI node: `pods=ai:NoSchedule` (so other Pods stay out).
-3. In the AI Deployment add a **toleration** (allowed in) and a **nodeSelector** (sent there).
+**The full AI Deployment:**
 
 ```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-model
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-model
+  template:
+    metadata:
+      labels:
+        app: ai-model
     spec:
       containers:
       - name: model
         image: nginx
       nodeSelector:
-        pods: "ai"                 # go to the AI node
+        pods: "ai"                 # go ONLY to nodes labelled pods=ai
       tolerations:
-      - key: "pods"                # allowed on the AI node
+      - key: "pods"                # gate pass for the taint pods=ai:NoSchedule
         operator: "Equal"
         value: "ai"
         effect: "NoSchedule"
