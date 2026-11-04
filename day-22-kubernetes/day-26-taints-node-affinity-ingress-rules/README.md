@@ -31,6 +31,7 @@ Here we learn how to control **where Pods run** and **where user requests go**.
 **Part 2: Ingress rules (where requests go)**
 
 8. [Ingress rules](#8-ingress-rules)
+   - [8.1 How a user request reaches the Pod](#81-how-a-user-request-reaches-the-pod)
 
 **Part 3: Lab**
 
@@ -632,7 +633,34 @@ kubectl drain <node-name> --ignore-daemonsets
            (one ALB)   └── shop.com/blog     ──► blog Service       (path rule)
 ```
 
-### 8.1 Parts of a rule
+### 8.1 How a user request reaches the Pod
+
+**Definition:** when a user opens our app, the request passes through several Kubernetes pieces before it reaches the code. Each piece makes **one decision**: the Ingress picks the **Service**, the Service picks the group of **Pods**, kube-proxy picks **one Pod**, and the **container** inside that Pod runs the app and answers.
+
+![How a user request reaches the Pod](images/request-flow.png)
+
+| # | Hop | What it does | Example |
+|---|---|---|---|
+| 1 | **User request** | A browser or app sends the request | `https://shop.com/api/products` |
+| 2 | **Ingress controller** | Reads the **Ingress rules** and decides which **Service** should get the request (by host and path) | `/api` → `backend` Service |
+| 3 | **Service** | Gives a **stable name and IP**, and selects the Pods that match its **labels**. Only Ready Pods are in its list | `backend` → Pods with `app=backend` |
+| 4 | **kube-proxy** | Runs on **every node** and sets up rules (iptables / IPVS) that send traffic for the Service to **one** of the selected Pods | Picks Pod 2 of 3 |
+| 5 | **Pod** | Receives the request on its own IP and port | `10.0.12.34:8080` |
+| 6 | **Container** | The **application** processes the request and sends a **response** | `HTTP 200` + JSON |
+
+**The response** goes back to the user along the **same path**: container → Pod → back through the same connection → Ingress controller → user.
+
+**On EKS (AWS Load Balancer Controller, `target-type: ip`)** the path is shorter. The Ingress rules live on the **ALB**, and every Pod has a real VPC IP, so:
+
+```
+ User ──► Route 53 ──► ALB (Ingress rules) ──► Pod IP directly ──► container
+```
+
+The Service is still needed: it **groups the Ready Pods**, and the controller gives their IPs to the ALB. But the traffic doesn't pass through kube-proxy. (More in [Day 25 section 6](../day-25-services-types-and-traffic-flow/README.md#6-how-traffic-flows-in-production).)
+
+> **Interview one-liner:** The Ingress controller matches the host and path to a Service, the Service selects the Ready Pods by label, kube-proxy sends the traffic to one of them, and the container processes it and responds the same way back. On EKS with ALB ip mode, the ALB sends traffic straight to the Pod IPs that the Service lists.
+
+### 8.2 Parts of a rule
 
 ```yaml
 spec:
@@ -658,7 +686,7 @@ spec:
 | `pathType` | How to compare the path (below) |
 | `backend.service` | The **ClusterIP Service** and port that gets the request |
 
-### 8.2 pathType
+### 8.3 pathType
 
 | pathType | Rule `/api` matches | Doesn't match |
 |---|---|---|
@@ -668,7 +696,7 @@ spec:
 
 If several paths match, the **longest** one wins, so `/api` beats `/`. That's why `/` works as the "everything else" rule.
 
-### 8.3 Host-based routing
+### 8.4 Host-based routing
 
 **Definition:** **host-based routing** sends requests to different apps based on the **domain name** the user typed. Each app gets its own subdomain, all pointing (in Route 53) to the **same** load balancer.
 
@@ -701,7 +729,7 @@ If several paths match, the **longest** one wins, so `/api` beats `/`. That's wh
 | `app.shop.com/anything` | frontend |
 | `api.shop.com/anything` | api |
 
-### 8.4 Path-based routing
+### 8.5 Path-based routing
 
 **Definition:** **path-based routing** sends requests to different apps based on the **path** of the URL, all under **one** domain.
 
@@ -733,7 +761,7 @@ If several paths match, the **longest** one wins, so `/api` beats `/`. That's wh
 
 > ⚠️ **The app receives the full path.** The blog app gets `/blog/post-1`, not `/post-1`. So the app must serve its pages **under `/blog`** (most apps have a "base path" setting). If it only serves `/`, it returns **404**. That's what **rewrite** solves (next).
 
-### 8.5 Rewrite: removing the prefix (NGINX controller)
+### 8.6 Rewrite: removing the prefix (NGINX controller)
 
 **Definition:** a **rewrite** changes the URL path **before** the request reaches the app. With the NGINX Ingress controller, `/nginx/about` can be rewritten to `/about`, so an app that only knows `/` still works behind a path prefix. It's set with **annotations** (extra settings for the controller).
 
@@ -795,7 +823,7 @@ spec:
 > - The community **NGINX Ingress controller (ingress-nginx)** was retired in March 2026 (no more updates). New setups use the **ALB** on EKS or the newer **Gateway API**. You'll still see it in many existing clusters.
 > - Regex paths use `pathType: ImplementationSpecific`. For normal paths always use `Prefix` or `Exact`.
 
-### 8.6 Default backend and HTTPS
+### 8.7 Default backend and HTTPS
 
 | Feature | Definition | Example |
 |---|---|---|
@@ -803,7 +831,7 @@ spec:
 | **HTTPS on the ALB** | The ALB ends HTTPS with a free **ACM** certificate and can redirect HTTP to HTTPS | Annotations `alb.ingress.kubernetes.io/certificate-arn: <acm-arn>` and `alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'` |
 | **TLS section** | `spec.tls` lists hosts and a Secret holding the certificate (used by NGINX; the ALB uses ACM) | `tls: - hosts: [shop.com] secretName: shop-tls` |
 
-### 8.7 Host or path: which one?
+### 8.8 Host or path: which one?
 
 | Use | When |
 |---|---|
