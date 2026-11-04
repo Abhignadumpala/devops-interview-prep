@@ -18,6 +18,7 @@ Here we learn how to control **where Pods run** and **where user requests go**.
 
 **Part 1: Scheduling (where Pods run)**
 1. [How Kubernetes picks a node](#1-how-kubernetes-picks-a-node)
+   - [Pod placement rules](#pod-placement-rules)
 2. [Node labels](#2-node-labels)
 3. [nodeSelector](#3-nodeselector)
 4. [Node affinity](#4-node-affinity)
@@ -68,17 +69,22 @@ By default the scheduler can put a Pod on **any** node. That's fine for most app
 
 ![No rules: an App Pod lands on the expensive AI node](images/scene-1-no-rules.png)
 
-Kubernetes gives us 3 tools for this:
+### Pod placement rules
+
+**Definition:** **Pod placement rules** are rules we add to Pods or nodes to control **which node** the scheduler picks for each Pod. The official name is **scheduling constraints**, and the Kubernetes docs cover them under "Assigning Pods to Nodes".
+
+> We use **Pod placement rules** to control where Pods run. **nodeSelector** and **node affinity** attract Pods to labelled nodes. **Taints** repel Pods from a node, and **tolerations** let specific Pods in. For a dedicated node, we combine a **taint**, a **toleration** and a **nodeSelector**.
 
 ![Where will my Pod run: animated, 6 live examples on EKS](images/pod-placement.gif)
 
 > 🎬 The animation plays 6 scenes on an EKS cluster with 3 EC2 nodes: **1** no rules, **2** nodeSelector, **3** node affinity, **4** taint, **5** toleration only, **6** all together.
 
-| Tool | Set on | What it does |
-|---|---|---|
-| **nodeSelector** | Pod | **Pulls** the Pod to nodes with one exact label |
-| **Node affinity** | Pod | **Pulls** the Pod to nodes using rules (`In`, `NotIn`, `Exists`…), must or prefer |
-| **Taint** (+ toleration on the Pod) | Node | **Pushes away** every Pod that doesn't tolerate it |
+| Group | Rule | Set on | What it does |
+|---|---|---|---|
+| **Attract** | **nodeSelector** | Pod | **Pulls** the Pod to nodes with one exact label |
+| **Attract** | **Node affinity** | Pod | **Pulls** the Pod to nodes using rules (`In`, `NotIn`, `Exists`…), must or prefer |
+| **Repel** | **Taint** | Node | **Pushes away** every Pod that doesn't tolerate it |
+| **Allow** | **Toleration** | Pod | Lets this Pod onto a tainted node (an exception to the taint) |
 
 > **Interview one-liner:** The kube-scheduler filters out nodes that can't run a Pod and scores the rest; nodeSelector and node affinity pull a Pod towards labelled nodes, while taints push Pods away from a node unless they have a matching toleration.
 
@@ -958,31 +964,34 @@ kubectl label node $NODE1 pods-
 
 ### Other Questions
 
-**Q1. What's the difference between nodeSelector and node affinity?**
+**Q1. How do you control where Pods run in Kubernetes?**
+We use Pod placement rules (officially called scheduling constraints). nodeSelector and node affinity attract Pods to labelled nodes. Taints repel Pods from a node, and tolerations let specific Pods in. For a dedicated node, we combine a taint, a toleration and a nodeSelector.
+
+**Q2. What's the difference between nodeSelector and node affinity?**
 Both send Pods to nodes by label. nodeSelector only supports exact matches and is always a hard rule. Node affinity supports operators (In, NotIn, Exists, DoesNotExist, Gt, Lt) and can be required (must match, else Pending) or preferred (try to match, else run anywhere).
 
-**Q2. What's the difference between taints/tolerations and node affinity?**
+**Q3. What's the difference between taints/tolerations and node affinity?**
 Node affinity is set on the Pod and pulls it towards certain nodes. A taint is set on the node and pushes away every Pod that doesn't tolerate it. Affinity attracts, taints repel.
 
-**Q3. If a Pod has a toleration for a node's taint, will it always run on that node?**
+**Q4. If a Pod has a toleration for a node's taint, will it always run on that node?**
 No. A toleration only allows the Pod onto the tainted node; the scheduler can still place it on any other node. To make sure it lands there, add a nodeSelector or node affinity too.
 
-**Q4. How do you reserve nodes only for one workload, like GPU or AI Pods?**
+**Q5. How do you reserve nodes only for one workload, like GPU or AI Pods?**
 Label and taint the node group (in Terraform on EKS), then give the workload a matching toleration so it's allowed in and a nodeSelector or node affinity so it's sent there. The taint keeps every other Pod off those nodes.
 
-**Q5. What are the taint effects?**
+**Q6. What are the taint effects?**
 NoSchedule: new Pods without a toleration aren't placed. PreferNoSchedule: the scheduler avoids the node if it can. NoExecute: new Pods aren't placed and running Pods without a toleration are evicted.
 
-**Q6. What does `IgnoredDuringExecution` mean in node affinity?**
+**Q7. What does `IgnoredDuringExecution` mean in node affinity?**
 The rule is checked only when the Pod is scheduled. If the node's labels change later, Pods already running there aren't moved.
 
-**Q7. Why don't app Pods run on the control plane node?**
+**Q8. Why don't app Pods run on the control plane node?**
 In self-managed clusters the control plane node has the taint `node-role.kubernetes.io/control-plane:NoSchedule`. On EKS the control plane is managed by AWS and isn't a node in the cluster at all.
 
-**Q8. A Pod is stuck in Pending. How do you check if scheduling rules are the cause?**
+**Q9. A Pod is stuck in Pending. How do you check if scheduling rules are the cause?**
 Run `kubectl describe pod` and read the Events: messages like "didn't match Pod's node affinity/selector" or "had untolerated taint" show the cause. Then compare with `kubectl get nodes --show-labels` and the node taints.
 
-**Q9. If I add only a nodeSelector for the AI node, is that enough?**
+**Q10. If I add only a nodeSelector for the AI node, is that enough?**
 It's enough to make AI Pods run on the AI node, but other Pods can still land there. For a strict dedicated node, also taint the node and give the AI Pods a matching toleration. If the node is tainted and the Pod has only a nodeSelector, the Pod stays Pending.
 
 ---
