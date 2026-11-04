@@ -25,6 +25,8 @@ Here we learn how to control **where Pods run** and **where user requests go**.
 6. [Dedicated nodes: using them together](#6-dedicated-nodes-using-them-together)
    - [Scenario: AI Pods must run only on the big node](#scenario-ai-pods-must-run-only-on-the-big-node)
 7. [Which one to use](#7-which-one-to-use)
+   - [7.1 Do I need all three?](#71-do-i-need-all-three)
+   - [7.2 Scenario questions: which rule to use?](#72-scenario-questions-which-rule-to-use)
 
 **Part 2: Ingress rules (where requests go)**
 
@@ -416,6 +418,140 @@ kubectl label node ai-node pods=ai
 | Move Pods off a node now (maintenance) | Taint with **`NoExecute`** (or `kubectl drain`) |
 
 > **Real projects:** most apps use **none** of these and run on the general node group. They're used for special nodes: GPU/AI, Spot vs On-Demand, ARM (Graviton), or isolating noisy apps. A simple rule to remember: **affinity/nodeSelector attract, taints repel**.
+
+### 7.1 Do I need all three?
+
+**nodeSelector** decides where **my** Pod goes. A **taint** decides who **else** is allowed on the node. The **toleration** is only needed when the node has a taint.
+
+| Node has taint? | Pod has nodeSelector | Pod has toleration | Result |
+|---|---|---|---|
+| No | ✅ | – | ✅ Runs on the AI node, but App Pods can also land there |
+| Yes | ✅ | ❌ | ❌ **Pending**: sent to the AI node but not allowed in (`untolerated taint`) |
+| Yes | ❌ | ✅ | ⚠️ Can land on the AI node **or** any other node: not guaranteed |
+| Yes | ✅ | ✅ | ✅ Runs **only** on the AI node, and **only** AI Pods are there |
+
+> 💡 "Only on the AI node" holds as long as the AI node has free CPU and memory. If it's full, extra AI Pods don't fall back to another node: they stay **Pending** until space frees up or a new AI node is added.
+
+### 7.2 Scenario questions: which rule to use?
+
+**Scenario 1: AI Pods must run on the AI node. Other Pods may share that node.**
+- **Use:** nodeSelector only.
+- **Why:** nodeSelector sends the AI Pods to the node labelled `pods=ai`. The node has no taint, so no toleration is needed, and other Pods are free to use spare space there.
+
+```yaml
+      nodeSelector:
+        pods: "ai"
+```
+
+**Scenario 2: AI Pods must run only on the AI node, and no other Pods are allowed on it (strict).**
+- **Use:** taint on the node + toleration on the AI Pods + nodeSelector on the AI Pods.
+- **Why:** the taint keeps every other Pod out, the toleration lets the AI Pods past the taint, and nodeSelector makes sure they go there and nowhere else. This is how GPU/AI node groups are set up in real projects.
+
+```bash
+kubectl taint node ai-node pods=ai:NoSchedule
+```
+
+```yaml
+      nodeSelector:
+        pods: "ai"
+      tolerations:
+      - key: "pods"
+        operator: "Equal"
+        value: "ai"
+        effect: "NoSchedule"
+```
+
+**Scenario 3: AI Pods can run on the AI node or the Agent node.**
+- **Use:** node affinity (required) with `operator: In`.
+- **Why:** nodeSelector can only match one exact value. Affinity's `In` means "any of these values".
+
+```yaml
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: pods
+                operator: In
+                values: ["ai", "agent"]
+```
+
+**Scenario 4: Run on the big nodes if they have room, but never stay Pending.**
+- **Use:** node affinity (preferred).
+- **Why:** a preferred rule is a wish, not a must. The scheduler tries the matching nodes first; if they're full, the Pod runs on any other node.
+
+```yaml
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: pods
+                operator: In
+                values: ["ai"]
+```
+
+**Scenario 5: This app must never run on Spot nodes (they can be taken away by AWS at any time).**
+- **Use:** node affinity (required) with `operator: NotIn`.
+- **Why:** "anywhere **except** these nodes" needs `NotIn`. EKS labels every node with its capacity type.
+
+```yaml
+              - key: eks.amazonaws.com/capacityType
+                operator: NotIn
+                values: ["SPOT"]
+```
+
+**Scenario 6: The app image is built only for ARM, so it must run on Graviton nodes.**
+- **Use:** nodeSelector on the built-in label `kubernetes.io/arch`.
+- **Why:** every node already has this label. No need to add our own.
+
+```yaml
+      nodeSelector:
+        kubernetes.io/arch: arm64
+```
+
+**Scenario 7: A logging/monitoring agent must run on every node, even the tainted AI node.**
+- **Use:** toleration with `operator: Exists` (on a DaemonSet).
+- **Why:** `Exists` with no key tolerates **every** taint, so the agent isn't kept off any node. A DaemonSet already puts one Pod on each node, so no nodeSelector is needed.
+
+```yaml
+      tolerations:
+      - operator: "Exists"
+```
+
+**Scenario 8: Keep normal Pods off a node, but I don't care where the tolerating Pods run.**
+- **Use:** taint on the node + toleration on the allowed Pods (no nodeSelector).
+- **Why:** the taint blocks everyone else. The allowed Pods can use this node **or** any other: that's fine here, because we only wanted to block the rest.
+
+**Scenario 9: I need to do maintenance on a node and move all its Pods off now.**
+- **Use:** `kubectl drain` (or a taint with `NoExecute`).
+- **Why:** `NoSchedule` only stops **new** Pods. `drain` (or `NoExecute`) also moves the Pods already running there, and the Deployments recreate them on other nodes.
+
+```bash
+kubectl drain <node-name> --ignore-daemonsets
+```
+
+**Scenario 10: My Pod is stuck in Pending. Which rule is the problem?**
+- **Use:** `kubectl describe pod <pod>` and read the Events.
+
+| Event message | Cause | Fix |
+|---|---|---|
+| `didn't match Pod's node affinity/selector` | No node has the label the Pod asks for | Label the node, or fix the nodeSelector / affinity |
+| `had untolerated taint {pods: ai}` | The only matching node is tainted | Add the matching toleration to the Pod |
+| `Insufficient cpu` / `Insufficient memory` | The matching nodes are full | Add nodes, or lower the Pod's requests |
+
+**Quick summary:**
+
+| I want… | Use |
+|---|---|
+| My Pod on one kind of node | nodeSelector |
+| My Pod on one of several kinds / not on some | Node affinity (required, `In` / `NotIn`) |
+| My Pod preferably on some nodes | Node affinity (preferred) |
+| Other Pods off a node | Taint (+ toleration for the allowed ones) |
+| A node only for my Pods, and my Pods only there | Taint + toleration + nodeSelector |
+| An agent on every node, even tainted ones | Toleration `operator: Exists` |
+| Empty a node now | `kubectl drain` |
 
 ---
 
@@ -1097,6 +1233,9 @@ The app receives the full path `/blog/...`, but it only serves pages at `/`. Fix
 
 **Q11. What does pathType do?**
 It sets how the path is matched: Prefix matches the path and everything under it, Exact matches only that path, and ImplementationSpecific leaves it to the controller (used for regex with NGINX). When several paths match, the longest one wins.
+
+**Q12. If I add only a nodeSelector for the AI node, is that enough?**
+It's enough to make AI Pods run on the AI node, but other Pods can still land there. For a strict dedicated node, also taint the node and give the AI Pods a matching toleration. If the node is tainted and the Pod has only a nodeSelector, the Pod stays Pending.
 
 ---
 
