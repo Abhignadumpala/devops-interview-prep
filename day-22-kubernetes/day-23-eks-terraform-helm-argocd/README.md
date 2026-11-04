@@ -21,6 +21,8 @@
 12. [Commands Cheat Sheet](#12-commands-cheat-sheet)
 13. [Interview Questions](#13-interview-questions)
 
+**Sub-topic:** [Autoscaling on EKS: HPA, node groups, Cluster Autoscaler, Karpenter, Auto Mode](./autoscaling-hpa-nodes/README.md)
+
 ---
 
 ## 1. Console vs Terraform
@@ -836,6 +838,10 @@ aws eks update-kubeconfig --region us-east-1 --name abhigna-cluster
 > Bootstrap takes a few minutes after the bastion starts. If `kubectl` is not found yet, check `sudo tail -f /var/log/bastion-bootstrap.log`.
 
 > Bastion user is **ubuntu** (Ubuntu AMI), not `ec2-user`.
+
+---
+
+> 📈 **Next:** how this node group grows and shrinks, and how Pods scale with HPA: [Autoscaling on EKS](./autoscaling-hpa-nodes/README.md).
 
 ---
 
