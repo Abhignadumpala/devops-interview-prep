@@ -699,7 +699,7 @@ kubectl delete -f liveness-http.yaml
 
 ## 10. Lab: troubleshoot CrashLoopBackOff (wrong path, port, command)
 
-**Goal:** in class we **broke the liveness probe on purpose** 3 ways (HTTP, TCP, EXEC) to see **CrashLoopBackOff** and learn how a DevOps engineer finds the cause.
+**Goal:** we **break the liveness probe on purpose** 3 ways (HTTP, TCP, EXEC) to see **CrashLoopBackOff** and learn how a DevOps engineer finds the cause.
 
 ### ⭐ First step as a DevOps engineer: `kubectl describe pod`
 

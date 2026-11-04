@@ -889,7 +889,7 @@ kubectl create job test-run --from=cronjob/daily-backup   # run it now to test
 
 ## 16. Interview Questions
 
-### ⭐ Very Important (asked in class)
+### ⭐ Very Important
 
 **Q1. In a sidecar, the app writes logs in container 1. How does container 2 get them? Do 2 containers in the same pod share data automatically?**
 
