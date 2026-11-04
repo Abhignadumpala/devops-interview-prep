@@ -64,6 +64,8 @@ By default the scheduler can put a Pod on **any** node. That's fine for most app
 | Expensive nodes should run only one kind of app | Normal web Pods shouldn't fill up the GPU nodes |
 | The app must stay in one zone or node type | A Pod that needs a disk in `us-east-1a`, or ARM (Graviton) nodes |
 
+![No rules: an App Pod lands on the expensive AI node](images/scene-1-no-rules.png)
+
 Kubernetes gives us 3 tools for this:
 
 ![Where will my Pod run: animated, 6 live examples on EKS](images/pod-placement.gif)
@@ -133,6 +135,8 @@ spec:
 ```
 
 **Result:** all 5 Pods run on the node(s) labelled `pods=ai`.
+
+![nodeSelector pulls the AI Pod to the node labelled pods=ai](images/scene-2-node-selector.png)
 
 | Good | Limits |
 |---|---|
@@ -205,6 +209,8 @@ spec:
 
 **Result:** the 4 Pods run only on nodes labelled `pods=ai` **or** `pods=agent`. nodeSelector can't say "or".
 
+![Node affinity: AI Pods go to the AI node or the Agent node](images/scene-3-node-affinity.png)
+
 ### 4.4 Preferred example: try the big nodes first
 
 ```yaml
@@ -241,6 +247,8 @@ kubectl taint node <node-name> pods=ai:NoSchedule
 | key | `pods` |
 | value | `ai` |
 | effect | `NoSchedule` |
+
+![Taint: the App Pod is pushed away from the AI node](images/scene-4-taint.png)
 
 **The 3 effects:**
 
@@ -319,6 +327,8 @@ kubectl taint node ai-node pods=ai:NoSchedule
 
 The taint **keeps others out**, but the toleration only **allows** AI Pods in. It doesn't **send** them there. So an AI Pod may still end up on the 4 CPU node and run slowly.
 
+![Toleration only: the AI Pod lands on the small App node](images/scene-5-toleration-only.png)
+
 **Attempt 2: add a label on the node + nodeSelector on the AI Pods**
 
 ```bash
@@ -336,6 +346,8 @@ kubectl label node ai-node pods=ai
 | AI Pod (toleration + nodeSelector) | **AI node only** | ✅ nodeSelector sends it there, toleration lets it in |
 
 > 💡 nodeSelector matches the **node's label** (`pods=ai` on the node), not the Pod's own labels. Every Pod whose nodeSelector says `pods: "ai"` goes **only** to nodes labelled `pods=ai`.
+
+![Taint + toleration + nodeSelector: AI Pods only on the AI node](images/scene-6-dedicated-node.png)
 
 **What if we used only nodeSelector (no taint)?** AI Pods would go to the AI node ✅, but nothing stops App Pods from also landing there and using its CPU ❌. That's why we use **both**:
 
