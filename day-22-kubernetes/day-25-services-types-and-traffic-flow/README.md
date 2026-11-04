@@ -23,10 +23,6 @@ Here we learn, step by step, how Pods are reached inside the cluster, how users 
    - [3.2 NodePort: a door on every node](#32-nodeport-a-door-on-every-node)
    - [3.3 LoadBalancer: a cloud load balancer per Service](#33-loadbalancer-a-cloud-load-balancer-per-service)
 4. [Ingress: one door for all websites](#4-ingress-one-door-for-all-websites)
-   - [Why we need Ingress](#why-we-need-ingress)
-   - [What is Ingress in Kubernetes?](#what-is-ingress-in-kubernetes)
-   - [What is an Ingress controller?](#what-is-an-ingress-controller)
-   - [Sample Ingress (ALB on EKS)](#sample-ingress-alb-on-eks)
 5. [Which one to use (what real projects use)](#5-which-one-to-use-what-real-projects-use)
 6. [How traffic flows in production](#6-how-traffic-flows-in-production)
 
@@ -208,109 +204,18 @@ spec:
 
 ## 4. Ingress: one door for all websites
 
-### Why we need Ingress
-
-When you first deploy applications in Kubernetes, you typically expose them using **NodePort** or **LoadBalancer** Services. But as your architecture grows, managing **dozens of LoadBalancers** quickly becomes **inefficient and expensive**.
-
-That's where **Ingress** and **Ingress controllers** come in, offering **smarter routing**, **central management**, and **flexible control** over external HTTP/S traffic.
-
-| | One LoadBalancer Service per app | Ingress |
-|---|---|---|
-| Load balancers for 10 apps | **10** (10 bills, 10 DNS names) | **1** shared ALB |
-| Routing | None: one load balancer = one app | By **host** (`api.shop.com`) and **path** (`/api`) |
-| HTTPS certificates | Set up on every load balancer | In **one place** |
-| Adding a new app | Another load balancer | Add a rule to the Ingress |
-
-### What is Ingress in Kubernetes?
-
-**Definition:** an **Ingress** is an API object in Kubernetes that manages **external access to Services** inside the cluster. It defines **HTTP and HTTPS routing rules** that send each request to the correct Service based on the request's **host** (`admin.shop.com`) or **path** (`/api`). This lets **many apps share one public load balancer**; on EKS that load balancer is an **ALB** (Application Load Balancer).
-
-> **In simple terms:** Ingress is your app's **front door**, deciding where traffic goes.
+**Definition:** an **Ingress** is a Kubernetes object that holds **HTTP/HTTPS routing rules** (by host and path) for many ClusterIP Services, so they can **share one public load balancer** instead of one LoadBalancer Service each. An **Ingress controller** makes the rules work; on EKS that's the **AWS Load Balancer Controller**, which creates one **ALB**.
 
 ```
  shop.com/api  → backend
  shop.com/     → frontend
 ```
 
-> 🛎️ **Example:** **one main reception for the whole company**. The receptionist asks "which department?" and sends you there.
-
-**Key features of Ingress:**
-
-| Feature | Example |
-|---|---|
-| **Path-based routing** | `/api` → backend, `/login` → auth |
-| **Host-based routing** | `app.example.com` → frontend, `shop.example.com` → shop |
-| **SSL/TLS termination** | HTTPS ends at the load balancer with one certificate (ACM on AWS) |
-| **Load balancing** | Requests are spread across the Ready Pods of each Service |
-| **Extras (via the controller)** | Authentication, rate limiting, redirects, WAF |
-
-### What is an Ingress controller?
-
-**Definition:** an **Ingress controller** is the **actual implementation** that makes Ingress work. It runs as Pods in the cluster, **watches for Ingress resources**, and sets up the routing they describe: either by configuring itself as a proxy (NGINX, Traefik) or by creating a cloud load balancer (AWS ALB).
-
-> **In simple terms:** the controller is the **traffic cop** that enforces the rules written in your Ingress YAML.
-
-> ⚠️ **Without an Ingress controller, your Ingress resources won't work.** They're just definitions until a controller reads them and acts on them. `kubectl get ingress` would show no `ADDRESS`.
-
-| Piece | What it is | Who makes it |
-|---|---|---|
-| **Ingress** | The rules (YAML) | You, with `kubectl apply` |
-| **Ingress controller** (on EKS: **AWS Load Balancer Controller**) | Pods in `kube-system` that read the rules | You install it **once** per cluster (Helm) |
-| **ALB** (Application Load Balancer) | The **real door**: receives users, applies the rules, sends to Pods | The controller creates it **automatically** |
-
-> 🛎️ The controller is the **building manager** who sets up the reception. The **ALB is the receptionist** who talks to visitors. On EKS, user traffic never goes through the controller Pods.
-
-**Popular Ingress controllers:**
-
-| Controller | What it is | Where it's used |
-|---|---|---|
-| **AWS Load Balancer Controller** ✅ (formerly "AWS ALB Ingress Controller") | AWS-native: turns each Ingress into an **Application Load Balancer** | ✅ **EKS**: what we use |
-| **NGINX Ingress Controller** | NGINX Pods behind one LoadBalancer Service act as the proxy; very configurable (rewrites, annotations) | Many existing clusters. The community `ingress-nginx` was retired in March 2026; F5's NGINX Ingress Controller is still maintained |
-| **Traefik** | Lightweight, dynamic, configures itself automatically | Microservices-heavy and smaller clusters |
-
-### Sample Ingress (ALB on EKS)
-
-Here's an Ingress that routes traffic to **two different Services** through one ALB:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: shop
-  annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing   # public ALB
-    alb.ingress.kubernetes.io/target-type: ip           # ALB → Pod IPs directly
-spec:
-  ingressClassName: alb          # handled by the AWS Load Balancer Controller
-  rules:
-  - host: shop.example.com
-    http:
-      paths:
-      - path: /api               # shop.example.com/api → backend
-        pathType: Prefix
-        backend:
-          service:
-            name: backend
-            port:
-              number: 80
-      - path: /                  # everything else → frontend
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend
-            port:
-              number: 80
-```
-
-> An **NGINX** Ingress example (with path rewrite) and all the rule types are in [Day 26: Ingress rules](../day-26-taints-node-affinity-ingress-rules/README.md#8-ingress-rules).
-
-**No NodePort or LoadBalancer Service is needed.** On EKS every Pod has a **real VPC IP**, so the ALB sends traffic **straight to the Ready Pod IPs**. The ClusterIP Service is still needed: it **groups the Ready Pods**, and the controller gives that list to the ALB.
-
-> ⚠️ The **nginx inside your frontend Pod is not an Ingress controller**. It's a web server that sends back your page. The controller is a separate thing we install.
-
 | Who can reach it | Creates in AWS | Use for |
 |---|---|---|
 | Internet, via one ALB | **1 ALB for many apps** | ✅ **All websites and HTTP APIs** |
+
+> 📘 **Full guide:** why we need Ingress, Ingress controllers, how a request reaches the Pod, a sample, all the rule types and a lab: [**Kubernetes Ingress**](../ingress/README.md).
 
 > **Interview one-liner:** An Ingress is HTTP routing rules for many ClusterIP Services; on EKS the AWS Load Balancer Controller turns it into one ALB that routes by path or host straight to the Ready Pods.
 

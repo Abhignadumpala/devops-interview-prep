@@ -11,8 +11,8 @@ Here we learn how to control **where Pods run** and **where user requests go**.
 | Part | Topic | What you learn |
 |---|---|---|
 | **Part 1: Scheduling** | Labels, nodeSelector, node affinity, taints and tolerations | What each one is, how they differ, when to use which |
-| **Part 2: Ingress rules** | Host rules, path rules, pathType, rewrite, TLS | How an Ingress picks the right app for a request |
-| **Part 3: Lab** | 2-node EKS cluster | Place Pods with each tool, then route 2 apps through one ALB |
+| **Part 2: Ingress rules** | Host and path rules (summary) | Full guide in the [Ingress notes](../ingress/README.md) |
+| **Part 3: Lab** | 2-node EKS cluster | Place Pods with each tool |
 
 ## Table of Contents
 
@@ -31,11 +31,10 @@ Here we learn how to control **where Pods run** and **where user requests go**.
 **Part 2: Ingress rules (where requests go)**
 
 8. [Ingress rules](#8-ingress-rules)
-   - [8.1 How a user request reaches the Pod](#81-how-a-user-request-reaches-the-pod)
 
 **Part 3: Lab**
 
-9. [Lab: control Pod placement and route 2 apps on EKS](#9-lab-control-pod-placement-and-route-2-apps-on-eks)
+9. [Lab: control Pod placement on EKS](#9-lab-control-pod-placement-on-eks)
 
 **Wrap-up**
 
@@ -625,240 +624,28 @@ kubectl drain <node-name> --ignore-daemonsets
 
 ## 8. Ingress rules
 
-> **Why Ingress?** When you first deploy applications in Kubernetes, you typically expose them using NodePort or LoadBalancer Services. But as your architecture grows, managing dozens of LoadBalancers quickly becomes inefficient and expensive. That's where **Ingress** and **Ingress controllers** come in, offering smarter routing, central management, and flexible control over external HTTP/S traffic. ([Comparison table in Day 25](../day-25-services-types-and-traffic-flow/README.md#why-we-need-ingress))
+**Definition:** **Ingress rules** are the part of an Ingress (`spec.rules`) that decide **which Service** gets each HTTP request, by the request's **host** (`api.shop.com`) and **path** (`/api`). One load balancer can then serve many apps.
 
-**Definition:** **Ingress rules** are the part of an Ingress (`spec.rules`) that decide **which Service** gets each HTTP request. Each rule can match the request's **host** (the domain name, like `api.shop.com`) and its **path** (the part after the domain, like `/api`). The Ingress controller turns these rules into load balancer rules, so one load balancer can serve many apps. (What an Ingress and an Ingress controller are, and why we use one ALB instead of many load balancers, is in [Day 25 section 4](../day-25-services-types-and-traffic-flow/README.md#4-ingress-one-door-for-all-websites).)
-
-```
-                       ┌── app.shop.com      ──► frontend Service
- Users ──► Ingress ────┼── api.shop.com      ──► api Service        (host rules)
-           (one ALB)   └── shop.com/blog     ──► blog Service       (path rule)
-```
-
-### 8.1 How a user request reaches the Pod
-
-**Definition:** when a user opens our app, the request passes through several Kubernetes pieces before it reaches the code. Each piece makes **one decision**: the Ingress picks the **Service**, the Service picks the group of **Pods**, kube-proxy picks **one Pod**, and the **container** inside that Pod runs the app and answers.
-
-![How a user request reaches the Pod](images/request-flow.png)
-
-| # | Hop | What it does | Example |
-|---|---|---|---|
-| 1 | **User request** | A browser or app sends the request | `https://shop.com/api/products` |
-| 2 | **Ingress controller** | Reads the **Ingress rules** and decides which **Service** should get the request (by host and path) | `/api` → `backend` Service |
-| 3 | **Service** | Gives a **stable name and IP**, and selects the Pods that match its **labels**. Only Ready Pods are in its list | `backend` → Pods with `app=backend` |
-| 4 | **kube-proxy** | Runs on **every node** and sets up rules (iptables / IPVS) that send traffic for the Service to **one** of the selected Pods | Picks Pod 2 of 3 |
-| 5 | **Pod** | Receives the request on its own IP and port | `10.0.12.34:8080` |
-| 6 | **Container** | The **application** processes the request and sends a **response** | `HTTP 200` + JSON |
-
-**The response** goes back to the user along the **same path**: container → Pod → back through the same connection → Ingress controller → user.
-
-**On EKS (AWS Load Balancer Controller, `target-type: ip`)** the path is shorter. The Ingress rules live on the **ALB**, and every Pod has a real VPC IP, so:
-
-```
- User ──► Route 53 ──► ALB (Ingress rules) ──► Pod IP directly ──► container
-```
-
-The Service is still needed: it **groups the Ready Pods**, and the controller gives their IPs to the ALB. But the traffic doesn't pass through kube-proxy. (More in [Day 25 section 6](../day-25-services-types-and-traffic-flow/README.md#6-how-traffic-flows-in-production).)
-
-> **Interview one-liner:** The Ingress controller matches the host and path to a Service, the Service selects the Ready Pods by label, kube-proxy sends the traffic to one of them, and the container processes it and responds the same way back. On EKS with ALB ip mode, the ALB sends traffic straight to the Pod IPs that the Service lists.
-
-### 8.2 Parts of a rule
-
-```yaml
-spec:
-  ingressClassName: alb            # which controller handles it (alb on EKS)
-  rules:
-  - host: api.shop.com             # 1. host: which domain (optional)
-    http:
-      paths:
-      - path: /orders              # 2. path: which URL path
-        pathType: Prefix           # 3. how the path is matched
-        backend:                   # 4. where to send it
-          service:
-            name: orders           #    ClusterIP Service name
-            port:
-              number: 80           #    Service port
-```
-
-| Field | Meaning |
+| Rule type | Example |
 |---|---|
-| `ingressClassName` | Which Ingress controller reads this Ingress: `alb` (AWS Load Balancer Controller) or `nginx` |
-| `host` | Match the domain name. No `host` = match **any** domain |
-| `path` | Match the URL path |
-| `pathType` | How to compare the path (below) |
-| `backend.service` | The **ClusterIP Service** and port that gets the request |
+| Host-based | `app.shop.com` → frontend, `api.shop.com` → api |
+| Path-based | `shop.com/blog` → blog, `shop.com/` → frontend |
 
-### 8.3 pathType
-
-| pathType | Rule `/api` matches | Doesn't match |
-|---|---|---|
-| `Prefix` | `/api`, `/api/`, `/api/users` | `/apiv2` (matches whole path parts only) |
-| `Exact` | only `/api` | `/api/`, `/api/users` |
-| `ImplementationSpecific` | Up to the controller (used for regex with NGINX) | — |
-
-If several paths match, the **longest** one wins, so `/api` beats `/`. That's why `/` works as the "everything else" rule.
-
-### 8.4 Host-based routing
-
-**Definition:** **host-based routing** sends requests to different apps based on the **domain name** the user typed. Each app gets its own subdomain, all pointing (in Route 53) to the **same** load balancer.
-
-```yaml
-  rules:
-  - host: app.shop.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend
-            port:
-              number: 80
-  - host: api.shop.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: api
-            port:
-              number: 80
-```
-
-| Request | Goes to |
-|---|---|
-| `app.shop.com/anything` | frontend |
-| `api.shop.com/anything` | api |
-
-### 8.5 Path-based routing
-
-**Definition:** **path-based routing** sends requests to different apps based on the **path** of the URL, all under **one** domain.
-
-```yaml
-  rules:
-  - host: shop.com
-    http:
-      paths:
-      - path: /blog
-        pathType: Prefix
-        backend:
-          service:
-            name: blog
-            port:
-              number: 80
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend
-            port:
-              number: 80
-```
-
-| Request | Goes to |
-|---|---|
-| `shop.com/blog/post-1` | blog (gets the path `/blog/post-1`) |
-| `shop.com/cart` | frontend |
-
-> ⚠️ **The app receives the full path.** The blog app gets `/blog/post-1`, not `/post-1`. So the app must serve its pages **under `/blog`** (most apps have a "base path" setting). If it only serves `/`, it returns **404**. That's what **rewrite** solves (next).
-
-### 8.6 Rewrite: removing the prefix (NGINX controller)
-
-**Definition:** a **rewrite** changes the URL path **before** the request reaches the app. With the NGINX Ingress controller, `/nginx/about` can be rewritten to `/about`, so an app that only knows `/` still works behind a path prefix. It's set with **annotations** (extra settings for the controller).
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: k8s-ingress
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"      # allow plain http
-    nginx.ingress.kubernetes.io/use-regex: "true"          # paths are regex
-    nginx.ingress.kubernetes.io/rewrite-target: /$2        # send only group 2
-spec:
-  ingressClassName: nginx
-  rules:
-  - http:
-      paths:
-      - path: /nginx(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: nginx
-            port:
-              number: 80
-      - path: /httpd(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: httpd
-            port:
-              number: 80
-      - path: /(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: nginx
-            port:
-              number: 80
-```
-
-**How `/nginx(/|$)(.*)` + `/$2` works:**
-
-| Part | Means |
-|---|---|
-| `/nginx` | The path starts with `/nginx` |
-| `(/|$)` | **Group 1:** then a `/` or the end of the path |
-| `(.*)` | **Group 2:** everything after that |
-| `rewrite-target: /$2` | Send the app `/` + group 2 |
-
-| User opens | Rule | App receives |
-|---|---|---|
-| `/nginx` | nginx | `/` |
-| `/nginx/about.html` | nginx | `/about.html` |
-| `/httpd/index.html` | httpd | `/index.html` |
-| `/anything` | last rule → nginx | `/` (this path has no group 2, so `/$2` is just `/`) |
-
-> **Real projects:**
-> - On **EKS with the ALB** controller there's **no rewrite**. Apps are built to serve under their own path (the backend serves `/api/...`), or each app gets its own **host**.
-> - The community **NGINX Ingress controller (ingress-nginx)** was retired in March 2026 (no more updates). New setups use the **ALB** on EKS or the newer **Gateway API**. You'll still see it in many existing clusters.
-> - Regex paths use `pathType: ImplementationSpecific`. For normal paths always use `Prefix` or `Exact`.
-
-### 8.7 Default backend and HTTPS
-
-| Feature | Definition | Example |
-|---|---|---|
-| **Default backend** | The Service that gets requests matching **no rule** (otherwise users get a 404 from the controller) | `spec.defaultBackend.service.name: frontend` |
-| **HTTPS on the ALB** | The ALB ends HTTPS with a free **ACM** certificate and can redirect HTTP to HTTPS | Annotations `alb.ingress.kubernetes.io/certificate-arn: <acm-arn>` and `alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'` |
-| **TLS section** | `spec.tls` lists hosts and a Secret holding the certificate (used by NGINX; the ALB uses ACM) | `tls: - hosts: [shop.com] secretName: shop-tls` |
-
-### 8.8 Host or path: which one?
-
-| Use | When |
-|---|---|
-| **Host-based** (`api.shop.com`) | Separate apps or teams, each on its own subdomain. Cleanest: no path problems |
-| **Path-based** (`shop.com/api`) | One website made of parts (frontend `/`, backend `/api`), one domain, no CORS issues |
-| **Both** | Big setups: `shop.com/` + `shop.com/api` and `admin.shop.com` on the same ALB |
-
-> **Interview one-liner:** Ingress rules route each HTTP request by host and path to a ClusterIP Service; the longest matching path wins, the app receives the full path, so we either serve apps under their prefix (ALB) or rewrite the path (NGINX annotations).
+> 📘 **Full guide:** why we need Ingress, Ingress controllers, how a user request reaches the Pod, pathType, rewrite, HTTPS and a two-app ALB lab: [**Kubernetes Ingress**](../ingress/README.md).
 
 ---
 
 # Part 3: Lab
 
-## 9. Lab: control Pod placement and route 2 apps on EKS
+## 9. Lab: control Pod placement on EKS
 
-**Goal:** on a 2-node EKS cluster, make node 1 an "AI node", place Pods with nodeSelector, node affinity and taints, then route 2 apps (nginx and httpd) through one ALB by host and path.
+**Goal:** on a 2-node EKS cluster, make node 1 an "AI node", then place Pods with nodeSelector, node affinity and taints.
 
 **Before you start:**
 
 | Need | Why |
 |---|---|
 | EKS cluster with **2 nodes** + bastion with `kubectl` ([Day 23](../day-23-eks-terraform-helm-argocd/README.md)) | Where we run all commands |
-| **AWS Load Balancer Controller** installed ([Day 25 lab](../day-25-services-types-and-traffic-flow/README.md#7-lab-expose-one-app-4-ways-on-eks)) | Creates the ALB in steps 8–9 |
-
-> ⚠️ Step 9 creates a **real ALB that costs money**. Do the clean-up (step 11) when you finish.
 
 ### Step 1: See the nodes, their labels and taints
 
@@ -1122,132 +909,6 @@ kubectl label node $NODE1 pods-
 
 **Expected:** `kubectl describe nodes | grep -i taints` shows `<none>` again.
 
-### Step 9: Two apps behind one Ingress
-
-```bash
-kubectl create deployment nginx --image=nginx
-```
-
-```bash
-kubectl expose deployment nginx --port=80
-```
-
-```bash
-kubectl create deployment httpd --image=httpd
-```
-
-```bash
-kubectl expose deployment httpd --port=80
-```
-
-**What it does:** creates 2 apps, each with a **ClusterIP** Service on port 80.
-
-```bash
-vim rules-ingress.yaml
-```
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: rules
-  annotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-spec:
-  ingressClassName: alb
-  rules:
-  - host: nginx.example.com          # host rule → nginx
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: nginx
-            port:
-              number: 80
-  - host: httpd.example.com          # host rule → httpd
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: httpd
-            port:
-              number: 80
-  - http:                            # no host: any other request → nginx
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: nginx
-            port:
-              number: 80
-```
-
-```bash
-kubectl apply -f rules-ingress.yaml
-```
-
-```bash
-kubectl get ingress rules -w
-```
-
-**Expected:** `ADDRESS` fills in with `k8s-default-rules-xxxx.us-east-1.elb.amazonaws.com` after 1–2 minutes. Press `Ctrl+C`.
-
-```bash
-ALB=$(kubectl get ingress rules -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-```
-
-### Step 10: Test the rules
-
-We don't own `example.com`, so we send the domain name in the **Host header** ourselves. A browser does exactly this when Route 53 points a real domain to the ALB.
-
-```bash
-curl -H "Host: nginx.example.com" http://$ALB
-```
-
-**Expected:** `Welcome to nginx!`
-
-```bash
-curl -H "Host: httpd.example.com" http://$ALB
-```
-
-**Expected:** `It works!` (the httpd page).
-
-```bash
-curl http://$ALB
-```
-
-**Expected:** `Welcome to nginx!`: no host matched, so the last rule (no host) answered.
-
-**See the rules on the ALB:** EC2 → Load Balancers → `k8s-default-rules-...` → **Listeners** → HTTP:80 → **Rules**. There's one rule per host, created by the controller from our YAML.
-
-| Problem | Fix |
-|---|---|
-| `ADDRESS` stays empty | `kubectl describe ingress rules` → Events. Usually the controller isn't installed or the public subnets lack the tag `kubernetes.io/role/elb = 1` |
-| `curl` fails for the first minutes | The ALB DNS name takes 1–3 minutes to work. Wait and retry |
-| `503 Service Temporarily Unavailable` | The Service has no Ready Pods: `kubectl get pods`, `kubectl get endpointslices` |
-
-### Step 11: Clean up (stops the AWS bill)
-
-```bash
-kubectl delete -f rules-ingress.yaml
-```
-
-**What it does:** the controller deletes the ALB. Always delete Ingresses with `kubectl` **before** destroying the cluster, or the ALB stays and keeps billing.
-
-```bash
-kubectl delete deployment nginx httpd
-```
-
-```bash
-kubectl delete svc nginx httpd
-```
-
 ---
 
 # Wrap-up
@@ -1261,11 +922,10 @@ kubectl delete svc nginx httpd
 - **Dedicated nodes** = taint + toleration + nodeSelector/affinity, set on the EKS node group in Terraform.
 
 **Part 2: Ingress rules**
-- Rules match **host** and **path**; the longest path wins; the app gets the **full path**.
-- NGINX can **rewrite** the path with annotations; on the ALB we route by host or serve apps under their prefix.
+- Rules match **host** and **path** and send each request to a ClusterIP Service. Full guide: [Ingress notes](../ingress/README.md).
 
 **Part 3: Lab**
-- nodeSelector put all Pods on the labelled node, affinity spread them over `ai` **or** `agent`, a taint kept normal Pods off, and toleration + nodeSelector made a dedicated node. One ALB served 2 apps by host.
+- nodeSelector put all Pods on the labelled node, affinity spread them over `ai` **or** `agent`, a taint kept normal Pods off, and toleration + nodeSelector made a dedicated node.
 
 ```
  Scheduling:  affinity / nodeSelector ──► pull 🧲   taint ──► push ⛔   toleration ──► allow ✅
@@ -1287,8 +947,6 @@ kubectl delete svc nginx httpd
 | `kubectl describe node <node> \| grep -i taints` | See a node's taints |
 | `kubectl get pods -o wide` | Which node each Pod runs on |
 | `kubectl describe pod <pod>` | Events: why a Pod is Pending |
-| `kubectl get ingress` / `kubectl describe ingress <name>` | Ingress rules, ALB address, events |
-| `curl -H "Host: <domain>" http://<alb-dns>` | Test a host rule without a real domain |
 
 ---
 
@@ -1320,18 +978,9 @@ In self-managed clusters the control plane node has the taint `node-role.kuberne
 **Q8. A Pod is stuck in Pending. How do you check if scheduling rules are the cause?**
 Run `kubectl describe pod` and read the Events: messages like "didn't match Pod's node affinity/selector" or "had untolerated taint" show the cause. Then compare with `kubectl get nodes --show-labels` and the node taints.
 
-**Q9. What's the difference between host-based and path-based routing in an Ingress?**
-Host-based routes by domain (`api.shop.com` → api). Path-based routes by URL path under one domain (`shop.com/api` → api). Both can share one ALB.
-
-**Q10. A path rule `/blog` sends traffic to the blog app, but it returns 404. Why?**
-The app receives the full path `/blog/...`, but it only serves pages at `/`. Fix it by setting the app's base path to `/blog`, using host-based routing instead, or rewriting the path (NGINX `rewrite-target` annotation).
-
-**Q11. What does pathType do?**
-It sets how the path is matched: Prefix matches the path and everything under it, Exact matches only that path, and ImplementationSpecific leaves it to the controller (used for regex with NGINX). When several paths match, the longest one wins.
-
-**Q12. If I add only a nodeSelector for the AI node, is that enough?**
+**Q9. If I add only a nodeSelector for the AI node, is that enough?**
 It's enough to make AI Pods run on the AI node, but other Pods can still land there. For a strict dedicated node, also taint the node and give the AI Pods a matching toleration. If the node is tainted and the Pod has only a nodeSelector, the Pod stays Pending.
 
 ---
 
-**Source:** [Kubernetes docs: Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) · [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/) · [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/) · [AWS Load Balancer Controller: Ingress annotations](https://kubernetes-sigs.github.io/aws-load-balancer-controller/latest/guide/ingress/annotations/) · [Ingress NGINX retirement](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/)
+**Source:** [Kubernetes docs: Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) · [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/)
