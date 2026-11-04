@@ -17,8 +17,10 @@
 
 **Part 1: Concepts**
 1. [Why we need Ingress](#1-why-we-need-ingress)
+   - [Problems Ingress solves](#problems-ingress-solves)
 2. [What is Ingress?](#2-what-is-ingress)
 3. [What is an Ingress controller?](#3-what-is-an-ingress-controller)
+   - [Who does what](#who-does-what)
    - [Security at the front door](#security-at-the-front-door)
 4. [How a user request reaches the Pod](#4-how-a-user-request-reaches-the-pod)
 5. [Sample Ingress (ALB on EKS)](#5-sample-ingress-alb-on-eks)
@@ -57,6 +59,21 @@ That's where **Ingress** and **Ingress controllers** come in, offering **smarter
 | Routing | None: one load balancer = one app | By **host** (`api.shop.com`) and **path** (`/api`) |
 | HTTPS certificates | Set up on every load balancer | In **one place** |
 | Adding a new app | Another load balancer | Add a rule to the Ingress |
+
+### Problems Ingress solves
+
+**1. Services only do basic load balancing.** A Service spreads connections across its Pods, and that's all. It knows nothing about URLs, domains or HTTPS. Real websites need more:
+
+| Feature | What it means | Service alone | With Ingress |
+|---|---|---|---|
+| **Path-based routing** | `/products` → product service, `/users` → user service | ❌ | ✅ |
+| **Host-based routing** | `shop.com` → frontend, `api.shop.com` → api | ❌ | ✅ |
+| **TLS termination** | HTTPS ends at the front door, so the apps don't each handle certificates | ❌ | ✅ |
+| **Sticky sessions** | A user keeps going to the **same Pod** for their session (e.g. a cart kept in memory) | Only by client IP (`sessionAffinity: ClientIP`) | ✅ Cookie-based (on the ALB: `alb.ingress.kubernetes.io/target-group-attributes: stickiness.enabled=true`) |
+
+**2. One LoadBalancer per Service costs too much.** Every LoadBalancer Service creates its **own** cloud load balancer, each billed per hour with its own public IP addresses. 10 apps = 10 load balancers; 100 microservices = 100. With Ingress they share **one**.
+
+**3. Ingress is not one-to-one with Services.** A single Ingress can route to **many** Services (`/a` → service 1, `/b` → service 2), so adding an app means adding a rule, not a new load balancer.
 
 ---
 
@@ -98,7 +115,14 @@ That's where **Ingress** and **Ingress controllers** come in, offering **smarter
 
 > **In simple terms:** the controller is the **traffic cop** that enforces the rules written in your Ingress YAML.
 
-> ⚠️ **Without an Ingress controller, your Ingress resources won't work.** They're just definitions until a controller reads them and acts on them. `kubectl get ingress` would show no `ADDRESS`.
+> ⚠️ **Without an Ingress controller, your Ingress resources won't work.** They're just definitions until a controller reads them and acts on them. `kubectl get ingress` would show no `ADDRESS`:
+
+```
+NAME   CLASS   HOSTS         ADDRESS   PORTS   AGE
+shop   alb     shop.com                80      49s     ← empty: no controller has picked it up
+```
+
+Once a controller is installed and reads the Ingress, `ADDRESS` fills in (on EKS: the ALB's DNS name) and requests start working.
 
 | Piece | What it is | Who makes it |
 |---|---|---|
@@ -107,6 +131,13 @@ That's where **Ingress** and **Ingress controllers** come in, offering **smarter
 | **ALB** (Application Load Balancer) | The **real door**: receives users, applies the rules, sends to Pods | The controller creates it **automatically** |
 
 > 🛎️ The controller is the **building manager** who sets up the reception. The **ALB is the receptionist** who talks to visitors. On EKS, user traffic never goes through the controller Pods.
+
+### Who does what
+
+| Task | Who | How often |
+|---|---|---|
+| Choose and install the Ingress controller | **DevOps** engineer | **Once per cluster** (Helm chart from the controller's GitHub / docs) |
+| Write Ingress resources (rules for each app) | DevOps / app teams | Every time an app or route is added, through Git + CI/CD |
 
 ### Popular Ingress controllers
 
@@ -320,7 +351,7 @@ If several paths match, the **longest** one wins, so `/api` beats `/`. That's wh
 | `shop.com/blog/post-1` | blog (gets the path `/blog/post-1`) |
 | `shop.com/cart` | frontend |
 
-> ⚠️ **The app receives the full path.** The blog app gets `/blog/post-1`, not `/post-1`. So the app must serve its pages **under `/blog`** (most apps have a "base path" setting). If it only serves `/`, it returns **404**. That's what **rewrite** solves (next).
+> ⚠️ **The app receives the full path.** The blog app gets `/blog/post-1`, not `/post-1`. So the app must serve its pages **under `/blog`** (most apps have a "base path" setting). If it only serves `/`, it returns **404**: the Ingress worked, but the app has no page at `/blog`. That's what **rewrite** solves (next).
 
 ### 6.5 Rewrite: removing the prefix (NGINX controller)
 
