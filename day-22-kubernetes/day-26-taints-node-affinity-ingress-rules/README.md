@@ -289,6 +289,17 @@ kubectl taint node <node-name> pods=ai:NoSchedule-
 
 > 🔑 **Important:** a toleration is a **permission, not a ticket**. Without nodeSelector or affinity, a tolerating Pod may still be placed on a normal node. This is why "pod-1 tolerates node-01's taint" **doesn't guarantee** pod-1 runs on node-01.
 
+**Example:** node 102 (AI node) is tainted `pods=ai:NoSchedule`, node 103 (App node) has no taint.
+
+![Taint and toleration: AI Pod allowed on the AI node, App Pod blocked](images/taint-toleration.png)
+
+| Pod | Toleration? | Node 102 (tainted) | Node 103 (no taint) |
+|---|---|---|---|
+| **AI Pod** | ✅ Yes | ✅ Allowed in: the toleration matches the taint | ⚠️ Also allowed: nothing blocks it here |
+| **App Pod** | ❌ No | ❌ Blocked by the taint | ✅ Allowed |
+
+> To stop AI Pods from also landing on node 103, add a **nodeSelector** ([section 6](#6-dedicated-nodes-using-them-together)).
+
 ### 5.3 Where you see taints already
 
 | Taint | Where | Why |
