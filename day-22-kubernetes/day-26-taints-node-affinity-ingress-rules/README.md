@@ -238,7 +238,7 @@ spec:
 
 ### 5.1 Taint
 
-**Definition:** a **taint** is a mark we put on a **node** that tells the scheduler "**don't put Pods here**". Every Pod is kept off that node, unless the Pod has a matching **toleration**. Labels and affinity attract Pods; a taint does the opposite and **repels** them. A taint has a `key=value` and an **effect**.
+**Definition:** a **taint** is a mark we put on a **node** that tells the scheduler "**don't put Pods here**". Every Pod is kept off that node, unless the Pod has a matching **toleration**. A **nodeSelector** or **node affinity** on a Pod **pulls** it towards nodes with a matching **label**; a taint does the opposite and **pushes** Pods **away** from the node. A taint has a `key=value` and an **effect**.
 
 ```bash
 kubectl taint node <node-name> pods=ai:NoSchedule
