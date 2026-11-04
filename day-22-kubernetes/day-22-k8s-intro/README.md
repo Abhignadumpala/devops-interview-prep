@@ -145,7 +145,17 @@ Local practice: **minikube**, **kind**, **k3s**.
 
 **Definition:** The settings you pick when you create an EKS cluster: Kubernetes version, support type, observability, add-ons and worker nodes.
 
-> **Real time:** in class we created the cluster by hand in the **AWS console (GUI)**. In real jobs we create it with **Terraform modules** (e.g. `terraform-aws-modules/eks/aws`), so the setup is repeatable, reviewed in Git and the same in every environment. See [Day 23: EKS with Terraform](../day-23-eks-terraform-helm-argocd/README.md).
+**EKS creation: manual console vs Terraform**
+
+| | Manual (AWS console) | Terraform |
+|---|---|---|
+| How | Click through the EKS screens in the browser | Write the cluster as code with **Terraform modules** (e.g. `terraform-aws-modules/eks/aws`) and run `terraform apply` |
+| Repeatable | ❌ Every click must be done again for each cluster | ✅ Same code creates the same cluster every time |
+| Reviewed | ❌ No record of who changed what | ✅ Changes go through Git and pull requests |
+| Environments | ❌ dev / test / prod drift apart | ✅ dev, test and prod are built from the same code |
+| Use for | Learning what each setting means | ✅ **Real projects** |
+
+> **Real time:** below we walk through the settings in the **console**, to understand what each one does. Real projects create the cluster with **Terraform**: see [Day 23: EKS with Terraform](../day-23-eks-terraform-helm-argocd/README.md).
 
 ### 1. Kubernetes version: upgrade policy
 
