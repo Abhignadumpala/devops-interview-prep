@@ -66,7 +66,9 @@ By default the scheduler can put a Pod on **any** node. That's fine for most app
 
 Kubernetes gives us 3 tools for this:
 
-![Where will my Pod run](images/pod-placement.png)
+![Where will my Pod run: animated, 6 live examples on EKS](images/pod-placement.gif)
+
+> 🎬 The animation plays 6 scenes on an EKS cluster with 3 EC2 nodes: **1** no rules, **2** nodeSelector, **3** node affinity, **4** taint, **5** toleration only, **6** all together.
 
 | Tool | Set on | What it does |
 |---|---|---|
@@ -342,6 +344,8 @@ kubectl label node ai-node pods=ai
 | Taint + toleration | Normal Pods stay off ✅, but AI Pods may still land on the small nodes ❌ |
 | nodeSelector / affinity | AI Pods go to the AI node ✅, but normal Pods can also fill it up ❌ |
 | **Both** | AI node runs **only** AI Pods, AI Pods run **only** there ✅ |
+
+![Dedicated nodes: taint + toleration + nodeSelector](images/pod-placement.png)
 
 **Step by step:**
 
