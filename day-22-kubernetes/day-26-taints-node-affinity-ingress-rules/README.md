@@ -10,7 +10,7 @@ Here we learn how to control **where Pods run** and **where user requests go**.
 
 | Part | Topic | What you learn |
 |---|---|---|
-| **Part 1: Scheduling** | Labels, nodeSelector, node affinity, taints and tolerations | What each one is, how they differ, when to use which |
+| **Part 1: Scheduling** | Labels, nodeSelector, node affinity, taints and tolerations, Pod affinity / anti-affinity, topology spread | What each one is, how they differ, when to use which |
 | **Part 2: Ingress rules** | Host and path rules (summary) | Full guide in the [Ingress notes](../ingress/README.md) |
 | **Part 3: Lab** | 2-node EKS cluster | Place Pods with each tool |
 
@@ -25,23 +25,25 @@ Here we learn how to control **where Pods run** and **where user requests go**.
 5. [Taints and tolerations](#5-taints-and-tolerations)
 6. [Dedicated nodes: using them together](#6-dedicated-nodes-using-them-together)
    - [Scenario: AI Pods must run only on the big node](#scenario-ai-pods-must-run-only-on-the-big-node)
-7. [Which one to use](#7-which-one-to-use)
-   - [7.1 Do I need all three?](#71-do-i-need-all-three)
-   - [7.2 Scenario questions: which rule to use?](#72-scenario-questions-which-rule-to-use)
+7. [Other Pod placement rules](#7-other-pod-placement-rules)
+   - [7.1 topologyKey](#71-topologykey-what-near-and-away-mean) · [7.2 Pod affinity](#72-pod-affinity) · [7.3 Pod anti-affinity](#73-pod-anti-affinity) · [7.4 Topology spread constraints](#74-topology-spread-constraints) · [7.5 nodeName](#75-nodename)
+8. [Which one to use](#8-which-one-to-use)
+   - [8.1 Do I need all three?](#81-do-i-need-all-three)
+   - [8.2 Scenario questions: which rule to use?](#82-scenario-questions-which-rule-to-use)
 
 **Part 2: Ingress rules (where requests go)**
 
-8. [Ingress rules](#8-ingress-rules)
+9. [Ingress rules](#9-ingress-rules)
 
 **Part 3: Lab**
 
-9. [Lab: control Pod placement on EKS](#9-lab-control-pod-placement-on-eks)
+10. [Lab: control Pod placement on EKS](#10-lab-control-pod-placement-on-eks)
 
 **Wrap-up**
 
-10. [What I learned](#10-what-i-learned)
-11. [Commands](#11-commands)
-12. [Interview Questions](#12-interview-questions)
+11. [What I learned](#11-what-i-learned)
+12. [Commands](#12-commands)
+13. [Interview Questions](#13-interview-questions)
 
 ---
 
@@ -85,6 +87,8 @@ By default the scheduler can put a Pod on **any** node. That's fine for most app
 | **Attract** | **Node affinity** | Pod | **Pulls** the Pod to nodes using rules (`In`, `NotIn`, `Exists`…), must or prefer |
 | **Repel** | **Taint** | Node | **Pushes away** every Pod that doesn't tolerate it |
 | **Allow** | **Toleration** | Pod | Lets this Pod onto a tainted node (an exception to the taint) |
+
+> There are a few more Pod placement rules that work with **other Pods** instead of node labels: Pod affinity, Pod anti-affinity, topology spread constraints and nodeName. See [section 7](#7-other-pod-placement-rules).
 
 > **Interview one-liner:** The kube-scheduler filters out nodes that can't run a Pod and scores the rest; nodeSelector and node affinity pull a Pod towards labelled nodes, while taints push Pods away from a node unless they have a matching toleration.
 
@@ -476,7 +480,111 @@ spec:
 
 ---
 
-## 7. Which one to use
+## 7. Other Pod placement rules
+
+Sections 2–6 place a Pod by looking at **node labels**. The rules below place a Pod by looking at **other Pods**, spread Pods out evenly, or pin a Pod to one node by name.
+
+| Rule | Set on | What it does | Example |
+|---|---|---|---|
+| **Pod affinity** | Pod | Run **near** Pods with a certain label (same node or zone) | `cart` Pods next to the `redis` cache |
+| **Pod anti-affinity** | Pod | Run **away from** Pods with a certain label | 3 `frontend` replicas on 3 different nodes |
+| **Topology spread constraints** | Pod | Spread Pods **evenly** across nodes or zones | 6 replicas → 2 in each of 3 AZs |
+| **nodeName** | Pod | Put the Pod on **one named node**, skipping the scheduler | Debugging only |
+
+### 7.1 topologyKey: what "near" and "away" mean
+
+**Definition:** **topologyKey** is the node label that defines a "place" for Pod affinity, anti-affinity and spread rules. Nodes with the same value for that label count as the same place.
+
+| topologyKey | One "place" = | Use it for |
+|---|---|---|
+| `kubernetes.io/hostname` | One **node** | Same node / different nodes |
+| `topology.kubernetes.io/zone` | One **Availability Zone** (`us-east-1a`…) | Same AZ / different AZs |
+
+Both labels are already on every EKS node, so we don't add them ourselves.
+
+### 7.2 Pod affinity
+
+**Definition:** **Pod affinity** is a rule on a Pod that says "run me on the same node (or zone) as Pods that have this label". It **attracts** a Pod to **other Pods**, not to a node label.
+
+**When to use:** two services talk to each other a lot and we want low latency, for example RoboShop's `cart` service and its `redis` cache.
+
+```yaml
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: redis
+                topologyKey: kubernetes.io/hostname
+```
+
+**What it does:** the scheduler tries to put each `cart` Pod on a node that already runs a Pod labelled `app=redis`. Like node affinity, it can be **required** (must, else Pending) or **preferred** (try first).
+
+### 7.3 Pod anti-affinity
+
+**Definition:** **Pod anti-affinity** is a rule on a Pod that says "**don't** run me on the same node (or zone) as Pods that have this label". It **repels** a Pod from **other Pods**.
+
+**When to use:** spread the replicas of one app over different nodes, so one node crash doesn't take down every replica. This is the most common use in real projects.
+
+```yaml
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: frontend
+                topologyKey: kubernetes.io/hostname
+```
+
+**What it does:** each `frontend` Pod avoids nodes that already run a `frontend` Pod, so 3 replicas on 3 nodes land on 3 different nodes.
+
+> ⚠️ With **required** anti-affinity, 3 replicas and only 2 nodes, the 3rd Pod stays **Pending** (every node already has one). That's why **preferred** is used more often.
+
+### 7.4 Topology spread constraints
+
+**Definition:** **topology spread constraints** spread a set of Pods **evenly** across nodes or zones. `maxSkew` is the largest allowed difference in Pod count between any two places.
+
+**When to use:** high availability across Availability Zones. If one AZ goes down, the other AZs still have their share of Pods.
+
+```yaml
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: frontend
+```
+
+| Field | Meaning |
+|---|---|
+| `maxSkew: 1` | Zones may differ by at most 1 Pod (6 replicas in 3 AZs → 2, 2, 2) |
+| `topologyKey` | Spread across zones (or `kubernetes.io/hostname` for nodes) |
+| `whenUnsatisfiable` | `DoNotSchedule` = hard rule, extra Pods stay Pending. `ScheduleAnyway` = soft rule, try to stay even |
+| `labelSelector` | Which Pods are counted |
+
+> 💡 **Anti-affinity vs spread:** anti-affinity only says "not together", so it allows at most one Pod per place (if required). Spread constraints keep counts **even** and still allow many Pods per place, so they're the better choice for apps with many replicas.
+
+### 7.5 nodeName
+
+**Definition:** **nodeName** is a field in the Pod spec that puts the Pod directly on the named node. The scheduler is skipped completely, so taints, labels and resource checks aren't applied by the scheduler.
+
+```yaml
+spec:
+  nodeName: ip-10-0-1-25.ec2.internal
+```
+
+**When to use:** almost never, only for quick debugging on one node. On EKS, nodes are replaced during upgrades and scaling, so the node name changes and the Pod can't run. Use nodeSelector instead.
+
+> **Interview one-liner:** Pod affinity runs a Pod near other Pods, Pod anti-affinity keeps it away from them, and topology spread constraints spread Pods evenly across nodes or zones using a topologyKey; nodeName pins a Pod to one node and skips the scheduler, so it's only for debugging.
+
+---
+
+## 8. Which one to use
 
 | Need | Use |
 |---|---|
@@ -487,10 +595,13 @@ spec:
 | Let a system Pod run everywhere, even on tainted nodes (logging, monitoring agents) | **Toleration** with `operator: Exists` |
 | Reserve nodes for one app (GPU, AI, licensed software) | **Taint + toleration + nodeSelector/affinity** |
 | Move Pods off a node now (maintenance) | Taint with **`NoExecute`** (or `kubectl drain`) |
+| Run a Pod near another app's Pods (low latency) | **Pod affinity** |
+| Keep replicas of one app on different nodes | **Pod anti-affinity** |
+| Spread many replicas evenly across AZs | **Topology spread constraints** |
 
 > **Real projects:** most apps use **none** of these and run on the general node group. They're used for special nodes: GPU/AI, Spot vs On-Demand, ARM (Graviton), or isolating noisy apps. A simple rule to remember: **affinity/nodeSelector attract, taints repel**.
 
-### 7.1 Do I need all three?
+### 8.1 Do I need all three?
 
 **nodeSelector** decides where **my** Pod goes. A **taint** decides who **else** is allowed on the node. The **toleration** is only needed when the node has a taint.
 
@@ -503,7 +614,7 @@ spec:
 
 > 💡 "Only on the AI node" holds as long as the AI node has free CPU and memory. If it's full, extra AI Pods don't fall back to another node: they stay **Pending** until space frees up or a new AI node is added.
 
-### 7.2 Scenario questions: which rule to use?
+### 8.2 Scenario questions: which rule to use?
 
 **Scenario 1: AI Pods must run on the AI node. Other Pods may share that node.**
 - **Use:** nodeSelector only.
@@ -628,7 +739,7 @@ kubectl drain <node-name> --ignore-daemonsets
 
 # Part 2: Ingress rules (where requests go)
 
-## 8. Ingress rules
+## 9. Ingress rules
 
 **Definition:** **Ingress rules** are the part of an Ingress (`spec.rules`) that decide **which Service** gets each HTTP request, by the request's **host** (`api.shop.com`) and **path** (`/api`). One load balancer can then serve many apps.
 
@@ -647,7 +758,7 @@ kubectl drain <node-name> --ignore-daemonsets
 
 # Part 3: Lab
 
-## 9. Lab: control Pod placement on EKS
+## 10. Lab: control Pod placement on EKS
 
 **Goal:** on a 2-node EKS cluster, make node 1 an "AI node", then place Pods with nodeSelector, node affinity and taints.
 
@@ -923,13 +1034,14 @@ kubectl label node $NODE1 pods-
 
 # Wrap-up
 
-## 10. What I learned
+## 11. What I learned
 
 **Part 1: Scheduling**
 - The **kube-scheduler** filters nodes and scores the rest. No node fits → Pod is **Pending**.
 - **nodeSelector** = exact label match, hard rule. **Node affinity** = rules (`In`, `NotIn`, `Exists`, `Gt`, `Lt`), **required** or **preferred**.
 - **Taint** on a node keeps Pods away. **Toleration** on a Pod lets it in but doesn't send it there.
 - **Dedicated nodes** = taint + toleration + nodeSelector/affinity, set on the EKS node group in Terraform.
+- **Pod affinity** = near other Pods, **Pod anti-affinity** = away from them, **topology spread** = even across nodes/AZs. **nodeName** skips the scheduler (debugging only).
 
 **Part 2: Ingress rules**
 - Rules match **host** and **path** and send each request to a ClusterIP Service. Full guide: [Ingress notes](../ingress/README.md).
@@ -944,7 +1056,7 @@ kubectl label node $NODE1 pods-
 
 ---
 
-## 11. Commands
+## 12. Commands
 
 | Command | Use |
 |---|---|
@@ -960,7 +1072,7 @@ kubectl label node $NODE1 pods-
 
 ---
 
-## 12. Interview Questions
+## 13. Interview Questions
 
 ### Other Questions
 
@@ -994,6 +1106,15 @@ Run `kubectl describe pod` and read the Events: messages like "didn't match Pod'
 **Q10. If I add only a nodeSelector for the AI node, is that enough?**
 It's enough to make AI Pods run on the AI node, but other Pods can still land there. For a strict dedicated node, also taint the node and give the AI Pods a matching toleration. If the node is tainted and the Pod has only a nodeSelector, the Pod stays Pending.
 
+
+**Q11. What's the difference between node affinity and Pod affinity?**
+Node affinity places a Pod based on node labels. Pod affinity places a Pod based on which other Pods already run on a node or zone (using topologyKey), for example cart Pods next to redis.
+
+**Q12. How do you make sure replicas of one app don't all run on the same node?**
+Use Pod anti-affinity with topologyKey `kubernetes.io/hostname` (usually preferred, so extra replicas aren't Pending), or topology spread constraints with maxSkew 1 to keep them evenly spread across nodes or AZs.
+
+**Q13. What is nodeName and why isn't it used in production?**
+nodeName puts a Pod directly on one named node and skips the scheduler. On EKS nodes are replaced during upgrades and scaling, so the name changes and the Pod can't run; nodeSelector or affinity is used instead.
 ---
 
 **Source:** [Kubernetes docs: Assigning Pods to Nodes](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/) · [Taints and Tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/)
