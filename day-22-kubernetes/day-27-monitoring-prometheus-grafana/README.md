@@ -56,7 +56,7 @@ On a single EC2 server we installed Node Exporter + Prometheus + Grafana by hand
 | Nodes scale up and down | A new node needs its own Node Exporter |
 | Many layers to watch | Nodes, Pods, containers, Deployments, the control plane |
 
-**Solution:** install everything with **one Helm chart** that already knows how to find Pods and nodes automatically.
+**Solution:** install everything with **one Helm chart** that already knows how to find Pods and nodes automatically ([how it finds them](#how-prometheus-finds-pods-and-nodes-by-itself)).
 
 ## 2. What is kube-prometheus-stack?
 
@@ -91,6 +91,37 @@ Why those kinds:
 | 3. Show | Grafana runs PromQL queries against Prometheus and draws dashboards |
 | 4. Alert | Prometheus checks alert rules, and Alertmanager sends the notification |
 | 5. Open | Grafana's Service `type: LoadBalancer` → AWS creates a load balancer → we open it in the browser |
+
+### How Prometheus finds Pods and nodes by itself
+
+**Definition:** **Kubernetes service discovery** (`kubernetes_sd_configs`) means Prometheus **asks the Kubernetes API server** for the current list of nodes, Pods and Service endpoints, and **watches** it for changes. The API server always knows every Pod IP, so nobody types IPs by hand. It's the same idea as EC2 service discovery ([Day 11](../../day-10-12-monitoring/day-11-service-discovery/README.md)), but it asks the K8s API instead of the AWS API.
+
+```
+① New node joins ──► DaemonSet auto-creates a Node Exporter Pod on it
+② Pod gets an IP ──► K8s adds that IP to the Service's endpoint list
+③ ServiceMonitor ──► "scrape Services with label app=node-exporter, port 9100"
+④ Operator       ──► turns the ServiceMonitor into Prometheus config (kubernetes_sd)
+⑤ Prometheus     ──► watches the API server: "endpoints of those Services?"
+                      API server: "10.0.101.12:9100, 10.0.102.45:9100"
+⑥ Prometheus scrapes both IPs. Pod dies or moves? The list updates by itself.
+```
+
+| Piece | Its job in finding targets |
+|---|---|
+| **DaemonSet** | Every node, including new ones, gets a Node Exporter Pod |
+| **Service + labels** | Groups the Pods. K8s keeps their IP list (**endpoints**) up to date |
+| **ServiceMonitor** | Tells Prometheus *which* Services to scrape (by label) |
+| **Prometheus Operator** | Writes the scrape config from the ServiceMonitors |
+| **API server** | Source of truth that Prometheus reads and watches |
+| **RBAC (ClusterRole)** | The chart lets Prometheus `get / list / watch` nodes, pods, services and endpoints |
+
+| VMs ([Day 10](../../day-10-12-monitoring/day-10-intro/README.md)) | Kubernetes |
+|---|---|
+| `static_configs` with IPs typed by hand | `kubernetes_sd_configs`, written by the Operator |
+| New server → edit `prometheus.yml` | New node / Pod → found automatically |
+| IP changes → target breaks | IP changes → the API server gives the new one |
+
+We check this in the lab ([Step 11](#step-11-open-prometheus-private-through-the-bastion)): **Status → Targets** lists one `node-exporter` target per node, and nobody typed those IPs.
 
 ## 4. Metrics Server vs Prometheus
 
@@ -469,6 +500,9 @@ A patch is outside Helm, so the next `helm upgrade` resets the Service to what t
 
 **Q8. Does Prometheus push or pull?**
 It pulls: it scrapes each target's `/metrics` endpoint on an interval (30 s in this stack). Only short-lived jobs push, through the Pushgateway.
+
+**Q8a. How does Prometheus find Pods and nodes in Kubernetes without a target list?**
+Through Kubernetes service discovery. Prometheus watches the API server for nodes, Pods and Service endpoints. ServiceMonitors say which Services to scrape, and the Operator turns them into `kubernetes_sd_configs`. When Pods move or nodes scale, the API server gives Prometheus the new IPs automatically. RBAC (a ClusterRole) allows Prometheus to read them.
 
 **Q9. A new Pod shows "No data" in Grafana. Why?**
 Prometheus hasn't scraped it enough times yet. Rate-based panels need a few samples, so it takes 1–2 minutes. If it stays empty, check Prometheus **Status → Targets** and the dashboard's namespace and pod filters.
