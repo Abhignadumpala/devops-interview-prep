@@ -9,6 +9,7 @@ Daily notes:
 - [Day 25 — Networking: CNI (Pod IPs), CoreDNS (Service names), Services (why they matter, ClusterIP, NodePort, LoadBalancer, Ingress, production traffic flow), nslookup, Network Policies (frontend → backend → db lab), default deny and egress with DNS](./day-25-dns-network-policy/README.md)
 - [Day 25 — Services: why we need them, ClusterIP vs NodePort vs LoadBalancer, Ingress (ALB / NGINX), what production uses, how traffic reaches a Pod, EKS lab](./day-25-services-types-and-traffic-flow/README.md)
 - [Day 26 — Scheduling and Ingress rules: node labels, nodeSelector, node affinity (required / preferred, operators), taints and tolerations, dedicated nodes, scenario questions, Ingress rules summary, EKS lab](./day-26-taints-node-affinity-ingress-rules/README.md)
+- [Day 27 — Monitoring: kube-prometheus-stack with Helm (Prometheus, Grafana, Alertmanager, Node Exporter, kube-state-metrics), Metrics Server vs Prometheus, Grafana on an EKS load balancer, dashboards, data sources (Loki), EKS lab](./day-27-monitoring-prometheus-grafana/README.md)
 
 Topic guides:
 
