@@ -10,6 +10,7 @@ Daily notes:
 - [Day 25 — Services: why we need them, ClusterIP vs NodePort vs LoadBalancer, Ingress (ALB / NGINX), what production uses, how traffic reaches a Pod, EKS lab](./day-25-services-types-and-traffic-flow/README.md)
 - [Day 26 — Scheduling and Ingress rules: node labels, nodeSelector, node affinity (required / preferred, operators), taints and tolerations, dedicated nodes, scenario questions, Ingress rules summary, EKS lab](./day-26-taints-node-affinity-ingress-rules/README.md)
 - [Day 27 — Monitoring: kube-prometheus-stack with Helm (Prometheus, Grafana, Alertmanager, Node Exporter, kube-state-metrics), Metrics Server vs Prometheus, Grafana on an EKS load balancer, dashboards, data sources (Loki), EKS lab](./day-27-monitoring-prometheus-grafana/README.md)
+- [Day 28 — Kustomize (base and overlays, Kustomize vs Helm), admission controllers (mutating vs validating, built-in plugins, ValidatingAdmissionPolicy on EKS, NamespaceAutoProvision), CRDs and operators (real-world use cases), EKS labs](./day-28-kustomize-admission-controllers-crds/README.md)
 
 Topic guides:
 

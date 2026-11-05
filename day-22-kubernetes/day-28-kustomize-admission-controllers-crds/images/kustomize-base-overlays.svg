@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="420" viewBox="0 0 1000 420" font-family="Arial, Helvetica, sans-serif">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#374151"/></marker></defs>
+  <rect width="1000" height="420" fill="#ffffff"/>
+  <text x="500" y="32" text-anchor="middle" font-size="21" font-weight="bold" fill="#111827">Kustomize: one base, one overlay per environment</text>
+
+  <rect x="30" y="120" width="230" height="200" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text x="145" y="150" text-anchor="middle" font-size="17" font-weight="bold" fill="#1e3a8a">base/</text>
+  <text x="145" y="172" text-anchor="middle" font-size="12" fill="#1e3a8a">common YAML, written once</text>
+  <text x="50" y="205" font-size="13" fill="#1e3a8a">• deployment.yaml</text>
+  <text x="50" y="227" font-size="13" fill="#1e3a8a">• service.yaml</text>
+  <text x="50" y="249" font-size="13" fill="#1e3a8a">• cm.yaml</text>
+  <text x="50" y="271" font-size="13" fill="#1e3a8a">• kustomization.yaml</text>
+  <text x="145" y="304" text-anchor="middle" font-size="11" fill="#1e3a8a">(never edited per env)</text>
+
+  <rect x="340" y="60" width="270" height="130" rx="10" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <text x="475" y="88" text-anchor="middle" font-size="16" font-weight="bold" fill="#065f46">overlays/dev/</text>
+  <text x="360" y="114" font-size="12" fill="#065f46">namespace: dev</text>
+  <text x="360" y="134" font-size="12" fill="#065f46">replicas: 1</text>
+  <text x="360" y="154" font-size="12" fill="#065f46">image tag: 1.27</text>
+  <text x="360" y="174" font-size="12" fill="#065f46">label env=dev</text>
+
+  <rect x="340" y="230" width="270" height="130" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+  <text x="475" y="258" text-anchor="middle" font-size="16" font-weight="bold" fill="#9a3412">overlays/test/</text>
+  <text x="360" y="284" font-size="12" fill="#9a3412">namespace: test</text>
+  <text x="360" y="304" font-size="12" fill="#9a3412">replicas: 2</text>
+  <text x="360" y="324" font-size="12" fill="#9a3412">image tag: 1.26 · label env=test</text>
+  <text x="360" y="344" font-size="12" fill="#9a3412">+ secret.yaml (only in test)</text>
+
+  <line x1="262" y1="190" x2="338" y2="130" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="262" y1="250" x2="338" y2="295" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="145" y="105" text-anchor="middle" font-size="12" fill="#374151">each overlay says: resources: ../../base</text>
+
+  <rect x="690" y="80" width="280" height="90" rx="10" fill="#ffffff" stroke="#111827"/>
+  <text x="830" y="108" text-anchor="middle" font-size="13" font-weight="bold" fill="#111827">kubectl apply -k overlays/dev</text>
+  <text x="830" y="132" text-anchor="middle" font-size="12" fill="#111827">base + dev changes merged</text>
+  <text x="830" y="152" text-anchor="middle" font-size="12" fill="#111827">→ namespace dev: 1 Pod</text>
+
+  <rect x="690" y="250" width="280" height="90" rx="10" fill="#ffffff" stroke="#111827"/>
+  <text x="830" y="278" text-anchor="middle" font-size="13" font-weight="bold" fill="#111827">kubectl apply -k overlays/test</text>
+  <text x="830" y="302" text-anchor="middle" font-size="12" fill="#111827">base + test changes merged</text>
+  <text x="830" y="322" text-anchor="middle" font-size="12" fill="#111827">→ namespace test: 2 Pods + Secret</text>
+
+  <line x1="612" y1="125" x2="688" y2="125" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="612" y1="295" x2="688" y2="295" stroke="#374151" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <text x="500" y="400" text-anchor="middle" font-size="14" font-weight="bold" fill="#475569">One config, many environments: no templates, no copy-paste</text>
+</svg>
