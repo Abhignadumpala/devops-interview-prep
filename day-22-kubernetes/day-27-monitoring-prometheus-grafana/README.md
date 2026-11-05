@@ -178,6 +178,16 @@ helm version
 
 **Expected:** `version.BuildInfo{Version:"v3...`
 
+`helm: command not found`? Install it with the official script:
+
+```bash
+curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+```
+
+```bash
+chmod 700 get_helm.sh && ./get_helm.sh
+```
+
 ### Step 2 (optional): Metrics Server for `kubectl top`
 
 Skip this if `kubectl top nodes` already works.
@@ -255,6 +265,12 @@ kubectl get pods -n monitoring -o wide
 | `kube-prom-stack-kube-state-metrics-...` | 1 | |
 | `kube-prom-stack-prometheus-node-exporter-...` | **2** | one per node, see the `NODE` column |
 
+Every object the chart created has the label `release=kube-prom-stack`, so you can list only the stack's Pods:
+
+```bash
+kubectl get pods -n monitoring -l release=kube-prom-stack
+```
+
 ### Step 8: Check the Services
 
 ```bash
@@ -280,6 +296,12 @@ kubectl get secret kube-prom-stack-grafana -n monitoring -o jsonpath="{.data.adm
 ```
 
 **What it does:** the chart stores a password in a Secret. Secrets are base64-encoded, so `base64 -d` decodes it.
+
+Empty output? Some chart versions name the Secret differently. Find it by its label instead (the install NOTES print this command too):
+
+```bash
+kubectl get secret -n monitoring -l app.kubernetes.io/component=admin-secret -o jsonpath="{.items[0].data.admin-password}" | base64 -d ; echo
+```
 
 ### Step 10: Open Grafana
 
@@ -344,7 +366,23 @@ Grafana → **Dashboards**:
 | **Kubernetes / Persistent Volumes** | PVC size and usage |
 | **Node Exporter / Nodes** | One node: CPU, memory, disk space, disk I/O, network |
 
-Choose **Data source**, **namespace** and **pod** (or **instance** for nodes) at the top of the dashboard.
+Choose **Data source**, **namespace** and **pod** (or **instance** for nodes) at the top of the dashboard. The tags `kubernetes-mixin` and `node-exporter-mixin` mean the dashboards came bundled with the chart (a **mixin** is a ready set of dashboards + alert rules).
+
+### How to read the Pod dashboard
+
+| Panel | What it tells you |
+|---|---|
+| **CPU Usage** | CPU used by each container in the Pod (e.g. `alertmanager` + its `config-reloader` sidecar) |
+| **CPU Throttling** | The Pod hit its CPU **limit** and was slowed down. **No data** = no CPU limit set, which is normal |
+| **Memory Usage (WSS)** | Memory in use. The dashed **requests** line is what the Pod asked for. Usage far below it = over-requested, so lower it to save nodes |
+| **Memory Quota** table | Usage vs requests vs limits, as numbers and % |
+
+| Node Exporter / Nodes | What to look at |
+|---|---|
+| **Instance** dropdown | One entry per node: `<node-IP>:9100` (the Node Exporter Pod on that node) |
+| CPU, Memory | Is the node close to full? |
+| **Disk Space Usage** | `/` used %: alert before it reaches 100% |
+| Network Received / Transmitted | Traffic per network interface |
 
 ### Try it: watch a new Pod appear
 
@@ -371,7 +409,7 @@ Grafana → **Connections → Data sources**. The stack has **already added** th
 | **Prometheus** | `http://kube-prom-stack-kube-prome-prometheus.monitoring:9090/` | ✅ |
 | **Alertmanager** | `http://kube-prom-stack-kube-prome-alertmanager.monitoring:9093/` | |
 
-The URL format is the Service DNS name `<service>.<namespace>:<port>` ([Day 25: CoreDNS](../day-25-dns-network-policy/README.md)). Grafana reaches Prometheus **inside** the cluster, so no load balancer is needed between them.
+The URL format is the Service DNS name `<service>.<namespace>:<port>`. The long form `<service>.<namespace>.svc.cluster.local:<port>` is the same address ([Day 25: CoreDNS](../day-25-dns-network-policy/README.md)). Grafana reaches Prometheus **inside** the cluster, so no load balancer is needed between them.
 
 > On a VM setup we added the Prometheus data source by hand ([Day 10](../../day-10-12-monitoring/day-10-intro/README.md)). With kube-prometheus-stack, we don't need to.
 
