@@ -501,14 +501,14 @@ A patch is outside Helm, so the next `helm upgrade` resets the Service to what t
 **Q8. Does Prometheus push or pull?**
 It pulls: it scrapes each target's `/metrics` endpoint on an interval (30 s in this stack). Only short-lived jobs push, through the Pushgateway.
 
-**Q8a. How does Prometheus find Pods and nodes in Kubernetes without a target list?**
+**Q9. How does Prometheus find Pods and nodes in Kubernetes without a target list?**
 Through Kubernetes service discovery. Prometheus watches the API server for nodes, Pods and Service endpoints. ServiceMonitors say which Services to scrape, and the Operator turns them into `kubernetes_sd_configs`. When Pods move or nodes scale, the API server gives Prometheus the new IPs automatically. RBAC (a ClusterRole) allows Prometheus to read them.
 
-**Q9. A new Pod shows "No data" in Grafana. Why?**
+**Q10. A new Pod shows "No data" in Grafana. Why?**
 Prometheus hasn't scraped it enough times yet. Rate-based panels need a few samples, so it takes 1–2 minutes. If it stays empty, check Prometheus **Status → Targets** and the dashboard's namespace and pod filters.
 
-**Q10. Do you need to add the Prometheus data source in Grafana by hand?**
+**Q11. Do you need to add the Prometheus data source in Grafana by hand?**
 Not with kube-prometheus-stack. It adds Prometheus (default) and Alertmanager automatically, using in-cluster Service DNS names like `kube-prom-stack-kube-prome-prometheus.monitoring:9090`.
 
-**Q11. Why can't `terraform destroy` finish after installing the stack?**
+**Q12. Why can't `terraform destroy` finish after installing the stack?**
 The Grafana load balancer was created by Kubernetes, not Terraform, and it still sits in the VPC subnets. Run `helm uninstall` first (it deletes the Service and its load balancer), then destroy.
