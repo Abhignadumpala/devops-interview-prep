@@ -11,8 +11,8 @@ Daily notes:
 - [Day 26 — Scheduling and Ingress rules: node labels, nodeSelector, node affinity (required / preferred, operators), taints and tolerations, dedicated nodes, scenario questions, Ingress rules summary, EKS lab](./day-26-taints-node-affinity-ingress-rules/README.md)
 - [Day 27 — Monitoring: kube-prometheus-stack with Helm (Prometheus, Grafana, Alertmanager, Node Exporter, kube-state-metrics), Metrics Server vs Prometheus, Grafana on an EKS load balancer, dashboards, data sources (Loki), EKS lab](./day-27-monitoring-prometheus-grafana/README.md)
 - [Day 28 — Kustomize (base and overlays, Kustomize vs Helm), admission controllers (mutating vs validating, built-in plugins, ValidatingAdmissionPolicy on EKS, NamespaceAutoProvision), CRDs and operators (real-world use cases), EKS labs](./day-28-kustomize-admission-controllers-crds/README.md)
+- [Day 29 — Deployment strategies: what a strategy is (+ Recreate), rolling update (maxSurge / maxUnavailable), canary, blue-green, A/B and shadow, comparison, Argo Rollouts, EKS labs including an ALB weighted canary](./day-29-deployment-strategies/README.md)
 
 Topic guides:
 
 - [Kubernetes Ingress: why we need it, Ingress controllers (AWS Load Balancer Controller, NGINX, Traefik), how a user request reaches the Pod, host and path rules, pathType, rewrite, HTTPS, two-app ALB lab](./ingress/README.md)
-- [Deployment strategies: Recreate, rolling update (maxSurge / maxUnavailable), blue-green, canary, A/B and shadow, comparison, Argo Rollouts, EKS labs including an ALB weighted canary](./deployment-strategies/README.md)

@@ -1,45 +1,44 @@
-# Deployment Strategies: Recreate, Rolling Update, Blue-Green and Canary
+# Day 29 - Deployment Strategies: Rolling Update, Canary and Blue-Green
 
 [← Kubernetes notes](../README.md)
 
-> **In short:** A **deployment strategy** is the plan for **how a new version replaces the old one** in production. **Recreate** stops everything and starts the new version (downtime). **Rolling update** swaps Pods a few at a time (Kubernetes default). **Blue-green** runs a full second copy and switches all traffic at once. **Canary** sends a small % of users to the new version first and grows it only if metrics look good.
+> **In short:** A **deployment strategy** is the plan for **how a new version replaces the old one** in production. **Rolling update** swaps Pods a few at a time (Kubernetes default). **Canary** sends a small % of users to the new version first and grows it only if metrics look good. **Blue-green** runs a full second copy and switches all traffic at once. (**Recreate**, the simplest, stops everything and starts the new version, with downtime.)
 
 ## About this topic
 
 | Part | Topic | What you learn |
 |---|---|---|
-| **Part 1: Concepts** | Why strategies matter, Recreate, Rolling, Blue-green, Canary, A/B and Shadow, comparison, tools | What each strategy is, how traffic moves, when to pick which |
-| **Part 2: Lab** | All 4 strategies on EKS, plus an ALB weighted canary | Run each strategy with plain YAML and watch traffic move |
+| **Part 1: Concepts** | Why strategies matter (+ Recreate), Rolling, Canary, Blue-green, A/B and Shadow, comparison, tools | What each strategy is, how traffic moves, when to pick which |
+| **Part 2: Lab** | Recreate, Rolling, Canary (replica count + ALB weights) and Blue-green on EKS | Run each strategy with plain YAML and watch traffic move |
 
 > Related: Deployment basics and `kubectl rollout` are in [Day 22](../day-22-k8s-intro/README.md). Ingress and the ALB controller are in the [Ingress guide](../ingress/README.md).
 
 ## Table of Contents
 
 **Part 1: Concepts**
-1. [What is a deployment strategy?](#1-what-is-a-deployment-strategy)
-2. [Recreate](#2-recreate)
-3. [Rolling update](#3-rolling-update)
+1. [What is a deployment strategy?](#1-what-is-a-deployment-strategy) (+ Recreate, the simplest one)
+2. [Rolling update](#2-rolling-update)
+3. [Canary](#3-canary)
 4. [Blue-green](#4-blue-green)
-5. [Canary](#5-canary)
-6. [Other strategies: A/B testing and Shadow](#6-other-strategies-ab-testing-and-shadow)
-7. [Comparison: which one to pick](#7-comparison-which-one-to-pick)
-8. [Tools used in real projects](#8-tools-used-in-real-projects)
+5. [Other strategies: A/B testing and Shadow](#5-other-strategies-ab-testing-and-shadow)
+6. [Comparison: which one to pick](#6-comparison-which-one-to-pick)
+7. [Tools used in real projects](#7-tools-used-in-real-projects)
 
 **Part 2: Lab**
 
-9. [Lab setup](#9-lab-setup)
-10. [Lab A: Recreate](#10-lab-a-recreate)
-11. [Lab B: Rolling update and rollback](#11-lab-b-rolling-update-and-rollback)
-12. [Lab C: Blue-green with a Service switch](#12-lab-c-blue-green-with-a-service-switch)
-13. [Lab D: Canary with replica count](#13-lab-d-canary-with-replica-count)
-14. [Lab E: Canary with ALB weights (production way)](#14-lab-e-canary-with-alb-weights-production-way)
-15. [Clean up](#15-clean-up)
+8. [Lab setup](#8-lab-setup)
+9. [Lab A: Recreate](#9-lab-a-recreate)
+10. [Lab B: Rolling update and rollback](#10-lab-b-rolling-update-and-rollback)
+11. [Lab C: Canary with replica count](#11-lab-c-canary-with-replica-count)
+12. [Lab D: Canary with ALB weights (production way)](#12-lab-d-canary-with-alb-weights-production-way)
+13. [Lab E: Blue-green with a Service switch](#13-lab-e-blue-green-with-a-service-switch)
+14. [Clean up](#14-clean-up)
 
 **Wrap-up**
 
-16. [What I learned](#16-what-i-learned)
-17. [Commands](#17-commands)
-18. [Interview Questions](#18-interview-questions)
+15. [What I learned](#15-what-i-learned)
+16. [Commands](#16-commands)
+17. [Interview Questions](#17-interview-questions)
 
 ---
 
@@ -59,7 +58,7 @@
 
 ![Deployment strategies](./images/deployment-strategies.svg)
 
-## 2. Recreate
+### The simplest strategy: Recreate
 
 **Definition:** **Recreate** **stops all old Pods first, then starts the new Pods**. For a short time no Pod is running, so users get errors (downtime). In Kubernetes it's `strategy.type: Recreate` on a Deployment.
 
@@ -74,7 +73,7 @@ v1 v1 v1  →  (nothing)  →  v2 v2 v2
 
 **When to use:** dev/test, or when two versions **can't run at the same time** (e.g. the app locks a shared file or needs an old-to-new DB change that breaks v1).
 
-## 3. Rolling update
+## 2. Rolling update
 
 **Definition:** A **rolling update** **replaces old Pods with new ones a few at a time**, so some Pods are always serving traffic. It's the **default** strategy of a Kubernetes Deployment. Two settings control the speed: `maxSurge` and `maxUnavailable`.
 
@@ -92,6 +91,30 @@ v1 v1 v1  →  (nothing)  →  v2 v2 v2
 | `kubectl rollout undo` to go back | Rollback is another rolling update (not instant) |
 
 **When to use:** most stateless apps. This is what most teams use day to day.
+
+## 3. Canary
+
+**Definition:** **Canary** sends a **small share of real traffic** (e.g. 5–10%) to the new version first. We watch error rate, latency and logs. If it's healthy we increase it step by step (10% → 25% → 50% → 100%); if not, we send it back to 0%. The name comes from the canary birds miners used as an early warning.
+
+```
+Users ──▶ 90% ──▶ v1 (stable)
+     └──▶ 10% ──▶ v2 (canary)   watch metrics → grow or roll back
+```
+
+**Two ways to split traffic in Kubernetes:**
+
+| Way | How | Precise? |
+|---|---|---|
+| **Replica ratio** | 9 Pods v1 + 1 Pod v2 behind the same Service | Roughly (~10%), tied to Pod count |
+| **Weighted routing** | ALB weighted target groups, NGINX canary annotations, Istio | Exact %, any Pod count |
+
+| ✅ Good | ❌ Bad |
+|---|---|
+| Bad release hits **few users** | Slower release |
+| Tested with **real traffic** | Needs good **monitoring** to decide |
+| Cheap: only a few extra Pods | v1 and v2 run together |
+
+**When to use:** critical, high-traffic services (payments, login) where a bad release is expensive.
 
 ## 4. Blue-green
 
@@ -118,31 +141,7 @@ After:   Users ──▶ Green (v2)       Blue (v1, kept for rollback)
 
 **When to use:** releases that need a fast, clean cutover and easy rollback (e.g. big releases, migrations).
 
-## 5. Canary
-
-**Definition:** **Canary** sends a **small share of real traffic** (e.g. 5–10%) to the new version first. We watch error rate, latency and logs. If it's healthy we increase it step by step (10% → 25% → 50% → 100%); if not, we send it back to 0%. The name comes from the canary birds miners used as an early warning.
-
-```
-Users ──▶ 90% ──▶ v1 (stable)
-     └──▶ 10% ──▶ v2 (canary)   watch metrics → grow or roll back
-```
-
-**Two ways to split traffic in Kubernetes:**
-
-| Way | How | Precise? |
-|---|---|---|
-| **Replica ratio** | 9 Pods v1 + 1 Pod v2 behind the same Service | Roughly (~10%), tied to Pod count |
-| **Weighted routing** | ALB weighted target groups, NGINX canary annotations, Istio | Exact %, any Pod count |
-
-| ✅ Good | ❌ Bad |
-|---|---|
-| Bad release hits **few users** | Slower release |
-| Tested with **real traffic** | Needs good **monitoring** to decide |
-| Cheap: only a few extra Pods | v1 and v2 run together |
-
-**When to use:** critical, high-traffic services (payments, login) where a bad release is expensive.
-
-## 6. Other strategies: A/B testing and Shadow
+## 5. Other strategies: A/B testing and Shadow
 
 | Strategy | Definition | Goal |
 |---|---|---|
@@ -151,7 +150,7 @@ Users ──▶ 90% ──▶ v1 (stable)
 
 > **One line:** canary tests **stability** with a % of users; A/B tests a **business feature** with chosen users; shadow tests with **copied** traffic.
 
-## 7. Comparison: which one to pick
+## 6. Comparison: which one to pick
 
 | | Recreate | Rolling | Blue-green | Canary |
 |---|---|---|---|---|
@@ -165,7 +164,7 @@ Users ──▶ 90% ──▶ v1 (stable)
 
 **Database rule (any strategy where versions overlap):** make schema changes **backward compatible**. Add the new column first, deploy code that uses it, remove the old column in a later release. Otherwise rollback breaks.
 
-## 8. Tools used in real projects
+## 7. Tools used in real projects
 
 **Definition:** Doing blue-green or canary by hand means editing labels and weights yourself. **Progressive delivery** tools automate it: they shift traffic in steps, check metrics, and roll back on their own.
 
@@ -195,9 +194,9 @@ strategy:
 
 We run all four strategies on EKS with plain YAML. The app is `hashicorp/http-echo`, which just returns a text like `v1` or `v2`, so we can see which version answered.
 
-## 9. Lab setup
+## 8. Lab setup
 
-**Prereqs:** an EKS cluster and `kubectl` from the bastion ([Day 23](../day-23-eks-terraform-helm-argocd/README.md)). Lab E also needs the AWS Load Balancer Controller ([Ingress guide](../ingress/README.md)).
+**Prereqs:** an EKS cluster and `kubectl` from the bastion ([Day 23](../day-23-eks-terraform-helm-argocd/README.md)). Lab D also needs the AWS Load Balancer Controller ([Ingress guide](../ingress/README.md)).
 
 **Step 1: Create a namespace**
 
@@ -217,7 +216,7 @@ kubectl run client -n deploy-lab --image=curlimages/curl:8.10.1 --command -- sle
 kubectl get pods -n deploy-lab
 ```
 
-## 10. Lab A: Recreate
+## 9. Lab A: Recreate
 
 **Step 1: Create the file**
 
@@ -297,7 +296,7 @@ kubectl apply -f recreate.yaml
 kubectl delete -f recreate.yaml
 ```
 
-## 11. Lab B: Rolling update and rollback
+## 10. Lab B: Rolling update and rollback
 
 **Step 1: Create the file**
 
@@ -394,143 +393,7 @@ kubectl rollout undo deployment/web -n deploy-lab
 kubectl delete -f rolling.yaml
 ```
 
-## 12. Lab C: Blue-green with a Service switch
-
-The trick: **two Deployments** with a `version` label, and **one Service** whose selector picks which one is live.
-
-**Step 1: Create the file**
-
-```bash
-vim blue-green.yaml
-```
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: web-blue
-  namespace: deploy-lab
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: web
-      version: blue
-  template:
-    metadata:
-      labels:
-        app: web
-        version: blue
-    spec:
-      containers:
-        - name: web
-          image: hashicorp/http-echo:1.0
-          args: ["-text=v1 (blue)"]
-          ports:
-            - containerPort: 5678
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: web-green
-  namespace: deploy-lab
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: web
-      version: green
-  template:
-    metadata:
-      labels:
-        app: web
-        version: green
-    spec:
-      containers:
-        - name: web
-          image: hashicorp/http-echo:1.0
-          args: ["-text=v2 (green)"]
-          ports:
-            - containerPort: 5678
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: web                     # live traffic
-  namespace: deploy-lab
-spec:
-  selector:
-    app: web
-    version: blue               # ← the switch
-  ports:
-    - port: 80
-      targetPort: 5678
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: web-preview             # only for testing green
-  namespace: deploy-lab
-spec:
-  selector:
-    app: web
-    version: green
-  ports:
-    - port: 80
-      targetPort: 5678
-```
-
-**Step 2: Deploy both colors**
-
-```bash
-kubectl apply -f blue-green.yaml
-```
-
-**Step 3: Users see blue**
-
-```bash
-kubectl exec -n deploy-lab client -- curl -s web
-```
-
-**Expected:** `v1 (blue)`
-
-**Step 4: Test green before the switch (no users here)**
-
-```bash
-kubectl exec -n deploy-lab client -- curl -s web-preview
-```
-
-**Expected:** `v2 (green)`
-
-**Step 5: Switch live traffic to green**
-
-```bash
-kubectl patch service web -n deploy-lab -p '{"spec":{"selector":{"app":"web","version":"green"}}}'
-```
-
-**Step 6: Check**
-
-```bash
-kubectl exec -n deploy-lab client -- curl -s web
-```
-
-**Expected:** `v2 (green)` on **every** request, switched in one step.
-
-**Step 7: Rollback = switch back**
-
-```bash
-kubectl patch service web -n deploy-lab -p '{"spec":{"selector":{"app":"web","version":"blue"}}}'
-```
-
-**Expected:** `v1 (blue)` again, instantly. In real life, once green is stable for a while, scale blue to 0; it becomes the target for the next release.
-
-**Step 8: Remove it**
-
-```bash
-kubectl delete -f blue-green.yaml
-```
-
-## 13. Lab D: Canary with replica count
+## 11. Lab C: Canary with replica count
 
 The trick: **two Deployments** share the label `app: web`, and the Service selects **only** `app: web`. Traffic splits by Pod count: 4 stable + 1 canary ≈ 20% canary.
 
@@ -632,7 +495,7 @@ kubectl scale deployment web-canary -n deploy-lab --replicas=0
 
 **Rollback (if the canary is bad):** the same command, scale the canary to 0. Users go back to 100% v1.
 
-**Limit:** the % depends on Pod count. For 1% you'd need 99 stable Pods. That's why production uses weighted routing (Lab E).
+**Limit:** the % depends on Pod count. For 1% you'd need 99 stable Pods. That's why production uses weighted routing (Lab D).
 
 **Step 6: Remove it**
 
@@ -640,7 +503,7 @@ kubectl scale deployment web-canary -n deploy-lab --replicas=0
 kubectl delete -f canary.yaml
 ```
 
-## 14. Lab E: Canary with ALB weights (production way)
+## 12. Lab D: Canary with ALB weights (production way)
 
 The ALB splits traffic by **exact weight** between two target groups, no matter how many Pods each has.
 
@@ -779,9 +642,151 @@ kubectl apply -f alb-canary.yaml
 | `503` from the ALB | Pods not Ready, or wrong `serviceName` in the annotation |
 | Ingress error `use-annotation` | Backend name must equal the action name (`weighted`) |
 
-## 15. Clean up
+**Step 6: Remove it** (the ALB costs money while it runs)
 
-Delete the Ingress first so the controller removes the ALB (it costs money):
+```bash
+kubectl delete -f alb-canary.yaml
+```
+
+## 13. Lab E: Blue-green with a Service switch
+
+The trick: **two Deployments** with a `version` label, and **one Service** whose selector picks which one is live.
+
+**Step 1: Create the file**
+
+```bash
+vim blue-green.yaml
+```
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-blue
+  namespace: deploy-lab
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: web
+        version: blue
+    spec:
+      containers:
+        - name: web
+          image: hashicorp/http-echo:1.0
+          args: ["-text=v1 (blue)"]
+          ports:
+            - containerPort: 5678
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-green
+  namespace: deploy-lab
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+      version: green
+  template:
+    metadata:
+      labels:
+        app: web
+        version: green
+    spec:
+      containers:
+        - name: web
+          image: hashicorp/http-echo:1.0
+          args: ["-text=v2 (green)"]
+          ports:
+            - containerPort: 5678
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web                     # live traffic
+  namespace: deploy-lab
+spec:
+  selector:
+    app: web
+    version: blue               # ← the switch
+  ports:
+    - port: 80
+      targetPort: 5678
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-preview             # only for testing green
+  namespace: deploy-lab
+spec:
+  selector:
+    app: web
+    version: green
+  ports:
+    - port: 80
+      targetPort: 5678
+```
+
+**Step 2: Deploy both colors**
+
+```bash
+kubectl apply -f blue-green.yaml
+```
+
+**Step 3: Users see blue**
+
+```bash
+kubectl exec -n deploy-lab client -- curl -s web
+```
+
+**Expected:** `v1 (blue)`
+
+**Step 4: Test green before the switch (no users here)**
+
+```bash
+kubectl exec -n deploy-lab client -- curl -s web-preview
+```
+
+**Expected:** `v2 (green)`
+
+**Step 5: Switch live traffic to green**
+
+```bash
+kubectl patch service web -n deploy-lab -p '{"spec":{"selector":{"app":"web","version":"green"}}}'
+```
+
+**Step 6: Check**
+
+```bash
+kubectl exec -n deploy-lab client -- curl -s web
+```
+
+**Expected:** `v2 (green)` on **every** request, switched in one step.
+
+**Step 7: Rollback = switch back**
+
+```bash
+kubectl patch service web -n deploy-lab -p '{"spec":{"selector":{"app":"web","version":"blue"}}}'
+```
+
+**Expected:** `v1 (blue)` again, instantly. In real life, once green is stable for a while, scale blue to 0; it becomes the target for the next release.
+
+**Step 8: Remove it**
+
+```bash
+kubectl delete -f blue-green.yaml
+```
+
+## 14. Clean up
+
+If you skipped Lab D's Step 6, delete the Ingress first so the controller removes the ALB (it costs money):
 
 ```bash
 kubectl delete -f alb-canary.yaml
@@ -795,27 +800,27 @@ kubectl delete namespace deploy-lab
 
 # Wrap-up
 
-## 16. What I learned
+## 15. What I learned
 
 **Concepts**
 - A deployment strategy decides **downtime**, **blast radius** and **rollback speed**.
 - **Recreate** = all down, then all up (downtime). **Rolling** = a few at a time (K8s default).
-- **Blue-green** = two full copies, switch 100% at once, instant rollback, 2x cost.
 - **Canary** = small % first, watch metrics, grow. Best for critical services.
+- **Blue-green** = two full copies, switch 100% at once, instant rollback, 2x cost.
 - Overlapping versions need **backward-compatible** DB changes.
 - Real projects automate blue-green/canary with **Argo Rollouts** or **Flagger**.
 
 **Lab**
 - Recreate and Rolling are just `strategy.type` on a Deployment.
-- Blue-green in K8s = change the **Service selector**.
 - Canary by **replica ratio** is rough; **ALB weights** give exact %.
+- Blue-green in K8s = change the **Service selector**.
 
 ```
 Recreate ─▶ Rolling ─▶ Blue-green ─▶ Canary
 less safe, simpler           safer, needs more tooling
 ```
 
-## 17. Commands
+## 16. Commands
 
 | Command | What it does |
 |---|---|
@@ -826,7 +831,7 @@ less safe, simpler           safer, needs more tooling
 | `kubectl patch service web -p '{"spec":{"selector":{...}}}'` | Blue-green switch |
 | `kubectl scale deployment web-canary --replicas=N` | Grow or kill a canary |
 
-## 18. Interview Questions
+## 17. Interview Questions
 
 ### Other Questions
 
