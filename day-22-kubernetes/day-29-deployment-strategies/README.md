@@ -2,6 +2,8 @@
 
 [← Kubernetes notes](../README.md)
 
+> 🎬 **Watch it animated:** [Deployment strategies with Cloudy](https://abhignadumpala.github.io/learn-with-cloudy/deployment-strategies/): what a deployment strategy is, the 4 types, then rolling update, canary and blue-green deployed and rolled back live (voice in English · తెలుగు · हिन्दी · Español · Português).
+
 > **In short:** A **deployment strategy** is the plan for **how a new version replaces the old one** in production. **Rolling update** swaps Pods a few at a time (Kubernetes default). **Canary** sends a small % of users to the new version first and grows it only if metrics look good. **Blue-green** runs a full second copy and switches all traffic at once. (**Recreate**, the simplest, stops everything and starts the new version, with downtime.)
 
 ## About this topic
