@@ -2,6 +2,8 @@
 
 [← Kubernetes notes](../README.md)
 
+> 🎬 **Watch it animated with Cloudy:** [Kubernetes scheduling](https://abhignadumpala.github.io/learn-with-cloudy/k8s-scheduling/) (scheduling, constraint types, taints and tolerations, nodeSelector vs node affinity, dedicated node) · [Pod affinity, anti-affinity and topology spread](https://abhignadumpala.github.io/learn-with-cloudy/pod-affinity-spread/) (Pods placed live on 6 nodes in 3 zones). Voice in English · తెలుగు · हिन्दी · Español · Português.
+
 > **In short:** Kubernetes decides **which node** each Pod runs on. **nodeSelector** and **node affinity** pull a Pod **towards** nodes with certain labels. **Taints** push all Pods **away** from a node, and a **toleration** lets one chosen Pod in. To give an app its own nodes (for example AI Pods on big GPU nodes), we use **both**. **Ingress rules** then decide which app gets each user request, by **host** (`api.shop.com`) or **path** (`shop.com/api`).
 
 ## About this class
