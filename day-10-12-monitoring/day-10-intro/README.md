@@ -119,7 +119,7 @@ Prometheus server    ──► :9100   ← rule 4   (monitoring-sg)
 | 2 | Custom TCP | 9090 | My IP  | Prometheus UI in your browser |
 | 3 | Custom TCP | 3000 | My IP  | Grafana UI in your browser    |
 
-> Why HTTP for 80 but Custom TCP for 9090? → [Security Group Types — HTTP vs Custom TCP](../../aws/security-group-types/README.md)
+> Why HTTP for 80 but Custom TCP for 9090? → [Security Group Types — HTTP vs Custom TCP](../../topic-guides/aws-security-group-types/README.md)
 
 ### Quick Reference — Commands, IPs, Restarts
 
