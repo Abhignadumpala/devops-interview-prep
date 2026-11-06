@@ -15,3 +15,4 @@ Daily notes:
 Topic guides:
 
 - [Kubernetes Ingress: why we need it, Ingress controllers (AWS Load Balancer Controller, NGINX, Traefik), how a user request reaches the Pod, host and path rules, pathType, rewrite, HTTPS, two-app ALB lab](./ingress/README.md)
+- [Deployment strategies: Recreate, rolling update (maxSurge / maxUnavailable), blue-green, canary, A/B and shadow, comparison, Argo Rollouts, EKS labs including an ALB weighted canary](./deployment-strategies/README.md)
