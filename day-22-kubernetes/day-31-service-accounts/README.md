@@ -1,8 +1,10 @@
-# Day 31 - ServiceAccounts: Identity for Pods
+# Day 31 - ServiceAccounts and Security Context
 
 [← Kubernetes notes](../README.md)
 
 > **In short:** a **ServiceAccount** is the **identity of an application running in a Pod**. People log in as **users**; Pods talk to the API server as a **ServiceAccount**. Every namespace has a **`default`** ServiceAccount, but real apps should get their **own** ServiceAccount with only the permissions they need (through RBAC, [Day 30](../day-30-rbac/README.md)). One word: **identity**.
+>
+> A **Security Context** is the other half of Pod security: it **restricts what the container process can do on the node**: run as a non-root user, no privilege escalation, drop all Linux capabilities. ServiceAccount = what the Pod may do **in the Kubernetes API**; Security Context = what the container may do **in Linux**.
 
 ## About this topic
 
@@ -10,13 +12,14 @@
 |---|---|---|
 | **Part 1: Concepts** | What a ServiceAccount is, user vs ServiceAccount, the `default` ServiceAccount, custom ServiceAccounts, tokens, `automountServiceAccountToken`, RBAC, AWS access with Pod Identity / IRSA, when to use, CKA/CKAD tasks | Why Pods need an identity and how to give them a safe one |
 | **Part 2: Lab** | Look at `default`, create a custom ServiceAccount, run a Pod with it, read the token, call the API, turn off the token, change a Deployment's ServiceAccount, create a short-lived token | Do every ServiceAccount task on EKS |
+| **Part 3: Security Context** | Why containers shouldn't run as root, Pod vs container level, runAsUser / runAsNonRoot / allowPrivilegeEscalation / capabilities / readOnlyRootFilesystem, Pod Security Standards, lab | How to restrict the access of a container |
 
 > **Before this:** [Day 30 - RBAC](../day-30-rbac/README.md) (Role, RoleBinding, ClusterRole, ClusterRoleBinding).
 
 ## Table of Contents
 
 **Part 1: Concepts**
-1. [What is a ServiceAccount?](#1-what-is-a-serviceaccount)
+1. [What is a ServiceAccount?](#1-what-is-a-serviceaccount) (+ where ServiceAccounts are used in real time)
 2. [User account vs ServiceAccount](#2-user-account-vs-serviceaccount)
 3. [The `default` ServiceAccount](#3-the-default-serviceaccount)
 4. [Custom ServiceAccounts: better security](#4-custom-serviceaccounts-better-security)
@@ -39,12 +42,20 @@
 18. [Lab G: Create a short-lived token](#18-lab-g-create-a-short-lived-token)
 19. [Clean up](#19-clean-up)
 
+**Part 3: Security Context**
+
+20. [What is a Security Context?](#20-what-is-a-security-context)
+21. [Pod level vs container level](#21-pod-level-vs-container-level)
+22. [The settings, one by one](#22-the-settings-one-by-one)
+23. [Pod Security Standards](#23-pod-security-standards)
+24. [Lab: restrict a container step by step](#24-lab-restrict-a-container-step-by-step)
+
 **Wrap-up**
 
-20. [Troubleshooting](#20-troubleshooting)
-21. [What I learned](#21-what-i-learned)
-22. [Commands](#22-commands)
-23. [Interview Questions](#23-interview-questions)
+25. [Troubleshooting](#25-troubleshooting)
+26. [What I learned](#26-what-i-learned)
+27. [Commands](#27-commands)
+28. [Interview Questions](#28-interview-questions)
 
 ---
 
@@ -114,6 +125,26 @@ But Kubernetes doesn't trust any Pod by default. So we:
 - If we don't name one, a Pod runs with the namespace's **`default`** ServiceAccount. For **better security**, every tool gets its **own custom ServiceAccount** with **only the permissions it needs**.
 
 > **Interview one-liner:** third-party tools like Argo CD, Prometheus and Grafana run as Pods and need to talk to the Kubernetes API, so each gets its own ServiceAccount as its identity, and RBAC gives it only what it needs: Argo CD can deploy apps, Prometheus can read Pods and Nodes to monitor them.
+
+### Where are ServiceAccounts used in real time?
+
+In real time, whenever **something other than a human** needs to talk to the Kubernetes cluster (or a Pod needs to talk to something else), it needs an identity. That identity is a ServiceAccount.
+
+```
+  ☁️ Cloud platform      🔁 CI/CD pipeline      🔌 API access       🖥️ Server-to-server
+  (AWS, GCP, Azure)     (Jenkins, Argo CD)     (K8s / other APIs)   (microservices)
+          \                    |                     |                   /
+           └────────────── ServiceAccount = secure IDENTITY ──────────────┘
+```
+
+| Where | What it means | Real example |
+|---|---|---|
+| **Cloud platforms** (AWS, Google Cloud, Azure) | Pods **access cloud resources securely**, without storing keys | A payment Pod reads a password from AWS Secrets Manager: its SA is mapped to an IAM role (EKS Pod Identity / IRSA). GCP and Azure have the same idea (Workload Identity) |
+| **CI/CD pipelines** | **Automated deployments** and integrations | Argo CD's SA deploys our apps; a Jenkins agent Pod with the `jenkins` SA runs `kubectl apply` in `prod` |
+| **API access** | Interact with the **Kubernetes API** or **third-party / internal APIs** | Prometheus lists Pods through the API; an app logs in to HashiCorp Vault with its SA token (Vault "Kubernetes auth") |
+| **Server-to-server communication** | **Microservices** and backend services prove who they are to each other | In a service mesh (Istio), each Pod's SA is its identity for mTLS: "only `cart-sa` may call `payment`" |
+
+> **One word: identity.** ServiceAccounts give applications and services a **secure identity** to access only the resources they need.
 
 ---
 
@@ -438,6 +469,99 @@ kubectl auth can-i --list --as=system:serviceaccount:prod:jenkins -n prod
 ```
  ServiceAccount jenkins  ◄── RoleBinding jenkinsrolebinding ──►  Role jenkinsrole
  (who)                                                          (create/get/list pods in prod)
+```
+
+### The full example as YAML: identity + permission + binding
+
+Three objects, three jobs:
+
+| Object | One word | Answers | API group |
+|---|---|---|---|
+| **ServiceAccount** | **Identity** | Who are you? (**authentication**) | `v1` (core) |
+| **Role** | **Permission** | What can be done, on what, in which namespace? (**authorization**) | `rbac.authorization.k8s.io/v1` |
+| **RoleBinding** | **Connection** | Who gets that permission? | `rbac.authorization.k8s.io/v1` |
+
+**1. ServiceAccount: the identity**
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins
+  namespace: prod
+```
+
+This creates a ServiceAccount named `jenkins` in the `prod` namespace.
+
+**2. Role: the permissions**
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkinsrole
+  namespace: prod
+rules:
+- apiGroups:
+  - ""              # core group (pods live here)
+  resources:
+  - pods
+  verbs:
+  - create
+  - delete
+  - list
+```
+
+This Role allows whoever gets it to **create, delete and list Pods in `prod`**. Nothing else: no ConfigMaps, no Secrets, no other namespace.
+
+**3. RoleBinding: give the Role to the ServiceAccount**
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkinsrolebinding
+  namespace: prod
+subjects:                       # WHO
+- kind: ServiceAccount
+  name: jenkins
+  namespace: prod
+roleRef:                        # WHAT
+  kind: Role
+  name: jenkinsrole
+  apiGroup: rbac.authorization.k8s.io
+```
+
+**Apply all three:**
+
+```bash
+kubectl apply -f sa.yml -f jenkinsrole.yml -f jenkinsrolebinding.yml
+```
+
+**Check permissions before any action** (with this Role, which has `delete`):
+
+| Command | Answer | Why |
+|---|---|---|
+| `kubectl auth can-i list pods -n prod --as=system:serviceaccount:kube-system:jenkins` | ❌ no | No such identity bound |
+| `kubectl auth can-i create pods -n prod --as=system:serviceaccount:prod:jenkins` | ✅ yes | `create` in the Role |
+| `kubectl auth can-i delete pods -n prod --as=system:serviceaccount:prod:jenkins` | ✅ yes | `delete` in the Role |
+| `kubectl auth can-i delete cm -n prod --as=system:serviceaccount:prod:jenkins` | ❌ no | ConfigMaps not in the Role |
+
+> If you create the `jenkins` ServiceAccount, Role and RoleBinding in the **`default`** namespace instead, every name changes to match: `--as=system:serviceaccount:default:jenkins -n default`. The `--as` namespace must be the namespace **where the ServiceAccount lives**.
+
+**Authentication vs authorization, in this example:**
+
+```
+ Jenkins Pod sends the jenkins token
+        │
+        ▼
+ ① Authentication: token is valid → "you are system:serviceaccount:prod:jenkins"   (ServiceAccount)
+        │
+        ▼
+ ② Authorization: RoleBinding → jenkinsrole → "create/delete/list pods in prod"    (Role + RoleBinding)
+        │
+        ├── kubectl delete pod web -n prod   ✅ allowed
+        └── kubectl delete cm app -n prod    ❌ 403 Forbidden
 ```
 
 ### Real time: the ServiceAccount needs a token
@@ -898,9 +1022,362 @@ Deleting the namespace removes the ServiceAccounts, Pods, Deployment, Role and R
 
 ---
 
+# Part 3: Security Context
+
+## 20. What is a Security Context?
+
+**Definition:** a **Security Context** is a set of settings on a **Pod or container** that **restricts what the container process can do** on the node: which Linux user it runs as, whether it can become root, which Linux capabilities it has, and whether it can write to its filesystem. It answers: **how do you restrict the access of a container?**
+
+**Why we need it:** many images (like `nginx`) run as **root (UID 0)** by default. If an attacker breaks into that container, they are root inside it, one step closer to the node.
+
+| Without a Security Context | With a Security Context |
+|---|---|
+| Process runs as **root** | Runs as a **non-root user** (e.g. UID 1000) |
+| Can gain more privileges (`sudo`, setuid binaries) | `allowPrivilegeEscalation: false` |
+| Has default Linux capabilities (change file owners, bind low ports, raw network…) | **Drop ALL** capabilities |
+| Can change its own files / drop malware | `readOnlyRootFilesystem: true` |
+
+**The 3 main rules:**
+1. **Run the container as a non-root user.**
+2. **Drop all Linux capabilities** (add back only one if really needed).
+3. It **applies at both Pod and container level**.
+
+| | ServiceAccount | Security Context |
+|---|---|---|
+| Controls | What the Pod can do **in the Kubernetes API** | What the process can do **in Linux, on the node** |
+| Example | "may list Pods in prod" | "runs as UID 1000, can't become root" |
+| Set with | `serviceAccountName` + RBAC | `securityContext:` in the Pod spec |
+
+> **Interview one-liner:** a Security Context restricts a container at the Linux level: run as non-root, block privilege escalation, drop all capabilities and use a read-only root filesystem; it can be set for the whole Pod and overridden per container.
+
+---
+
+## 21. Pod level vs container level
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-nonroot
+spec:
+  securityContext:                 # POD level → all containers
+    runAsUser: 1000                # non-root user
+    runAsGroup: 3000               # non-root group
+    fsGroup: 2000                  # group owner of mounted volumes
+  containers:
+  - name: nginx
+    image: nginxinc/nginx-unprivileged:1.27
+    securityContext:               # CONTAINER level → this container only
+      allowPrivilegeEscalation: false   # can't become root
+      runAsNonRoot: true                # refuse to start as root
+      capabilities:
+        drop:
+        - ALL                           # drop all Linux capabilities
+    ports:
+    - containerPort: 8080
+```
+
+| Level | Where | Applies to | Settings available |
+|---|---|---|---|
+| **Pod** | `spec.securityContext` | Every container in the Pod | `runAsUser`, `runAsGroup`, `runAsNonRoot`, `fsGroup`, `seccompProfile`… |
+| **Container** | `spec.containers[].securityContext` | That container only | Same user settings **plus** `allowPrivilegeEscalation`, `capabilities`, `readOnlyRootFilesystem`, `privileged` |
+
+> If both set the same field (e.g. `runAsUser`), the **container level wins**.
+
+> ⚠️ **Why `nginx-unprivileged` and not `nginx:latest`?** The normal `nginx` image expects to start as root: it listens on port **80** and writes to `/var/cache/nginx`. With `runAsUser: 1000` it crashes with `permission denied`. `nginxinc/nginx-unprivileged` is built to run as non-root on port **8080**. Real lesson: **the image must support non-root**; a Security Context can't fix an image that needs root.
+
+---
+
+## 22. The settings, one by one
+
+| Setting | Level | What it does | Recommended |
+|---|---|---|---|
+| `runAsUser: 1000` | Pod / container | Process runs as this Linux user ID | Any non-zero UID |
+| `runAsGroup: 3000` | Pod / container | Primary group ID of the process | Non-zero GID |
+| `fsGroup: 2000` | Pod | Mounted volumes are owned by this group, so the app can write to them | Set when using volumes |
+| `runAsNonRoot: true` | Pod / container | Kubelet **refuses to start** the container if it would run as root | ✅ always |
+| `allowPrivilegeEscalation: false` | Container | Process can't gain more privileges than its parent (blocks `sudo`, setuid) | ✅ always |
+| `capabilities.drop: [ALL]` | Container | Removes all Linux capabilities (root's special powers split into pieces) | ✅ always |
+| `capabilities.add: [NET_BIND_SERVICE]` | Container | Adds back one capability (here: bind to ports below 1024) | Only if needed |
+| `readOnlyRootFilesystem: true` | Container | Container can't write to its own filesystem; use `emptyDir` volumes for temp files | ✅ when the app allows |
+| `privileged: true` | Container | **Full access to the node**, like root on the host | ❌ never for apps (only special system tools) |
+| `seccompProfile.type: RuntimeDefault` | Pod / container | Blocks dangerous Linux system calls | ✅ always |
+
+**Linux capabilities in one line:** root's power is split into ~40 pieces (`CHOWN`, `NET_ADMIN`, `SYS_ADMIN`, `NET_BIND_SERVICE`…). Containers get some by default. `drop: [ALL]` removes them all, so even a hacked process can do very little.
+
+---
+
+## 23. Pod Security Standards
+
+Writing a good Security Context in every Pod is easy to forget. **Pod Security Admission** (built into Kubernetes, an admission controller from [Day 28](../day-28-kustomize-admission-controllers-crds/README.md)) checks Pods against 3 levels, set **per namespace with a label**:
+
+| Level | Meaning |
+|---|---|
+| `privileged` | No checks at all |
+| `baseline` | Blocks the obviously dangerous things (`privileged: true`, host network…) |
+| `restricted` | Requires non-root, `allowPrivilegeEscalation: false`, drop ALL, seccomp `RuntimeDefault` |
+
+```bash
+kubectl label namespace prod pod-security.kubernetes.io/enforce=restricted
+```
+
+After this, a Pod in `prod` **without** a proper Security Context is **rejected** with a `violates PodSecurity "restricted:latest"` error.
+
+---
+
+## 24. Lab: restrict a container step by step
+
+**Step 1: Create a namespace**
+
+```bash
+kubectl create namespace sc-lab
+```
+
+### A. Default: the container runs as root
+
+**Step 2: Run plain nginx**
+
+```bash
+kubectl run plain -n sc-lab --image=nginx
+```
+
+**Step 3: Check the user**
+
+```bash
+kubectl exec plain -n sc-lab -- id
+```
+
+**Expected:** `uid=0(root) gid=0(root) groups=0(root)`. Root by default ⚠️.
+
+### B. Pod-level user, group and fsGroup
+
+**Step 4: Create the file `sc-user.yaml`**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sc-user
+  namespace: sc-lab
+spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 3000
+    fsGroup: 2000
+  volumes:
+  - name: data
+    emptyDir: {}
+  containers:
+  - name: app
+    image: busybox:1.36
+    command: ["sh", "-c", "sleep 3600"]
+    volumeMounts:
+    - name: data
+      mountPath: /data
+    securityContext:
+      allowPrivilegeEscalation: false
+```
+
+**Step 5: Apply it**
+
+```bash
+kubectl apply -f sc-user.yaml
+```
+
+**Step 6: Check the user**
+
+```bash
+kubectl exec sc-user -n sc-lab -- id
+```
+
+**Expected:** `uid=1000 gid=3000 groups=2000,3000` ✅. Not root.
+
+**Step 7: Write to the volume**
+
+```bash
+kubectl exec sc-user -n sc-lab -- sh -c 'touch /data/file && ls -l /data'
+```
+
+**Expected:** the file is owned by user `1000`, group `2000` ✅. `fsGroup` made the volume writable for the app.
+
+**Step 8: Try to write as root would**
+
+```bash
+kubectl exec sc-user -n sc-lab -- touch /etc/hacked
+```
+
+**Expected:** `Permission denied` ✅. A non-root user can't change system files.
+
+### C. `runAsNonRoot` blocks a root image
+
+**Step 9: Create the file `sc-nonroot-fail.yaml`**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nonroot-fail
+  namespace: sc-lab
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+    securityContext:
+      runAsNonRoot: true
+```
+
+**Step 10: Apply it**
+
+```bash
+kubectl apply -f sc-nonroot-fail.yaml
+```
+
+**Step 11: Check the status**
+
+```bash
+kubectl get pod nonroot-fail -n sc-lab
+```
+
+**Expected:** `CreateContainerConfigError`. `kubectl describe pod nonroot-fail -n sc-lab` shows `container has runAsNonRoot and image will run as root` ✅. The kubelet refused to start a root container.
+
+### D. Fully restricted nginx (production style)
+
+**Step 12: Create the file `sc-restricted.yaml`**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-secure
+  namespace: sc-lab
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: nginx
+    image: nginxinc/nginx-unprivileged:1.27
+    ports:
+    - containerPort: 8080
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+```
+
+**Step 13: Apply it**
+
+```bash
+kubectl apply -f sc-restricted.yaml
+```
+
+**Step 14: Check it runs**
+
+```bash
+kubectl get pod web-secure -n sc-lab
+```
+
+**Expected:** `Running` ✅
+
+**Step 15: Check the user**
+
+```bash
+kubectl exec web-secure -n sc-lab -- id
+```
+
+**Expected:** `uid=101(nginx) gid=101(nginx)` ✅
+
+**Step 16: Check that nginx serves pages**
+
+```bash
+kubectl exec web-secure -n sc-lab -- curl -s localhost:8080
+```
+
+**Expected:** the `Welcome to nginx!` HTML ✅. Same website, no root, no capabilities.
+
+### E. Read-only root filesystem
+
+**Step 17: Create the file `sc-readonly.yaml`**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: readonly
+  namespace: sc-lab
+spec:
+  volumes:
+  - name: tmp
+    emptyDir: {}
+  containers:
+  - name: app
+    image: busybox:1.36
+    command: ["sh", "-c", "sleep 3600"]
+    volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    securityContext:
+      runAsUser: 1000
+      readOnlyRootFilesystem: true
+```
+
+**Step 18: Apply it**
+
+```bash
+kubectl apply -f sc-readonly.yaml
+```
+
+**Step 19: Try to write to the root filesystem**
+
+```bash
+kubectl exec readonly -n sc-lab -- touch /home/test
+```
+
+**Expected:** `Read-only file system` ✅
+
+**Step 20: Write to the emptyDir instead**
+
+```bash
+kubectl exec readonly -n sc-lab -- touch /tmp/test
+```
+
+**Expected:** no error ✅. Apps write temp files to a mounted volume, never to the image.
+
+### F. Enforce it for a whole namespace
+
+**Step 21: Label the namespace as restricted**
+
+```bash
+kubectl label namespace sc-lab pod-security.kubernetes.io/enforce=restricted
+```
+
+**Expected:** a warning that existing Pods `plain`, `sc-user`… violate the policy (they keep running; only new Pods are checked).
+
+**Step 22: Try to create a root Pod now**
+
+```bash
+kubectl run plain2 -n sc-lab --image=nginx
+```
+
+**Expected:** `Error from server (Forbidden): pods "plain2" is forbidden: violates PodSecurity "restricted:latest"` ✅
+
+### Clean up
+
+**Step 23: Delete the namespace**
+
+```bash
+kubectl delete namespace sc-lab
+```
+
+---
+
 # Wrap-up
 
-## 20. Troubleshooting
+## 25. Troubleshooting
 
 | Problem | Cause | Fix |
 |---|---|---|
@@ -910,10 +1387,14 @@ Deleting the namespace removes the ServiceAccounts, Pods, Deployment, Role and R
 | App can't find the token file | `automountServiceAccountToken: false` | Turn it on for apps that call the API |
 | Can't change `serviceAccountName` | Fixed on a running Pod | Change the Deployment (`kubectl set serviceaccount`) |
 | Pod gets no AWS permissions (`AccessDenied` / uses node role) | No Pod Identity association / IRSA annotation, or wrong SA name | Check association or annotation matches namespace + SA |
+| `CreateContainerConfigError`: `container has runAsNonRoot and image will run as root` | Image runs as root, `runAsNonRoot: true` blocks it | Set `runAsUser`, or use a non-root image (e.g. `nginx-unprivileged`) |
+| `CrashLoopBackOff`, logs say `permission denied` / `bind() to 0.0.0.0:80 failed` | Image needs root (writes to system folders, port < 1024) | Non-root image on a port ≥ 1024, or mount `emptyDir` for writable paths |
+| `Read-only file system` in app logs | `readOnlyRootFilesystem: true` and the app writes temp files | Mount an `emptyDir` on that path (`/tmp`, cache folder) |
+| Pod `forbidden: violates PodSecurity "restricted:latest"` | Namespace enforces `restricted` | Add non-root, `allowPrivilegeEscalation: false`, drop ALL, seccomp `RuntimeDefault` |
 
 ---
 
-## 21. What I learned
+## 26. What I learned
 
 **Concepts**
 - ServiceAccount = **identity** for apps in Pods. Users are for humans.
@@ -922,18 +1403,23 @@ Deleting the namespace removes the ServiceAccounts, Pods, Deployment, Role and R
 - The token is a **short-lived JWT**, tied to the Pod, mounted automatically.
 - `automountServiceAccountToken: false` for apps that never call the API.
 - SA alone = identity only. **RBAC** gives permissions. **Pod Identity / IRSA** gives AWS access.
+- SAs are used for **cloud access, CI/CD, API access and server-to-server** communication.
+- **Security Context** restricts the container in Linux: non-root, no privilege escalation, drop ALL capabilities, read-only filesystem. Pod level for all containers, container level wins.
+- The **image must support non-root**; `nginx-unprivileged` instead of `nginx`.
+- **Pod Security Standards** (`restricted` label on a namespace) enforce it for every Pod.
 
 **Lab**
 - `kubectl get sa`, `serviceAccountName`, `kubectl set serviceaccount`, `kubectl create token`.
 - A Pod's SA can't change; the Deployment rolls out new Pods.
 - A real Pod gets `403` for anything RBAC didn't allow.
+- `kubectl exec <pod> -- id` shows which user a container really runs as.
 
 ```
  Pod ──► ServiceAccount ──► RBAC Role ──► Kubernetes API
                   └──────► IAM role (Pod Identity / IRSA) ──► AWS
 ```
 
-## 22. Commands
+## 27. Commands
 
 | Command | What it does |
 |---|---|
@@ -945,8 +1431,11 @@ Deleting the namespace removes the ServiceAccounts, Pods, Deployment, Role and R
 | `kubectl create token SA -n NS --duration=10m` | Short-lived token |
 | `kubectl auth can-i VERB RES -n NS --as=system:serviceaccount:NS:SA` | Test SA permissions |
 | `kubectl create rolebinding RB --role=R --serviceaccount=NS:SA -n NS` | Give an SA a Role |
+| `kubectl exec POD -- id` | Which Linux user/group the container runs as |
+| `kubectl explain pod.spec.containers.securityContext` | List all container security settings |
+| `kubectl label ns NS pod-security.kubernetes.io/enforce=restricted` | Enforce restricted Pod security in a namespace |
 
-## 23. Interview Questions
+## 28. Interview Questions
 
 ### ⭐ Very Important
 
@@ -962,30 +1451,54 @@ For better security. `default` is shared by every Pod in the namespace, so any p
 **Q4. How do you give a ServiceAccount only the permissions it needs?**
 Create a Role (or ClusterRole) with the exact verbs and resources, and bind it to the SA with a RoleBinding in its namespace (ClusterRoleBinding only if it needs every namespace).
 
+**Q5. Where are ServiceAccounts used in real time?**
+Cloud platforms (Pods access AWS/GCP/Azure resources securely, e.g. EKS Pod Identity), CI/CD pipelines (Argo CD or a Jenkins agent deploying apps), API access (Kubernetes API or third-party/internal APIs like Vault), and server-to-server communication between microservices (service mesh identity). In one word: identity.
+
+**Q6. How do you restrict the access of a container?**
+With a Security Context: run as a non-root user (`runAsUser`, `runAsNonRoot: true`), block privilege escalation (`allowPrivilegeEscalation: false`), drop all Linux capabilities (`capabilities.drop: [ALL]`), and ideally a read-only root filesystem. It can be set at Pod level and container level; container level wins.
+
+**Q7. What is the difference between a ServiceAccount and a Security Context?**
+A ServiceAccount is the Pod's identity for the Kubernetes API, with permissions from RBAC. A Security Context controls what the container process can do in Linux on the node (user, privileges, capabilities, filesystem).
+
 ### Other Questions
 
-**Q5. User account vs ServiceAccount?**
+**Q8. User account vs ServiceAccount?**
 User accounts are for humans, aren't Kubernetes objects and come from outside (IAM on EKS). ServiceAccounts are namespaced Kubernetes objects for apps in Pods.
 
-**Q6. How does a Pod get its token?**
+**Q9. How does a Pod get its token?**
 The kubelet mounts a projected, short-lived JWT at `/var/run/secrets/kubernetes.io/serviceaccount/token`, with `ca.crt` and `namespace`. It expires and refreshes automatically and becomes invalid when the Pod is deleted. Since 1.24 no long-lived Secret token is created automatically.
 
-**Q7. What does `automountServiceAccountToken: false` do and when do you use it?**
+**Q10. What does `automountServiceAccountToken: false` do and when do you use it?**
 It stops the token from being mounted. Use it for apps that never call the Kubernetes API (web, API, DB), so a compromised container has no token to steal.
 
-**Q8. Can you change the ServiceAccount of a running Pod?**
+**Q11. Can you change the ServiceAccount of a running Pod?**
 No, the field is immutable. Change it in the Deployment (`kubectl set serviceaccount`) and it rolls out new Pods.
 
-**Q9. How does a Pod on EKS access AWS services without access keys?**
+**Q12. How does a Pod on EKS access AWS services without access keys?**
 Link its ServiceAccount to an IAM role with EKS Pod Identity (pod identity association) or IRSA (OIDC + role ARN annotation). The Pod gets temporary credentials for that role only.
 
-**Q10. How do you test what a ServiceAccount can do?**
+**Q13. How do you test what a ServiceAccount can do?**
 `kubectl auth can-i <verb> <resource> -n <ns> --as=system:serviceaccount:<ns>:<sa>`, or `--list` for everything.
 
-**Q11. How do you get a token for a ServiceAccount to use outside the cluster?**
+**Q14. How do you get a token for a ServiceAccount to use outside the cluster?**
 `kubectl create token <sa> -n <ns> --duration=1h`. It's short-lived and not stored. Avoid long-lived Secret-based tokens.
 
-**Q12. A Deployment's Pods are not being created and the events say the service account was not found. Why?**
+**Q15. A Deployment's Pods are not being created and the events say the service account was not found. Why?**
 The `serviceAccountName` doesn't exist in that namespace (SAs are namespaced). Create it there or fix the name.
 
-**Source:** [Service Accounts](https://kubernetes.io/docs/concepts/security/service-accounts/) · [Configure Service Accounts for Pods](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/) · [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) · [IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
+**Q16. What is the difference between Pod-level and container-level securityContext?**
+Pod level (`spec.securityContext`) applies to all containers and holds `fsGroup`; container level (`containers[].securityContext`) applies to one container, adds `capabilities`, `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `privileged`, and overrides the Pod level.
+
+**Q17. What does `fsGroup` do?**
+Mounted volumes get that group as owner, so a non-root app can write to them.
+
+**Q18. Your Pod fails with `container has runAsNonRoot and image will run as root`. What do you do?**
+The image's default user is root. Set `runAsUser` to a non-zero UID if the app works as non-root, or switch to a non-root image (for nginx: `nginx-unprivileged` on port 8080).
+
+**Q19. Why should you never use `privileged: true` for apps?**
+It gives the container almost full access to the node (devices, kernel). A compromised privileged container = a compromised node. Only special system agents need it.
+
+**Q20. How do you enforce security contexts for all Pods in a namespace?**
+Pod Security Admission: label the namespace `pod-security.kubernetes.io/enforce=restricted`. Pods that run as root or keep capabilities are rejected.
+
+**Source:** [Service Accounts](https://kubernetes.io/docs/concepts/security/service-accounts/) · [Configure Service Accounts for Pods](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/) · [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) · [IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) · [Security Context](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/) · [Pod Security Standards](https://kubernetes.io/docs/concepts/security/pod-security-standards/)

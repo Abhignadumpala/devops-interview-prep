@@ -13,7 +13,7 @@ Daily notes:
 - [Day 28 — Kustomize (base and overlays, Kustomize vs Helm), admission controllers (mutating vs validating, built-in plugins, ValidatingAdmissionPolicy on EKS, NamespaceAutoProvision), CRDs and operators (real-world use cases), EKS labs](./day-28-kustomize-admission-controllers-crds/README.md)
 - [Day 29 — Deployment strategies: what a strategy is (+ Recreate), rolling update (maxSurge / maxUnavailable), canary, blue-green, A/B and shadow, comparison, Argo Rollouts, EKS labs including an ALB weighted canary](./day-29-deployment-strategies/README.md)
 - [Day 30 — RBAC: what RBAC is and why, subjects, rules (apiGroups / resources / verbs), Role, RoleBinding, ClusterRole, ClusterRoleBinding, the 4 combinations, built-in roles, ServiceAccounts, when to use which, EKS labs with `kubectl auth can-i`](./day-30-rbac/README.md)
-- [Day 31 — ServiceAccounts: identity for Pods, user vs ServiceAccount, the default ServiceAccount, custom ServiceAccounts, bound tokens, automountServiceAccountToken, RBAC, EKS Pod Identity and IRSA, CKA/CKAD tasks, EKS labs](./day-31-service-accounts/README.md)
+- [Day 31 — ServiceAccounts and Security Context: identity for Pods, where ServiceAccounts are used (cloud, CI/CD, API, server-to-server), user vs ServiceAccount, the default ServiceAccount, custom ServiceAccounts, bound tokens, automountServiceAccountToken, RBAC, EKS Pod Identity and IRSA, CKA/CKAD tasks, jenkins SA + Role + RoleBinding, security context (non-root, drop ALL capabilities, Pod vs container level, Pod Security Standards), EKS labs](./day-31-service-accounts/README.md)
 
 Topic guides:
 

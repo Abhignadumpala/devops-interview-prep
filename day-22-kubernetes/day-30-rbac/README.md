@@ -11,7 +11,7 @@
 | **Part 1: Concepts** | What RBAC is and why, subjects, rules (apiGroups / resources / verbs), Role, RoleBinding, ClusterRole, ClusterRoleBinding, the 4 combinations, built-in roles, ServiceAccounts, when to use which | What each object is, why we need it and when to pick it |
 | **Part 2: Lab** | A read-only ServiceAccount (Role + RoleBinding), a node reader (ClusterRole + ClusterRoleBinding), reusing a ClusterRole in one namespace, a Pod calling the API with its ServiceAccount | Create each object on EKS and prove it with `kubectl auth can-i` |
 
-> **Next:** [Day 31 - ServiceAccounts](../day-31-service-accounts/README.md). Related: how the bastion got admin access (EKS access entry + `cluster-admin`) is in [Day 23](../day-23-eks-terraform-helm-argocd/README.md). Admission controllers, which run **after** RBAC, are in [Day 28](../day-28-kustomize-admission-controllers-crds/README.md).
+> **Next:** [Day 31 - ServiceAccounts and Security Context](../day-31-service-accounts/README.md). Related: how the bastion got admin access (EKS access entry + `cluster-admin`) is in [Day 23](../day-23-eks-terraform-helm-argocd/README.md). Admission controllers, which run **after** RBAC, are in [Day 28](../day-28-kustomize-admission-controllers-crds/README.md).
 
 ## Table of Contents
 
