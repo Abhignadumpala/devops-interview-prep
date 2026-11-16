@@ -83,6 +83,28 @@
 
 **Telemetry** = the data an application sends out about itself. Observability is built on telemetry, and OpenTelemetry is how we collect it.
 
+**Definition:** **observability** is the **ability to understand a system's internal behavior from the data it produces** (logs, metrics, traces).
+
+```
+ Application                    Signals                         OpenTelemetry            Backends
+ ┌─────────────────────┐   ┌──────────────────────────────┐   ┌──────────────────┐   ┌──────────────────────┐
+ │ Service A  frontend │──►│ Logs     what happened?      │   │ collects and     │   │ Grafana    visualize │
+ │ Service B  logic    │──►│ Metrics  how is it doing?    │──►│ sends telemetry  │──►│ Prometheus metrics   │
+ │ Service C  database │──►│ Traces   how did it flow?    │   │                  │   │ Jaeger     traces    │
+ └─────────────────────┘   └──────────────────────────────┘   └──────────────────┘   │ ELK / Loki logs      │
+                                                                                     └──────────────────────┘
+```
+
+**The 5 words to know:**
+
+| Term | Simple meaning | Example |
+|---|---|---|
+| **Monitoring** | **Is** something wrong? | CPU is above 90% |
+| **Observability** | **Why** is it wrong? | A slow database query is blocking requests |
+| **Telemetry** | Data describing system behavior | Traces, metrics, logs |
+| **Instrumentation** | Adding the ability to generate telemetry | Adding an OTel SDK or agent to the app |
+| **OpenTelemetry** | Standard tooling and APIs for telemetry | Sending traces to a backend |
+
 ---
 
 ## 3. The 3 signals: traces, metrics, logs
@@ -158,6 +180,49 @@ Recording **every** request in a busy shop is expensive. **Sampling** keeps only
 ---
 
 ## 5. Why OpenTelemetry? (the problem it solves)
+
+### The main problem: "my order is slow, but where?"
+
+An e-commerce app with many services. A customer places an order:
+
+```
+ Customer ──► Frontend ──► Order service ──► Payment service ──► Inventory service ──► Database
+ places       receives     creates order     processes payment   checks stock          stores order
+ an order     request
+```
+
+The customer complains: **"My order takes 8 seconds to complete."**
+
+| ❌ Without OpenTelemetry | ✅ With OpenTelemetry |
+|---|---|
+| You open the frontend dashboard, order-service logs, payment metrics, inventory logs, database dashboard… one by one | You open **one trace** for that order request |
+| Each tool shows only its own piece; nothing links them together | The trace shows **every service the request passed through, in order, with its time** |
+| Hard to find **which component is slow**; hours of guessing between teams | Answer in seconds |
+
+**With OpenTelemetry, the trace shows:**
+
+```
+ Frontend           120 ms   █
+ Order service      200 ms   ██
+ Payment service   6.5 s     ████████████████████████████████████  ◄── the delay is HERE
+ Inventory service  150 ms   █
+ Database           100 ms   █
+```
+
+It **clearly shows the payment service takes 6.5 seconds**. Now the payment team checks that trace's spans and logs (slow card-gateway call? slow query?) instead of every team searching.
+
+**In simple words:**
+- Every request gets a **trace ID** and is **tracked** as it goes from **server to server, service to service**.
+- For each step we see **where the time went**, so when something is **wrong or slow**, we know exactly which service caused it.
+- OpenTelemetry **captures the logs, metrics and traces of every service**, sends them to backends, and we **visualize everything in Grafana** (metrics from Prometheus, traces from Tempo/Jaeger, logs from Loki).
+
+> **Answer in one word: VISIBILITY.** OpenTelemetry gives **end-to-end visibility** to find **exactly where the delay happens**.
+
+> **Two small details:**
+> - In production we usually **sample** (e.g. keep all error/slow traces and a % of normal ones) because tracing every single request is costly. In a lab or low-traffic app we keep 100%.
+> - Grafana doesn't store anything: it **shows** data stored in Prometheus (metrics), Tempo/Jaeger (traces) and Loki (logs). Jaeger also has its own trace UI.
+
+### Other problems it solves
 
 **Before OTel:** every vendor had its own agent and its own format.
 
@@ -646,51 +711,57 @@ kubectl delete namespace observability
 
 ### ⭐ Very Important
 
-**Q1. What is OpenTelemetry?**
+**Q1. What problem does OpenTelemetry solve?**
+In microservices, one request passes through many services (frontend → order → payment → inventory → database). When it's slow, separate dashboards and logs can't show which service is the problem. OpenTelemetry tracks each request end to end with a trace ID and shows the time spent in each service, for example "payment took 6.5 s of 8 s". In one word: visibility.
+
+**Q2. What is observability, and how is it different from monitoring?**
+Observability is the ability to understand a system's internal behavior from the data it produces (logs, metrics, traces). Monitoring tells you **if** something is wrong (CPU above 90%); observability tells you **why** (a slow database query is blocking requests).
+
+**Q3. What is OpenTelemetry?**
 A standard, vendor-neutral way to collect, process and export application telemetry (traces, metrics and logs) so we can understand application behavior and troubleshoot production problems. It provides APIs, SDKs, auto-instrumentation and the Collector.
 
-**Q2. What are traces, metrics and logs?**
+**Q4. What are traces, metrics and logs?**
 Traces show the journey of one request across services (where it's slow or failing). Metrics are numbers over time (rates, latency, CPU). Logs are detailed event records (what exactly happened).
 
-**Q3. Is OpenTelemetry a monitoring dashboard?**
+**Q5. Is OpenTelemetry a monitoring dashboard?**
 No. It's the instrumentation and telemetry infrastructure. It sends data to systems that store, analyze, visualize and alert on it, like Prometheus, Grafana, Jaeger, Tempo, Loki or commercial platforms.
 
-**Q4. What is the OpenTelemetry flow?**
+**Q6. What is the OpenTelemetry flow?**
 Instrument the app (SDK or auto-instrumentation) → Collect (Collector receivers, OTLP) → Process (batch, sample, add Kubernetes metadata, remove sensitive data) → Export to backends.
 
 ### Other Questions
 
-**Q5. What is the OpenTelemetry Collector and why use it?**
+**Q7. What is the OpenTelemetry Collector and why use it?**
 A service that receives, processes and exports telemetry using receivers, processors and exporters wired into pipelines. Apps send to one place, and we can change or add backends, sample, batch and filter without redeploying apps.
 
-**Q6. What is OTLP?**
+**Q8. What is OTLP?**
 The OpenTelemetry Protocol, the standard format for sending traces, metrics and logs. Port 4317 for gRPC, 4318 for HTTP.
 
-**Q7. What is a span and how does it relate to a trace?**
+**Q9. What is a span and how does it relate to a trace?**
 A span is one unit of work (HTTP call, DB query) with timing and attributes. A trace is the tree of all spans for one request, linked by the same trace ID and parent span IDs.
 
-**Q8. How does a trace continue across microservices?**
+**Q10. How does a trace continue across microservices?**
 Context propagation: the instrumented HTTP or messaging client adds the W3C `traceparent` header with the trace ID and parent span ID, and the next service continues the same trace.
 
-**Q9. Automatic vs manual instrumentation?**
+**Q11. Automatic vs manual instrumentation?**
 Automatic attaches an agent and traces frameworks (HTTP, DB, queues) with no code changes. Manual uses the OTel API to add business spans and attributes. In real projects we start with automatic and add manual spans for important flows.
 
-**Q10. How do you instrument apps on Kubernetes without changing images?**
+**Q12. How do you instrument apps on Kubernetes without changing images?**
 Install the OpenTelemetry Operator, create an `Instrumentation` resource with the Collector endpoint and sampler, and add `instrumentation.opentelemetry.io/inject-<language>: "true"` to the Pod template. The Operator injects the agent and `OTEL_*` variables.
 
-**Q11. Agent vs gateway Collector?**
+**Q13. Agent vs gateway Collector?**
 Agent: a DaemonSet, one per node, close to the apps, collects node logs and metrics and adds metadata. Gateway: a central Deployment that does tail sampling and exports to backends. Production often uses both.
 
-**Q12. Head vs tail sampling?**
+**Q14. Head vs tail sampling?**
 Head sampling decides at the start of a request in the app (e.g. keep 10%). Tail sampling decides in the Collector after the trace finishes, so it can keep all errors and slow traces and drop most normal ones.
 
-**Q13. OpenTelemetry vs Prometheus?**
+**Q15. OpenTelemetry vs Prometheus?**
 Prometheus is a metrics database with alerting. OpenTelemetry is the standard to produce and ship metrics, traces and logs. OTel can send metrics to Prometheus; they work together.
 
-**Q14. How does OpenTelemetry avoid vendor lock-in?**
+**Q16. How does OpenTelemetry avoid vendor lock-in?**
 Apps are instrumented with the open OTel standard and send OTLP to the Collector. Switching from, say, Jaeger to Datadog only changes the Collector's exporter config, not the application code.
 
-**Q15. How would you troubleshoot a slow checkout with OpenTelemetry?**
+**Q17. How would you troubleshoot a slow checkout with OpenTelemetry?**
 A metric alert shows high checkout latency; open a slow trace for the checkout endpoint and find the longest span (e.g. payment's MySQL query); then filter logs by that trace ID to see the exact error or cause.
 
 **Source:** [OpenTelemetry docs](https://opentelemetry.io/docs/) · [Collector configuration](https://opentelemetry.io/docs/collector/configuration/) · [OpenTelemetry Operator](https://opentelemetry.io/docs/platforms/kubernetes/operator/) · [Collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts) · [Jaeger](https://www.jaegertracing.io/docs/)
