@@ -11,7 +11,7 @@
 | **Part 1: Concepts** | Observability vs monitoring, the 3 signals, traces and spans (root, child, events), why OTel, the 5-part architecture, OTLP ports and paths, the Collector (receivers / processors / exporters / connectors), agent vs gateway, auto-instrumentation on Kubernetes, OTel vs Prometheus vs Grafana vs Jaeger | What OpenTelemetry is, how data flows, and how it's used in real projects |
 | **Part 2: Lab** | Jaeger as the trace backend, OTel Collector with Helm, test traces, a 3-service Python shop (gateway → order → inventory), metrics to Prometheus | Run the full pipeline on EKS: apps → Collector → Jaeger + Prometheus, and find the slow / failing service |
 
-> **Before this:** [Day 27 - Monitoring with Prometheus and Grafana](../day-27-monitoring-prometheus-grafana/README.md) (metrics). OpenTelemetry adds **traces** and a single standard for all three signals.
+> **Before this:** [Day 27 - Monitoring with Prometheus and Grafana](../day-27-monitoring-prometheus-grafana/README.md) (metrics). OpenTelemetry adds **traces** and a single standard for all three signals. · **Next:** [Day 34 - Certificates and Pod Priority](../day-34-certificates-pod-priority/README.md)
 
 ## Table of Contents
 
