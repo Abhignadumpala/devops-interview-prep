@@ -285,6 +285,131 @@ kubectl get sa
 
 **Expected:** `default` and `jenkins` ✅
 
+> `kubectl create -f sa.yml` also works. The difference: `create` fails if the object already exists, while `apply` creates it or updates it, so `apply` is safe to run again.
+
+### Give the jenkins ServiceAccount permissions: Role + RoleBinding
+
+The ServiceAccount is only an **identity**. Right now `jenkins` can do nothing. We give it permission to **create, get and list Pods in prod**.
+
+**Step 9: Check: can jenkins list Pods yet?**
+
+```bash
+kubectl auth can-i list pods -n prod --as=system:serviceaccount:prod:jenkins
+```
+
+**Expected:** `no`
+
+**Step 10: Generate the Role YAML**
+
+```bash
+kubectl create role jenkinsrole --resource=pods --verb=create,get,list --namespace=prod --dry-run=client -o yaml > jenkinsrole.yml
+```
+
+**What it does:** writes a Role named `jenkinsrole` that allows `create`, `get`, `list` on `pods` in `prod`.
+
+**Step 11: Look at it**
+
+```bash
+cat jenkinsrole.yml
+```
+
+**Expected:**
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: null
+  name: jenkinsrole
+  namespace: prod
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - get
+  - list
+```
+
+**Step 12: Create the Role**
+
+```bash
+kubectl create -f jenkinsrole.yml
+```
+
+**Expected:** `role.rbac.authorization.k8s.io/jenkinsrole created`
+
+**Step 13: Generate the RoleBinding YAML** (attaches the Role to the jenkins ServiceAccount)
+
+```bash
+kubectl create rolebinding jenkinsrolebinding --role=jenkinsrole --serviceaccount=prod:jenkins --namespace=prod --dry-run=client -o yaml > jenkinsrolebinding.yml
+```
+
+**What it does:** `--role=jenkinsrole` is **what**, `--serviceaccount=prod:jenkins` is **who** (format `namespace:name`).
+
+**Step 14: Create the RoleBinding**
+
+```bash
+kubectl create -f jenkinsrolebinding.yml -n prod
+```
+
+**Expected:** `rolebinding.rbac.authorization.k8s.io/jenkinsrolebinding created`
+
+**Step 15: Check again**
+
+```bash
+kubectl auth can-i list pods -n prod --as=system:serviceaccount:prod:jenkins
+```
+
+**Expected:** `yes` ✅
+
+**Step 16: Can it delete Pods?**
+
+```bash
+kubectl auth can-i delete pods -n prod --as=system:serviceaccount:prod:jenkins
+```
+
+**Expected:** `no` ✅. Only create, get, list were given.
+
+```
+ ServiceAccount jenkins  ◄── RoleBinding jenkinsrolebinding ──►  Role jenkinsrole
+ (who)                                                          (create/get/list pods in prod)
+```
+
+### Real time: the ServiceAccount needs a token
+
+**Note:** to work in real time, a ServiceAccount needs a **token** to talk to the Kubernetes cluster. The token is like the password of the ID card: whoever sends it is treated as `jenkins`.
+
+| Where Jenkins runs | How it gets the token |
+|---|---|
+| **Inside the cluster** (Jenkins agent Pod with `serviceAccountName: jenkins`) | **Automatic.** Kubernetes mounts a short-lived token into the Pod. Nothing to do |
+| **Outside the cluster** (Jenkins on an EC2 server) | We create a token and put it in Jenkins credentials / its kubeconfig |
+
+**Step 17: Create a short-lived token (outside-cluster use)**
+
+```bash
+kubectl create token jenkins -n prod --duration=1h
+```
+
+**Expected:** a long `eyJ...` string, valid for 1 hour. Jenkins sends it as `Authorization: Bearer <token>`.
+
+**Long-lived token (only if a tool really needs one):** a Secret of type `kubernetes.io/service-account-token`. Kubernetes fills in the token, and it **never expires** until the Secret is deleted.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jenkins-token
+  namespace: prod
+  annotations:
+    kubernetes.io/service-account.name: jenkins
+type: kubernetes.io/service-account-token
+```
+
+> ⚠️ A never-expiring token is risky if it leaks. Prefer a Pod inside the cluster (automatic token) or short-lived tokens. On EKS, Jenkins outside the cluster usually logs in with an **IAM role + EKS access entry** instead of a ServiceAccount token.
+
 | Way | Command | When |
 |---|---|---|
 | **Imperative** (direct) | `kubectl create sa jenkins -n prod` | Quick tests, CKA/CKAD exam |
