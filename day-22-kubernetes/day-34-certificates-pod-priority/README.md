@@ -1,8 +1,8 @@
-# Day 34 - Kubernetes Certificates (PKI) and Pod Priority
+# Day 34 - Kubernetes Certificates (PKI), Pod Priority and Static Pods
 
 [← Kubernetes notes](../README.md)
 
-> **In short:** Kubernetes components (API server, etcd, kubelet, scheduler, controller manager, kube-proxy) talk to each other over the network, so every connection uses **TLS certificates**: to **encrypt** the traffic and to **prove who is talking** (certificate-based authentication). All these certificates are signed by the cluster's **Certificate Authority (CA)**; this whole setup is the **Kubernetes PKI**. **Pod priority** decides **which Pods matter more**: when the cluster is full, the scheduler can **preempt (evict) low-priority Pods** to make room for high-priority ones, using a **PriorityClass**.
+> **In short:** Kubernetes components (API server, etcd, kubelet, scheduler, controller manager, kube-proxy) talk to each other over the network, so every connection uses **TLS certificates**: to **encrypt** the traffic and to **prove who is talking** (certificate-based authentication). All these certificates are signed by the cluster's **Certificate Authority (CA)**; this whole setup is the **Kubernetes PKI**. **Pod priority** decides **which Pods matter more**: when the cluster is full, the scheduler can **preempt (evict) low-priority Pods** to make room for high-priority ones, using a **PriorityClass**. A **static Pod** is a Pod the **kubelet runs directly from a YAML file on the node, without the API server**; that's how kubeadm starts the control plane itself.
 
 ## About this topic
 
@@ -10,7 +10,8 @@
 |---|---|---|
 | **Part 1: Certificates (PKI)** | PKI words, why components need certificates, server vs client certificates, the 3 CAs and `/etc/kubernetes/pki`, CN/O = user/group, certificate expiry and renewal, the CSR API, kubeconfig, self-managed vs EKS | How Kubernetes components trust each other and how users get a certificate |
 | **Part 2: Pod Priority** | PriorityClass, preemption, built-in system classes, `preemptionPolicy: Never`, priority vs QoS, real-time tiers | Make sure critical apps always get scheduled |
-| **Part 3: Lab** | Read the cluster CA and API server certificate, create a user with a client certificate (CSR API) + RBAC, PriorityClasses and preemption on EKS | Do both topics yourself on EKS |
+| **Part 3: Static Pods** | What a static Pod is, why the control plane (API server, etcd, scheduler, controller manager) runs as static Pods, `/etc/kubernetes/manifests`, mirror Pods, static Pod vs DaemonSet | How Pods run without the API server |
+| **Part 4: Lab** | Read the cluster CA and API server certificate, create a user with a client certificate (CSR API) + RBAC, PriorityClasses and preemption, a static Pod on a worker node | Do all three topics yourself on EKS |
 
 > **Before this:** [Day 30 - RBAC](../day-30-rbac/README.md) (certificates give the **user/group**, RBAC gives the **permissions**) · [Day 32 - API server](../day-32-api-server-cluster-security-supply-chain/README.md) (authentication is step 1 of every request)
 
@@ -35,23 +36,30 @@
 13. [Built-in classes and preemptionPolicy](#13-built-in-classes-and-preemptionpolicy)
 14. [Priority vs QoS, and real-time tiers](#14-priority-vs-qos-and-real-time-tiers)
 
-**Part 3: Lab**
+**Part 3: Static Pods**
 
-15. [Lab setup](#15-lab-setup)
-16. [Lab A: Look at the cluster's certificates](#16-lab-a-look-at-the-clusters-certificates)
-17. [Lab B: Create a user with a client certificate](#17-lab-b-create-a-user-with-a-client-certificate)
-18. [Lab C: See the priority of system Pods](#18-lab-c-see-the-priority-of-system-pods)
-19. [Lab D: PriorityClasses and preemption](#19-lab-d-priorityclasses-and-preemption)
-20. [Lab E: preemptionPolicy Never](#20-lab-e-preemptionpolicy-never)
-21. [Lab F (interview task): PriorityClass for a Deployment, Pods run without eviction](#21-lab-f-interview-task-priorityclass-for-a-deployment-pods-run-without-eviction)
-22. [Clean up](#22-clean-up)
+15. [What is a static Pod?](#15-what-is-a-static-pod)
+16. [Why the control plane runs as static Pods](#16-why-the-control-plane-runs-as-static-pods)
+17. [How static Pods work, and their limits](#17-how-static-pods-work-and-their-limits)
+
+**Part 4: Lab**
+
+18. [Lab setup](#18-lab-setup)
+19. [Lab A: Look at the cluster's certificates](#19-lab-a-look-at-the-clusters-certificates)
+20. [Lab B: Create a user with a client certificate](#20-lab-b-create-a-user-with-a-client-certificate)
+21. [Lab C: See the priority of system Pods](#21-lab-c-see-the-priority-of-system-pods)
+22. [Lab D: PriorityClasses and preemption](#22-lab-d-priorityclasses-and-preemption)
+23. [Lab E: preemptionPolicy Never](#23-lab-e-preemptionpolicy-never)
+24. [Lab F (interview task): PriorityClass for a Deployment, Pods run without eviction](#24-lab-f-interview-task-priorityclass-for-a-deployment-pods-run-without-eviction)
+25. [Lab G: Create a static Pod on an EKS worker node](#25-lab-g-create-a-static-pod-on-an-eks-worker-node)
+26. [Clean up](#26-clean-up)
 
 **Wrap-up**
 
-23. [Troubleshooting](#23-troubleshooting)
-24. [What I learned](#24-what-i-learned)
-25. [Commands](#25-commands)
-26. [Interview Questions](#26-interview-questions)
+27. [Troubleshooting](#27-troubleshooting)
+28. [What I learned](#28-what-i-learned)
+29. [Commands](#29-commands)
+30. [Interview Questions](#30-interview-questions)
 
 ---
 
@@ -214,7 +222,7 @@ sudo kubeadm certs check-expiration
 sudo kubeadm certs renew all
 ```
 
-Then restart the control-plane static Pods (API server, controller manager, scheduler, etcd) so they load the new files, and copy the new `admin.conf` to `~/.kube/config`.
+Then restart the control-plane static Pods ([section 16](#16-why-the-control-plane-runs-as-static-pods)) (API server, controller manager, scheduler, etcd) so they load the new files, and copy the new `admin.conf` to `~/.kube/config`.
 
 **In simple words:**
 - All the certificates **live in the PKI** (Public Key Infrastructure): on a kubeadm cluster, the folder `/etc/kubernetes/pki`.
@@ -482,9 +490,147 @@ description: "Important batch/ML jobs: go first in line, but don't kill running 
 
 ---
 
-# Part 3: Lab
+# Part 3: Static Pods
 
-## 15. Lab setup
+## 15. What is a static Pod?
+
+**Definition:** a **static Pod** is a Pod that is **managed directly by the kubelet on one node**, **not by the API server**. You put a Pod YAML file in a folder on the node (usually `/etc/kubernetes/manifests`), and the **kubelet creates and runs it**.
+
+**In simple words:**
+- Whenever you want to **create a Pod without the kube-apiserver**, you take the help of the **kubelet**.
+- The kubelet watches a folder; any Pod YAML in that folder is started, kept running and restarted by the kubelet itself.
+- No API server, no scheduler, no controller is needed.
+
+```
+ Normal Pod                                         Static Pod
+ ──────────                                         ──────────
+ kubectl apply ─► API server ─► etcd                 YAML file in /etc/kubernetes/manifests
+                      │                                        │
+                 scheduler picks a node                        │ kubelet watches this folder
+                      │                                        ▼
+                 kubelet on that node runs it        kubelet on THIS node runs it
+                                                               │
+                                                     (if an API server exists, the kubelet also
+                                                      creates a read-only "mirror Pod" there,
+                                                      so kubectl can SEE it)
+```
+
+| | **Normal Pod** | **Static Pod** |
+|---|---|---|
+| Created by | API server (kubectl, Deployment…) | **kubelet**, from a file on the node |
+| Needs API server? | ✅ Yes | ❌ **No** |
+| Scheduler decides the node? | ✅ Yes | ❌ No: it runs on the node where the file is |
+| Stored in etcd? | ✅ Yes | Only the **mirror Pod** (a read-only copy) |
+| Delete with `kubectl delete pod` | ✅ Deleted | ❌ **Comes back**: delete the **file** instead |
+| Edit | `kubectl edit` / `apply` | Edit the **file**; kubelet recreates the Pod |
+| Name in kubectl | `web-7d9f…` | `<pod-name>-<node-name>` (e.g. `kube-apiserver-controlplane`) |
+
+---
+
+## 16. Why the control plane runs as static Pods
+
+**The chicken-and-egg problem:** the **API server** is what creates Pods. So **who creates the API server Pod?** It can't create itself.
+
+**Answer:** the **kubelet**, from static Pod files. On a **kubeadm** cluster, the control-plane components are **all static Pods**:
+
+```
+ Control-plane node
+ /etc/kubernetes/manifests/
+ ├── etcd.yaml                      ──► etcd-<node>
+ ├── kube-apiserver.yaml            ──► kube-apiserver-<node>
+ ├── kube-controller-manager.yaml   ──► kube-controller-manager-<node>
+ └── kube-scheduler.yaml            ──► kube-scheduler-<node>
+
+ kubelet (systemd service, NOT a Pod) ──watches──► this folder ──► starts the 4 Pods
+                                                                   │
+                                          API server is now up ◄───┘ → the rest of the cluster can start
+```
+
+```bash
+kubectl get pods -n kube-system
+```
+
+On kubeadm you see `etcd-controlplane`, `kube-apiserver-controlplane`, `kube-controller-manager-controlplane`, `kube-scheduler-controlplane`: the **node name at the end** = static Pods.
+
+| Component | How it runs on kubeadm |
+|---|---|
+| etcd, kube-apiserver, kube-controller-manager, kube-scheduler | **Static Pods** (`/etc/kubernetes/manifests`) |
+| **kubelet** | **systemd service** on every node (it is the one that runs static Pods, so it can't be one) |
+| kube-proxy | **DaemonSet** |
+| CoreDNS | **Deployment** |
+| **EKS** | AWS runs the control plane; you **don't see** these Pods or files at all |
+
+> **Small correction:** not *all* Kubernetes components are static Pods. The **control-plane** ones (API server, etcd, scheduler, controller manager) are static Pods on kubeadm; the kubelet is a systemd service, kube-proxy is a DaemonSet and CoreDNS is a Deployment.
+
+**Why this matters for an admin (CKA):**
+- To **change an API server flag** (e.g. enable an admission plugin), edit `/etc/kubernetes/manifests/kube-apiserver.yaml`; the kubelet sees the change and **restarts the API server by itself**.
+- After `kubeadm certs renew all` (section 6), the control-plane static Pods must restart to load the new certificates.
+- If the API server is down, `kubectl` doesn't work. Check on the node: `sudo crictl ps`, `sudo journalctl -u kubelet`, and the manifest file.
+
+---
+
+## 17. How static Pods work, and their limits
+
+**Where is the folder set?** In the kubelet config (`staticPodPath`):
+
+```bash
+ps -ef | grep kubelet
+```
+
+Look for `--config=<file>`, then:
+
+```bash
+sudo grep -i staticPodPath /var/lib/kubelet/config.yaml
+```
+
+**Expected (kubeadm):** `staticPodPath: /etc/kubernetes/manifests`
+
+**A static Pod file:**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: static-web
+  namespace: default
+spec:
+  containers:
+  - name: web
+    image: nginx:1.27
+    ports:
+    - containerPort: 80
+```
+
+Save it as `/etc/kubernetes/manifests/static-web.yaml` → within seconds the kubelet runs `static-web-<node-name>`.
+
+| Action | How |
+|---|---|
+| Create | Put the YAML file in the folder |
+| Update | Edit the file (kubelet deletes and recreates the Pod) |
+| Delete | **Remove the file** |
+| See it | `kubectl get pods` (mirror Pod) or `sudo crictl ps` on the node |
+
+**Limits of static Pods:**
+- Runs on **one node only**; no scheduling, no replicas, no rolling updates (use a DaemonSet for "one Pod per node").
+- **Can't use** ServiceAccounts, ConfigMaps, Secrets or other API objects in the spec (it must work even without an API server).
+- The mirror Pod is **read-only**: `kubectl edit` / `delete` don't really change it.
+
+**Static Pod vs DaemonSet:**
+
+| | Static Pod | DaemonSet |
+|---|---|---|
+| Managed by | kubelet (file on the node) | DaemonSet controller (API server) |
+| Works without API server | ✅ Yes | ❌ No |
+| Runs on | The nodes where you put the file | Every (matching) node automatically |
+| Use for | Control-plane components, node bootstrap | Node agents: kube-proxy, log/monitoring agents, CNI |
+
+> **Interview one-liner:** a static Pod is managed directly by the kubelet from a YAML file in its `staticPodPath` (usually `/etc/kubernetes/manifests`), without the API server or scheduler; kubeadm runs etcd, the API server, the controller manager and the scheduler as static Pods, which solves the chicken-and-egg problem of starting the control plane.
+
+---
+
+# Part 4: Lab
+
+## 18. Lab setup
 
 **Prereqs:** EKS + `kubectl` and `openssl` on the bastion ([Day 23](../day-23-eks-terraform-helm-argocd/README.md)). Run everything on the bastion.
 
@@ -506,7 +652,7 @@ kubectl create namespace priority-lab
 
 ---
 
-## 16. Lab A: Look at the cluster's certificates
+## 19. Lab A: Look at the cluster's certificates
 
 **Step 1: Save the cluster CA from your kubeconfig**
 
@@ -562,7 +708,7 @@ kubectl config view --minify -o jsonpath='{.users[0].user.exec.args}'
 
 ---
 
-## 17. Lab B: Create a user with a client certificate
+## 20. Lab B: Create a user with a client certificate
 
 We create user `dev-user` in group `dev-team`, signed by the cluster CA through the CSR API.
 
@@ -687,7 +833,7 @@ kubectl delete rolebinding dev-team-view -n cert-lab
 
 ---
 
-## 18. Lab C: See the priority of system Pods
+## 21. Lab C: See the priority of system Pods
 
 **Step 1: List the PriorityClasses**
 
@@ -723,7 +869,7 @@ kubectl delete pod plain -n priority-lab
 
 ---
 
-## 19. Lab D: PriorityClasses and preemption
+## 22. Lab D: PriorityClasses and preemption
 
 **Step 1: Create the file `priority-classes.yaml`**
 
@@ -869,7 +1015,7 @@ kubectl get pods -n priority-lab -o custom-columns=NAME:.metadata.name,CLASS:.sp
 
 ---
 
-## 20. Lab E: preemptionPolicy Never
+## 23. Lab E: preemptionPolicy Never
 
 **Step 1: Create the file `high-no-preempt.yaml`**
 
@@ -928,7 +1074,7 @@ kubectl get pod polite -n priority-lab
 
 ---
 
-## 21. Lab F (interview task): PriorityClass for a Deployment, Pods run without eviction
+## 24. Lab F (interview task): PriorityClass for a Deployment, Pods run without eviction
 
 > **Task:** "Create a PriorityClass, add it to a Deployment, and make sure the Pods are running in the cluster **without any eviction**."
 
@@ -1056,7 +1202,169 @@ kubectl get events -n priority-lab --field-selector reason=Preempted
 
 ---
 
-## 22. Clean up
+## 25. Lab G: Create a static Pod on an EKS worker node
+
+On EKS you can't see the control plane, but **worker nodes run a normal kubelet**, so we can create a static Pod there. (Lab only: real EKS nodes should be managed with DaemonSets, not hand-edited.)
+
+**Step 1: On the bastion, pick a worker node**
+
+```bash
+kubectl get nodes -o wide
+```
+
+Note one node's **NAME** (e.g. `ip-10-0-1-23.ec2.internal`) and **INTERNAL-IP**.
+
+**Step 2: Log in to that node** (SSM Session Manager, or SSH from the bastion if your node group has a key pair)
+
+```bash
+aws ssm start-session --target <instance-id>
+```
+
+**Step 3: On the node, find the kubelet config file**
+
+```bash
+ps -ef | grep [k]ubelet | tr ' ' '\n' | grep -- '--config'
+```
+
+**Expected:** `--config=/etc/kubernetes/kubelet/config.json` and (Amazon Linux 2023) `--config-dir=/etc/kubernetes/kubelet/config.json.d` ✅
+
+**Step 4: Check if a static Pod folder is set**
+
+```bash
+sudo grep -ri staticPodPath /etc/kubernetes/kubelet/
+```
+
+**Expected:** nothing on a default EKS node ✅ (EKS doesn't need static Pods, so it isn't set). We'll set it.
+
+**Step 5: Add a kubelet drop-in config that sets the folder** (AL2023 node)
+
+```bash
+sudo tee /etc/kubernetes/kubelet/config.json.d/40-static-pods.conf <<'EOF'
+{
+  "apiVersion": "kubelet.config.k8s.io/v1beta1",
+  "kind": "KubeletConfiguration",
+  "staticPodPath": "/etc/kubernetes/manifests"
+}
+EOF
+```
+
+> On an older **Amazon Linux 2** node (no `--config-dir` in Step 3), add `"staticPodPath": "/etc/kubernetes/manifests",` inside `/etc/kubernetes/kubelet/kubelet-config.json` instead.
+
+**Step 6: Create the folder**
+
+```bash
+sudo mkdir -p /etc/kubernetes/manifests
+```
+
+**Step 7: Restart the kubelet**
+
+```bash
+sudo systemctl restart kubelet
+```
+
+**Step 8: Check the kubelet is healthy**
+
+```bash
+sudo systemctl status kubelet --no-pager | head -5
+```
+
+**Expected:** `active (running)` ✅
+
+**Step 9: Write the static Pod file**
+
+```bash
+sudo tee /etc/kubernetes/manifests/static-web.yaml <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: static-web
+  namespace: default
+spec:
+  containers:
+  - name: web
+    image: nginx:1.27
+    ports:
+    - containerPort: 80
+EOF
+```
+
+**Step 10: On the node, see the container (no kubectl, no API server needed)**
+
+```bash
+sudo crictl ps --name web
+```
+
+**Expected:** a running `web` container ✅. The **kubelet** started it by itself.
+
+**Step 11: On the bastion, see the mirror Pod**
+
+```bash
+kubectl get pods -o wide | grep static-web
+```
+
+**Expected:** `static-web-ip-10-0-1-23.ec2.internal  1/1  Running` on that node ✅. The **node name is added** to the Pod name.
+
+**Step 12: See who owns it**
+
+```bash
+kubectl get pod static-web-<node-name> -o jsonpath='{.metadata.ownerReferences[0].kind}{"\n"}'
+```
+
+**Expected:** `Node` ✅ (a Deployment Pod would show `ReplicaSet`).
+
+**Step 13: Try to delete it with kubectl**
+
+```bash
+kubectl delete pod static-web-<node-name>
+```
+
+```bash
+kubectl get pods | grep static-web
+```
+
+**Expected:** it's **back** within seconds ✅. kubectl only deleted the mirror copy; the kubelet still has the file.
+
+**Step 14: On the node, update it by editing the file** (change the image)
+
+```bash
+sudo sed -i 's/nginx:1.27/nginx:1.26/' /etc/kubernetes/manifests/static-web.yaml
+```
+
+**Step 15: On the bastion, check the image**
+
+```bash
+kubectl get pod static-web-<node-name> -o jsonpath='{.spec.containers[0].image}{"\n"}'
+```
+
+**Expected:** `nginx:1.26` ✅ (the kubelet recreated it from the new file)
+
+**Step 16: On the node, delete it the right way: remove the file**
+
+```bash
+sudo rm /etc/kubernetes/manifests/static-web.yaml
+```
+
+**Step 17: On the bastion, check it's gone**
+
+```bash
+kubectl get pods | grep static-web
+```
+
+**Expected:** no output ✅
+
+**Step 18: On the node, put the kubelet back to normal**
+
+```bash
+sudo rm /etc/kubernetes/kubelet/config.json.d/40-static-pods.conf
+```
+
+```bash
+sudo systemctl restart kubelet
+```
+
+---
+
+## 26. Clean up
 
 ```bash
 kubectl delete namespace priority-lab cert-lab
@@ -1086,7 +1394,7 @@ rm -rf ~/day34
 
 # Wrap-up
 
-## 23. Troubleshooting
+## 27. Troubleshooting
 
 | Problem | Cause | Fix |
 |---|---|---|
@@ -1097,12 +1405,15 @@ rm -rf ~/day34
 | CSR `Approved` but no certificate / `Failed` | Signer not supported, or wrong `usages` | Use `kubernetes.io/kube-apiserver-client` with `client auth` |
 | New cert user gets `Forbidden` | Authentication OK, no RBAC | RoleBinding for the user (CN) or group (O) |
 | Pod `Pending`: `no preemption victims found` | Only equal/higher-priority Pods there, or PDBs block it, or the Pod is too big for any node | Lower other priorities, check requests, add nodes |
+| Static Pod not created | `staticPodPath` not set, YAML error, or kubelet not restarted | Check the kubelet config, `sudo journalctl -u kubelet -n 50`, fix the file |
+| Static Pod comes back after `kubectl delete` | Normal: kubectl only deletes the mirror Pod | Remove the file from the manifests folder |
+| API server down after editing `kube-apiserver.yaml` | Typo in the manifest, kubelet can't start it | On the node: `sudo crictl ps -a`, `sudo crictl logs <id>`, fix the YAML (keep a backup copy **outside** the folder) |
 | `no PriorityClass with name X was found` | Class not created or name typo | `kubectl get priorityclass` |
 | Important Pods keep getting evicted | They have low/no priority while others are higher | Give them a higher PriorityClass; set proper requests |
 
 ---
 
-## 24. What I learned
+## 28. What I learned
 
 **Certificates**
 - Components **talk to each other with certificates**: TLS for **encryption**, client certificates for **authentication**.
@@ -1113,6 +1424,11 @@ rm -rf ~/day34
 - **CSR API** signs user certificates without sharing `ca.key`.
 - **EKS:** AWS manages control-plane certs; people use **IAM**.
 
+**Static Pods**
+- A **static Pod** is run by the **kubelet** from a file in `staticPodPath` (`/etc/kubernetes/manifests`), **without the API server or scheduler**.
+- kubeadm runs **etcd, API server, controller manager, scheduler** as static Pods (chicken-and-egg). kubelet = systemd, kube-proxy = DaemonSet, CoreDNS = Deployment.
+- kubectl only sees a read-only **mirror Pod** (`<name>-<node>`); delete or change it by editing the **file**.
+
 **Pod Priority**
 - **PriorityClass** gives a number; Pods use `priorityClassName`. Higher = scheduled first.
 - **Preemption:** when full, lower-priority Pods are evicted for higher ones. `preemptionPolicy: Never` = wait, don't evict.
@@ -1120,7 +1436,7 @@ rm -rf ~/day34
 - Default priority is **0**. Priority helps when nodes are **limited** or **can't be added in time** (HPA scale-up, autoscaler max, slow new nodes).
 - "Pods must not be evicted" = high PriorityClass + requests = limits (Guaranteed) + PDB + 2+ replicas.
 
-## 25. Commands
+## 29. Commands
 
 | Command | What it does |
 |---|---|
@@ -1135,11 +1451,15 @@ rm -rf ~/day34
 | `kubectl get csr NAME -o jsonpath='{.status.certificate}' \| base64 -d` | Download the signed cert |
 | `kubectl config set-credentials USER --client-certificate=… --client-key=… --embed-certs=true` | Add a cert user to kubeconfig |
 | `kubectl get priorityclass` | List PriorityClasses |
+| `ls /etc/kubernetes/manifests` | See static Pod files (kubeadm control plane) |
+| `sudo grep -i staticPodPath /var/lib/kubelet/config.yaml` | Find the static Pod folder |
+| `sudo crictl ps` | See containers on a node without the API server |
+| `sudo journalctl -u kubelet` | kubelet logs (static Pod problems) |
 | `kubectl create priorityclass NAME --value=1000000 --description="…"` | Create a PriorityClass imperatively |
 | `kubectl get pods -o custom-columns=NAME:.metadata.name,PRIORITY:.spec.priority` | See Pod priorities |
 | `kubectl get events --field-selector reason=Preempted` | See preemptions |
 
-## 26. Interview Questions
+## 30. Interview Questions
 
 ### ⭐ Very Important
 
@@ -1161,45 +1481,60 @@ When the cluster has limited nodes or can't add nodes in time: the autoscaler is
 **Q6. Create a PriorityClass, add it to a Deployment, and make sure its Pods run without eviction.**
 Create a PriorityClass with a high value (e.g. `kubectl create priorityclass critical-app --value=1000000`), set `priorityClassName: critical-app` in the Deployment's Pod template, set requests equal to limits so the Pods are Guaranteed QoS, add a PodDisruptionBudget, and run 2+ replicas. Verify with `kubectl get pods -o custom-columns=...PRIORITY:.spec.priority,QOS:.status.qosClass`. Only Pods with a higher priority could preempt them.
 
+**Q7. What is a static Pod?**
+A Pod managed directly by the kubelet on one node from a YAML file in its `staticPodPath` (usually `/etc/kubernetes/manifests`), without the API server or scheduler. We use it when we need a Pod to run without the API server. The API server shows a read-only mirror Pod named `<pod>-<node>`.
+
+**Q8. Which Kubernetes components run as static Pods, and why?**
+On a kubeadm cluster, etcd, kube-apiserver, kube-controller-manager and kube-scheduler run as static Pods from `/etc/kubernetes/manifests`. The API server can't create its own Pod, so the kubelet starts the control plane from files. The kubelet itself is a systemd service; kube-proxy is a DaemonSet and CoreDNS a Deployment. On EKS, AWS runs the control plane.
+
 ### Other Questions
 
-**Q7. How does Kubernetes know the user from a client certificate?**
+**Q9. How does Kubernetes know the user from a client certificate?**
 The certificate's CN becomes the username and the O fields become groups. Then RBAC checks RoleBindings for that user or group.
 
-**Q8. What are the CAs in a kubeadm cluster?**
+**Q10. What are the CAs in a kubeadm cluster?**
 The kubernetes CA (API server, kubelets, components, users), the etcd CA (etcd and its clients) and the front-proxy CA (API aggregation). Files live in `/etc/kubernetes/pki`.
 
-**Q9. What happens when control-plane certificates expire, and how do you fix it?**
+**Q11. What happens when control-plane certificates expire, and how do you fix it?**
 kubectl and components fail with `x509: certificate has expired`, and the cluster stops working. On kubeadm, run `kubeadm certs check-expiration`, `kubeadm certs renew all`, restart the control-plane Pods and update `admin.conf`. Upgrading with kubeadm also renews them.
 
-**Q10. How do you create a new user with a certificate?**
+**Q12. How do you create a new user with a certificate?**
 Create a private key and a CSR with `CN=<user>` and `O=<group>`, submit a CertificateSigningRequest with signer `kubernetes.io/kube-apiserver-client`, approve it, download the certificate, add it to kubeconfig, and create a RoleBinding.
 
-**Q11. Can you revoke a Kubernetes client certificate?**
+**Q13. Can you revoke a Kubernetes client certificate?**
 No, Kubernetes has no certificate revocation. It stays valid until it expires. You remove the user's RBAC bindings, use short expirations, or prefer OIDC/IAM for people.
 
-**Q12. Why must `ca.key` and `system:masters` be protected?**
+**Q14. Why must `ca.key` and `system:masters` be protected?**
 With `ca.key` anyone can sign a certificate for any user, including the `system:masters` group, which bypasses RBAC and is full cluster-admin.
 
-**Q13. How are certificates handled on EKS?**
+**Q15. How are certificates handled on EKS?**
 AWS creates, stores and rotates the control-plane certificates. The cluster CA is in kubeconfig as `certificate-authority-data`. Users authenticate with IAM tokens (`aws eks get-token`) and access entries, not client certificates.
 
-**Q14. What is in kubeconfig related to certificates?**
+**Q16. What is in kubeconfig related to certificates?**
 `certificate-authority-data` to trust the API server, and for certificate users `client-certificate-data` and `client-key-data` to prove who they are.
 
-**Q15. What are system-node-critical and system-cluster-critical?**
+**Q17. What are system-node-critical and system-cluster-critical?**
 Built-in PriorityClasses with values above 2 billion for critical system Pods (kube-proxy, CNI, coredns). User classes max out at 1 billion, so apps can't preempt them.
 
-**Q16. What does `preemptionPolicy: Never` do?**
+**Q18. What does `preemptionPolicy: Never` do?**
 The Pod moves ahead of lower-priority Pods in the scheduling queue but never evicts running Pods; it waits until room is free.
 
-**Q17. Priority vs QoS class?**
+**Q19. Priority vs QoS class?**
 Priority (PriorityClass) is used by the scheduler for order and preemption. QoS (from requests/limits) is used by the kubelet when a node is under memory pressure. Node eviction considers usage above requests first, then priority.
 
-**Q18. What does globalDefault do?**
+**Q20. What does globalDefault do?**
 It makes that PriorityClass the default for Pods without a `priorityClassName`. Only one class can be the global default; without one, those Pods get priority 0.
 
-**Q19. How do you stop teams from giving every Pod the highest priority?**
+**Q21. How do you stop teams from giving every Pod the highest priority?**
 Use a ResourceQuota with a `scopeSelector` on PriorityClass to limit how many high-priority Pods a namespace can run, or an admission policy (Kyverno/Gatekeeper) to allow high classes only in certain namespaces.
+
+**Q22. How do you delete or update a static Pod?**
+Delete or edit the YAML file in the static Pod folder on that node. `kubectl delete pod` only removes the mirror Pod, and the kubelet recreates it.
+
+**Q23. Static Pod vs DaemonSet?**
+A static Pod is managed by the kubelet from a local file, works without the API server and runs only where the file is. A DaemonSet is managed by the API server and runs one Pod on every matching node automatically. Control-plane components use static Pods; node agents use DaemonSets.
+
+**Q24. How do you change a kube-apiserver flag on a kubeadm cluster?**
+Edit `/etc/kubernetes/manifests/kube-apiserver.yaml` on the control-plane node. The kubelet notices the change and restarts the API server static Pod. Keep a backup outside the manifests folder, since a typo stops the API server.
 
 **Source:** [PKI certificates and requirements](https://kubernetes.io/docs/setup/best-practices/certificates/) · [Certificate management with kubeadm](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/) · [Certificates and CSRs](https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/) · [Pod priority and preemption](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/) · [EKS certificate signing](https://docs.aws.amazon.com/eks/latest/userguide/cert-signing.html)
