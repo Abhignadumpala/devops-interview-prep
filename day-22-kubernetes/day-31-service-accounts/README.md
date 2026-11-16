@@ -208,6 +208,92 @@ spec:
 | One permission leaks to all Pods | Permissions only for that app |
 | Audit says "default" | Audit says "catalogue-sa" |
 
+### Create a ServiceAccount in a namespace: step by step
+
+Example: a `jenkins` ServiceAccount in the `prod` namespace.
+
+**Step 1: Create the namespace**
+
+```bash
+kubectl create ns prod
+```
+
+**Expected:** `namespace/prod created`
+
+**Step 2: Switch your current namespace to prod** (so you don't need `-n prod` every time)
+
+```bash
+kubectl config set-context --current --namespace=prod
+```
+
+**Expected:** `Context "<your-context>" modified.`
+
+**Step 3: See the default ServiceAccount**
+
+```bash
+kubectl get sa
+```
+
+**Expected:** only `default`. Kubernetes created it with the namespace.
+
+**Step 4: Dry run: test the command without creating anything**
+
+```bash
+kubectl create sa jenkins -n prod --dry-run=client
+```
+
+**Expected:** `serviceaccount/jenkins created (dry run)`. Nothing is created; `--dry-run=client` only checks the command on your machine.
+
+**Step 5: Generate the YAML into a file**
+
+```bash
+kubectl create sa jenkins -n prod --dry-run=client -o yaml > sa.yml
+```
+
+**What it does:** `-o yaml` prints the object as YAML, `> sa.yml` saves it. Still nothing created in the cluster.
+
+**Step 6: Look at the file**
+
+```bash
+cat sa.yml
+```
+
+**Expected:**
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  creationTimestamp: null
+  name: jenkins
+  namespace: prod
+```
+
+**Step 7: Create it from the file**
+
+```bash
+kubectl apply -f sa.yml
+```
+
+**Expected:** `serviceaccount/jenkins created`
+
+**Step 8: Check**
+
+```bash
+kubectl get sa
+```
+
+**Expected:** `default` and `jenkins` ✅
+
+| Way | Command | When |
+|---|---|---|
+| **Imperative** (direct) | `kubectl create sa jenkins -n prod` | Quick tests, CKA/CKAD exam |
+| **Declarative** (YAML file) | `--dry-run=client -o yaml > sa.yml`, then `kubectl apply -f sa.yml` | Real projects: the file goes to Git, Argo CD / Helm applies it |
+
+> **Exam tip:** `--dry-run=client -o yaml > file.yml` works for almost every `kubectl create` (deployment, role, rolebinding…). It's the fastest way to get a correct YAML to edit.
+
+> Switch back to the default namespace later with `kubectl config set-context --current --namespace=default`.
+
 > ⚠️ `serviceAccountName` **can't be changed on a running Pod**. Change it in the Deployment; the Deployment rolls out new Pods.
 
 ---
@@ -327,6 +413,8 @@ ServiceAccounts are common exam tasks. Practise these until they're fast:
 | Task | Command / field |
 |---|---|
 | Create a ServiceAccount | `kubectl create sa NAME -n NS` |
+| Get its YAML without creating it | `kubectl create sa NAME -n NS --dry-run=client -o yaml > sa.yml` |
+| Switch current namespace | `kubectl config set-context --current --namespace=NS` |
 | Run a Pod with it | `serviceAccountName: NAME` in the Pod spec |
 | Change a Deployment's SA | `kubectl set serviceaccount deployment/NAME SA -n NS` |
 | Disable the token | `automountServiceAccountToken: false` |
