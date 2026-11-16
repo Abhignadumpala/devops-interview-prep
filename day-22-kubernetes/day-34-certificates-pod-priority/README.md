@@ -43,14 +43,15 @@
 18. [Lab C: See the priority of system Pods](#18-lab-c-see-the-priority-of-system-pods)
 19. [Lab D: PriorityClasses and preemption](#19-lab-d-priorityclasses-and-preemption)
 20. [Lab E: preemptionPolicy Never](#20-lab-e-preemptionpolicy-never)
-21. [Clean up](#21-clean-up)
+21. [Lab F (interview task): PriorityClass for a Deployment, Pods run without eviction](#21-lab-f-interview-task-priorityclass-for-a-deployment-pods-run-without-eviction)
+22. [Clean up](#22-clean-up)
 
 **Wrap-up**
 
-22. [Troubleshooting](#22-troubleshooting)
-23. [What I learned](#23-what-i-learned)
-24. [Commands](#24-commands)
-25. [Interview Questions](#25-interview-questions)
+23. [Troubleshooting](#23-troubleshooting)
+24. [What I learned](#24-what-i-learned)
+25. [Commands](#25-commands)
+26. [Interview Questions](#26-interview-questions)
 
 ---
 
@@ -215,6 +216,12 @@ sudo kubeadm certs renew all
 
 Then restart the control-plane static Pods (API server, controller manager, scheduler, etcd) so they load the new files, and copy the new `admin.conf` to `~/.kube/config`.
 
+**In simple words:**
+- All the certificates **live in the PKI** (Public Key Infrastructure): on a kubeadm cluster, the folder `/etc/kubernetes/pki`.
+- To **check the expiry date** of the certificates: `kubeadm certs check-expiration`.
+- To **renew** them: `kubeadm certs renew all`.
+- On an **EKS cluster**, the control-plane certificates are **renewed and managed automatically by AWS**. You don't run these commands.
+
 > **Good to know:** `kubeadm upgrade apply` **renews all certificates automatically**. Clusters that are upgraded at least once a year rarely hit expiry.
 
 **Check any certificate with openssl:**
@@ -316,7 +323,31 @@ It matters when the cluster is **full**:
 | **Preemption** | If a high-priority Pod can't fit, the scheduler **evicts lower-priority Pods** on a node to make room |
 | **Node-pressure eviction** | When a node runs out of memory, the kubelet evicts lower-priority Pods first (after QoS checks) |
 
+**From the Kubernetes docs:** "Pods can have priority. Priority indicates the importance of a Pod relative to other Pods. If a Pod cannot be scheduled, the scheduler tries to preempt (evict) lower priority Pods to make scheduling of the pending Pod possible."
+
 **Why:** in a shared cluster, a big batch job or a dev app should **never** stop the **payment service** from running.
+
+**When is Pod priority helpful?**
+
+| Situation | Why priority helps |
+|---|---|
+| The cluster has **limited nodes** and **can't add new ones** (autoscaler at its max size, account limits, no capacity for that instance type) | Important Pods still get a place: low-priority Pods are evicted for them |
+| **HPA scales up** an important app during a traffic spike but the nodes are full | The new replicas of the important app go first |
+| A **new node takes minutes** to come up (Cluster Autoscaler / Karpenter) | Important Pods don't wait; they take room from low-priority Pods **now**, the low ones wait for the new node |
+| Node runs out of memory | Low-priority Pods are evicted first, so important Pods **survive** |
+
+**In simple words:**
+- By default every Pod has **priority 0** (no `priorityClassName`, no global default).
+- A **PriorityClass prioritises Pods**: important Pods get scheduled first and **survive** when the cluster is short on room.
+- Nowadays the **autoscaler** can create new nodes and the new Pods go there, so preemption happens less often. But priority is still needed: a new node takes **minutes**, the autoscaler has a **max size**, and capacity or cost limits can stop it. Priority decides **who waits** in that time.
+
+```
+ Cluster full + HPA adds payment replicas
+        │
+        ├─ payment (high priority)  ──► evicts a batch Pod, runs NOW
+        │
+        └─ batch (low priority)     ──► Pending ──► autoscaler adds a node (2-3 min) ──► runs again
+```
 
 ---
 
@@ -355,6 +386,16 @@ spec:
 | `description` | Free text for humans |
 
 > PriorityClass is **not namespaced**. The Pod's `spec.priority` number is filled in by the **Priority admission controller** from the class name when the Pod is created; changing the class later doesn't change running Pods.
+
+**Notes about PriorityClass and existing Pods** (from the docs):
+
+| Change | Effect |
+|---|---|
+| Cluster upgraded from a version without Pod priority | Existing Pods have priority **0** |
+| Add a PriorityClass with `globalDefault: true` | Does **not** change existing Pods; only Pods **created after** get it |
+| Delete a PriorityClass | Existing Pods using it **stay unchanged**, but **no new Pods** can use that name (Deployment can't create replacements → fix before deleting) |
+
+> ⚠️ **Warning (from the docs):** in a cluster where not all users are trusted, a **malicious user could create Pods with the highest priority**, so other Pods get **evicted or never scheduled**. An admin uses a **ResourceQuota** to stop users from creating high-priority Pods (see [section 14](#14-priority-vs-qos-and-real-time-tiers)).
 
 ---
 
@@ -887,14 +928,142 @@ kubectl get pod polite -n priority-lab
 
 ---
 
-## 21. Clean up
+## 21. Lab F (interview task): PriorityClass for a Deployment, Pods run without eviction
+
+> **Task:** "Create a PriorityClass, add it to a Deployment, and make sure the Pods are running in the cluster **without any eviction**."
+
+**The answer in 4 parts:**
+
+| Part | Why |
+|---|---|
+| ① A PriorityClass with a **high value** and `PreemptLowerPriority` | The Pods get scheduled first, and **can't be preempted** by normal Pods (only higher priority can evict) |
+| ② `priorityClassName` in the Deployment's Pod template | Gives every replica that priority |
+| ③ **requests = limits** for CPU and memory (Guaranteed QoS) | The kubelet evicts Pods that use more than they requested first, so these are the **last** to go on node pressure |
+| ④ A **PodDisruptionBudget** | Stops **voluntary** evictions (node drain, upgrades) from taking all replicas at once |
+
+**Step 1: Create the PriorityClass (imperative way)**
+
+```bash
+kubectl create priorityclass critical-app --value=1000000 --description="Critical apps that must not be evicted" --preemption-policy=PreemptLowerPriority
+```
+
+**Step 2: Check it**
+
+```bash
+kubectl get priorityclass critical-app
+```
+
+**Expected:** `critical-app  1000000  false` ✅
+
+The same as YAML (declarative way):
+
+```yaml
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: critical-app
+value: 1000000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Critical apps that must not be evicted"
+```
+
+**Step 3: Create the file `critical-app.yaml`**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: critical-app
+  namespace: priority-lab
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: critical-app
+  template:
+    metadata:
+      labels:
+        app: critical-app
+    spec:
+      priorityClassName: critical-app      # ② the PriorityClass
+      containers:
+      - name: app
+        image: nginx:1.27
+        resources:                         # ③ requests = limits → Guaranteed QoS
+          requests:
+            cpu: 200m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget                  # ④ at least 1 replica always up during drains
+metadata:
+  name: critical-app-pdb
+  namespace: priority-lab
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: critical-app
+```
+
+**Step 4: Apply it**
+
+```bash
+kubectl apply -f critical-app.yaml
+```
+
+**Step 5: Check the Pods are Running**
+
+```bash
+kubectl get pods -n priority-lab -l app=critical-app
+```
+
+**Expected:** 2 × `1/1 Running` ✅
+
+**Step 6: Prove the priority and QoS**
+
+```bash
+kubectl get pods -n priority-lab -l app=critical-app -o custom-columns=NAME:.metadata.name,CLASS:.spec.priorityClassName,PRIORITY:.spec.priority,QOS:.status.qosClass
+```
+
+**Expected:** `critical-app  1000000  Guaranteed` ✅
+
+**Step 7: Try to evict them with a "high" Pod** (`high-priority` = 100000 from Lab D, lower than 1000000)
+
+```bash
+kubectl scale deployment high-app -n priority-lab --replicas=10
+```
+
+```bash
+kubectl get pods -n priority-lab -l app=critical-app
+```
+
+**Expected:** the `critical-app` Pods are **still Running, same names, 0 restarts** ✅. Extra `high-app` Pods evict `low-app` Pods or stay Pending; they **can't** evict `critical-app` because its priority is higher.
+
+**Step 8: Check there were no preemptions of critical-app**
+
+```bash
+kubectl get events -n priority-lab --field-selector reason=Preempted
+```
+
+**Expected:** only `low-app` Pods are listed as preempted, never `critical-app` ✅
+
+> **Honest note for the interview:** nothing makes a Pod **100%** eviction-proof. A node failure, or a Pod with an **even higher** priority (like `system-node-critical`), can still remove it. High priority + Guaranteed QoS + PDB + **2 or more replicas on different nodes** is the real-world answer.
+
+---
+
+## 22. Clean up
 
 ```bash
 kubectl delete namespace priority-lab cert-lab
 ```
 
 ```bash
-kubectl delete priorityclass low-priority high-priority high-no-preempt
+kubectl delete priorityclass low-priority high-priority high-no-preempt critical-app
 ```
 
 ```bash
@@ -917,7 +1086,7 @@ rm -rf ~/day34
 
 # Wrap-up
 
-## 22. Troubleshooting
+## 23. Troubleshooting
 
 | Problem | Cause | Fix |
 |---|---|---|
@@ -933,7 +1102,7 @@ rm -rf ~/day34
 
 ---
 
-## 23. What I learned
+## 24. What I learned
 
 **Certificates**
 - Components **talk to each other with certificates**: TLS for **encryption**, client certificates for **authentication**.
@@ -948,8 +1117,10 @@ rm -rf ~/day34
 - **PriorityClass** gives a number; Pods use `priorityClassName`. Higher = scheduled first.
 - **Preemption:** when full, lower-priority Pods are evicted for higher ones. `preemptionPolicy: Never` = wait, don't evict.
 - System Pods use `system-node-critical` / `system-cluster-critical`; your classes can't beat them.
+- Default priority is **0**. Priority helps when nodes are **limited** or **can't be added in time** (HPA scale-up, autoscaler max, slow new nodes).
+- "Pods must not be evicted" = high PriorityClass + requests = limits (Guaranteed) + PDB + 2+ replicas.
 
-## 24. Commands
+## 25. Commands
 
 | Command | What it does |
 |---|---|
@@ -964,10 +1135,11 @@ rm -rf ~/day34
 | `kubectl get csr NAME -o jsonpath='{.status.certificate}' \| base64 -d` | Download the signed cert |
 | `kubectl config set-credentials USER --client-certificate=… --client-key=… --embed-certs=true` | Add a cert user to kubeconfig |
 | `kubectl get priorityclass` | List PriorityClasses |
+| `kubectl create priorityclass NAME --value=1000000 --description="…"` | Create a PriorityClass imperatively |
 | `kubectl get pods -o custom-columns=NAME:.metadata.name,PRIORITY:.spec.priority` | See Pod priorities |
 | `kubectl get events --field-selector reason=Preempted` | See preemptions |
 
-## 25. Interview Questions
+## 26. Interview Questions
 
 ### ⭐ Very Important
 
@@ -983,45 +1155,51 @@ Pod priority is a number that says how important a Pod is. A PriorityClass is a 
 **Q4. What is preemption?**
 When a high-priority Pod can't be scheduled because the cluster is full, the scheduler evicts lower-priority Pods from a node to make room, then places the high-priority Pod there.
 
+**Q5. When is Pod priority useful if we already have an autoscaler?**
+When the cluster has limited nodes or can't add nodes in time: the autoscaler is at its max size, capacity or cost limits stop it, or a new node takes a few minutes while HPA is scaling up an important app. Priority makes the important Pods run now and the low-priority ones wait. The default priority is 0.
+
+**Q6. Create a PriorityClass, add it to a Deployment, and make sure its Pods run without eviction.**
+Create a PriorityClass with a high value (e.g. `kubectl create priorityclass critical-app --value=1000000`), set `priorityClassName: critical-app` in the Deployment's Pod template, set requests equal to limits so the Pods are Guaranteed QoS, add a PodDisruptionBudget, and run 2+ replicas. Verify with `kubectl get pods -o custom-columns=...PRIORITY:.spec.priority,QOS:.status.qosClass`. Only Pods with a higher priority could preempt them.
+
 ### Other Questions
 
-**Q5. How does Kubernetes know the user from a client certificate?**
+**Q7. How does Kubernetes know the user from a client certificate?**
 The certificate's CN becomes the username and the O fields become groups. Then RBAC checks RoleBindings for that user or group.
 
-**Q6. What are the CAs in a kubeadm cluster?**
+**Q8. What are the CAs in a kubeadm cluster?**
 The kubernetes CA (API server, kubelets, components, users), the etcd CA (etcd and its clients) and the front-proxy CA (API aggregation). Files live in `/etc/kubernetes/pki`.
 
-**Q7. What happens when control-plane certificates expire, and how do you fix it?**
+**Q9. What happens when control-plane certificates expire, and how do you fix it?**
 kubectl and components fail with `x509: certificate has expired`, and the cluster stops working. On kubeadm, run `kubeadm certs check-expiration`, `kubeadm certs renew all`, restart the control-plane Pods and update `admin.conf`. Upgrading with kubeadm also renews them.
 
-**Q8. How do you create a new user with a certificate?**
+**Q10. How do you create a new user with a certificate?**
 Create a private key and a CSR with `CN=<user>` and `O=<group>`, submit a CertificateSigningRequest with signer `kubernetes.io/kube-apiserver-client`, approve it, download the certificate, add it to kubeconfig, and create a RoleBinding.
 
-**Q9. Can you revoke a Kubernetes client certificate?**
+**Q11. Can you revoke a Kubernetes client certificate?**
 No, Kubernetes has no certificate revocation. It stays valid until it expires. You remove the user's RBAC bindings, use short expirations, or prefer OIDC/IAM for people.
 
-**Q10. Why must `ca.key` and `system:masters` be protected?**
+**Q12. Why must `ca.key` and `system:masters` be protected?**
 With `ca.key` anyone can sign a certificate for any user, including the `system:masters` group, which bypasses RBAC and is full cluster-admin.
 
-**Q11. How are certificates handled on EKS?**
+**Q13. How are certificates handled on EKS?**
 AWS creates, stores and rotates the control-plane certificates. The cluster CA is in kubeconfig as `certificate-authority-data`. Users authenticate with IAM tokens (`aws eks get-token`) and access entries, not client certificates.
 
-**Q12. What is in kubeconfig related to certificates?**
+**Q14. What is in kubeconfig related to certificates?**
 `certificate-authority-data` to trust the API server, and for certificate users `client-certificate-data` and `client-key-data` to prove who they are.
 
-**Q13. What are system-node-critical and system-cluster-critical?**
+**Q15. What are system-node-critical and system-cluster-critical?**
 Built-in PriorityClasses with values above 2 billion for critical system Pods (kube-proxy, CNI, coredns). User classes max out at 1 billion, so apps can't preempt them.
 
-**Q14. What does `preemptionPolicy: Never` do?**
+**Q16. What does `preemptionPolicy: Never` do?**
 The Pod moves ahead of lower-priority Pods in the scheduling queue but never evicts running Pods; it waits until room is free.
 
-**Q15. Priority vs QoS class?**
+**Q17. Priority vs QoS class?**
 Priority (PriorityClass) is used by the scheduler for order and preemption. QoS (from requests/limits) is used by the kubelet when a node is under memory pressure. Node eviction considers usage above requests first, then priority.
 
-**Q16. What does globalDefault do?**
+**Q18. What does globalDefault do?**
 It makes that PriorityClass the default for Pods without a `priorityClassName`. Only one class can be the global default; without one, those Pods get priority 0.
 
-**Q17. How do you stop teams from giving every Pod the highest priority?**
+**Q19. How do you stop teams from giving every Pod the highest priority?**
 Use a ResourceQuota with a `scopeSelector` on PriorityClass to limit how many high-priority Pods a namespace can run, or an admission policy (Kyverno/Gatekeeper) to allow high classes only in certain namespaces.
 
 **Source:** [PKI certificates and requirements](https://kubernetes.io/docs/setup/best-practices/certificates/) · [Certificate management with kubeadm](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/) · [Certificates and CSRs](https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/) · [Pod priority and preemption](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/) · [EKS certificate signing](https://docs.aws.amazon.com/eks/latest/userguide/cert-signing.html)
