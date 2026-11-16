@@ -12,6 +12,8 @@ Daily notes:
 - [Day 27 — Monitoring: kube-prometheus-stack with Helm (Prometheus, Grafana, Alertmanager, Node Exporter, kube-state-metrics), Metrics Server vs Prometheus, Grafana on an EKS load balancer, dashboards, data sources (Loki), EKS lab](./day-27-monitoring-prometheus-grafana/README.md)
 - [Day 28 — Kustomize (base and overlays, Kustomize vs Helm), admission controllers (mutating vs validating, built-in plugins, ValidatingAdmissionPolicy on EKS, NamespaceAutoProvision), CRDs and operators (real-world use cases), EKS labs](./day-28-kustomize-admission-controllers-crds/README.md)
 - [Day 29 — Deployment strategies: what a strategy is (+ Recreate), rolling update (maxSurge / maxUnavailable), canary, blue-green, A/B and shadow, comparison, Argo Rollouts, EKS labs including an ALB weighted canary](./day-29-deployment-strategies/README.md)
+- [Day 30 — RBAC: what RBAC is and why, subjects, rules (apiGroups / resources / verbs), Role, RoleBinding, ClusterRole, ClusterRoleBinding, the 4 combinations, built-in roles, ServiceAccounts, when to use which, EKS labs with `kubectl auth can-i`](./day-30-rbac/README.md)
+- [Day 31 — ServiceAccounts: identity for Pods, user vs ServiceAccount, the default ServiceAccount, custom ServiceAccounts, bound tokens, automountServiceAccountToken, RBAC, EKS Pod Identity and IRSA, CKA/CKAD tasks, EKS labs](./day-31-service-accounts/README.md)
 
 Topic guides:
 
