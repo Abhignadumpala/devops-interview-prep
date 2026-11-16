@@ -14,7 +14,7 @@
 | **Part 2: Lab** | Look at `default`, create a custom ServiceAccount, run a Pod with it, read the token, call the API, turn off the token, change a Deployment's ServiceAccount, create a short-lived token | Do every ServiceAccount task on EKS |
 | **Part 3: Security Context** | Why containers shouldn't run as root, Pod vs container level, runAsUser / runAsNonRoot / allowPrivilegeEscalation / capabilities / readOnlyRootFilesystem, Pod Security Standards, lab | How to restrict the access of a container |
 
-> **Before this:** [Day 30 - RBAC](../day-30-rbac/README.md) (Role, RoleBinding, ClusterRole, ClusterRoleBinding).
+> **Before this:** [Day 30 - RBAC](../day-30-rbac/README.md) (Role, RoleBinding, ClusterRole, ClusterRoleBinding). · **Next:** [Day 32 - API Server, Cluster Security and Supply Chain](../day-32-api-server-cluster-security-supply-chain/README.md)
 
 ## Table of Contents
 
