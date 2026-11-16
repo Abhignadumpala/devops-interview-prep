@@ -1045,10 +1045,54 @@ Deleting the namespace removes the ServiceAccounts, Pods, Deployment, Role and R
 | | ServiceAccount | Security Context |
 |---|---|---|
 | Controls | What the Pod can do **in the Kubernetes API** | What the process can do **in Linux, on the node** |
-| Example | "may list Pods in prod" | "runs as UID 1000, can't become root" |
+| Example | "may list Pods in prod" | "runs as UID 101, can't become root" |
 | Set with | `serviceAccountName` + RBAC | `securityContext:` in the Pod spec |
 
 > **Interview one-liner:** a Security Context restricts a container at the Linux level: run as non-root, block privilege escalation, drop all capabilities and use a read-only root filesystem; it can be set for the whole Pod and overridden per container.
+
+### How do you implement security in a Kubernetes cluster?
+
+By default, a container from an image like `nginx` runs as **root (user ID 0)** inside the Pod, with Linux capabilities, and **nothing stops it**: the process can change system files, install tools, change file owners. In the real world we **restrict it**. Security has two layers, and we use a different tool for each:
+
+| I want to restrict… | Where | Use | Example |
+|---|---|---|---|
+| The **user inside the cluster** (people, CI tools, apps calling the API) | Kubernetes API | **RBAC** ([Day 30](../day-30-rbac/README.md)) + ServiceAccounts | "jenkins can only create/list Pods in `prod`" |
+| The **user inside the Pod** (the Linux process in the container) | Linux, on the node | **Security Context** | "nginx runs as user 101, can't become root, has no capabilities" |
+
+```
+                       Kubernetes cluster
+ ┌──────────────────────────────────────────────────────────┐
+ │  RBAC: who can do what with the API                       │
+ │  (kubectl get / create / delete …)                        │
+ │                                                           │
+ │   ┌──────────── Pod ────────────┐                         │
+ │   │  Security Context:          │                         │
+ │   │  which Linux user, root?    │                         │
+ │   │  capabilities? escalation?  │                         │
+ │   └─────────────────────────────┘                         │
+ └──────────────────────────────────────────────────────────┘
+```
+
+> **In simple words:** to restrict the user **inside the cluster**, use **RBAC**. To restrict the user **inside the Pod**, use a **Security Context**.
+
+**What the Security Context does:**
+- **Blocks root:** the container must run as a normal user, never user ID 0.
+- **Drops Linux capabilities:** root's special powers are removed. Normal commands (`ls`, `cat`, `curl`, the app itself) **still work**; **privileged** actions don't: change file owners (`chown`), change network settings, mount disks, bind ports below 1024.
+- **Blocks privilege escalation:** the process can't become root later (no `sudo`, no setuid tricks).
+- **Applies at both Pod and container level.**
+
+**Other layers in a real cluster** (for the full picture):
+
+| Layer | Tool |
+|---|---|
+| Who can use the API | RBAC + ServiceAccounts (+ IAM / access entries on EKS) |
+| What a container can do in Linux | Security Context + Pod Security Standards |
+| Which Pods can talk to which | Network Policies ([Day 25](../day-25-dns-network-policy/README.md)) |
+| Passwords | Secrets / AWS Secrets Manager, never in images or Git |
+| Bad images | Image scanning (Trivy), trusted registries |
+| Attacks at runtime | Falco ([Day 24](../day-24-probes/README.md)) |
+
+> **Interview answer:** "I secure a cluster in layers: RBAC and ServiceAccounts restrict who can do what in the API, Security Contexts restrict what the process inside the Pod can do (non-root, no privilege escalation, drop all capabilities), Pod Security Standards enforce that per namespace, Network Policies restrict traffic, and secrets live in a secrets manager."
 
 ---
 
@@ -1061,21 +1105,34 @@ metadata:
   name: nginx-nonroot
 spec:
   securityContext:                 # POD level → all containers
-    runAsUser: 1000                # non-root user
-    runAsGroup: 3000               # non-root group
-    fsGroup: 2000                  # group owner of mounted volumes
+    runAsUser: 101                 # non-root user (the "nginx" user in this image)
+    runAsGroup: 101                # non-root group
+    fsGroup: 101                   # group owner of mounted volumes
   containers:
   - name: nginx
     image: nginxinc/nginx-unprivileged:1.27
+    ports:
+    - containerPort: 8080          # non-root can't use port 80
     securityContext:               # CONTAINER level → this container only
-      allowPrivilegeEscalation: false   # can't become root
       runAsNonRoot: true                # refuse to start as root
+      allowPrivilegeEscalation: false   # can't become root later
       capabilities:
         drop:
         - ALL                           # drop all Linux capabilities
-    ports:
-    - containerPort: 8080
 ```
+
+**Line by line:**
+
+| Line | Meaning |
+|---|---|
+| `runAsUser: 101` | The process runs as **user ID 101**. **Root is always user ID 0**; any other number is a normal (non-root) user. 101 is the `nginx` user built into this image |
+| `runAsGroup: 101` | Its main group ID is 101 (root's group is 0) |
+| `fsGroup: 101` | Any volume mounted into the Pod is owned by group 101, so nginx can write to it |
+| `image: nginx-unprivileged` | An nginx image **made to run as non-root** |
+| `containerPort: 8080` | Ports below 1024 (like 80) need root or a capability; non-root uses 8080 |
+| `runAsNonRoot: true` | Safety check: if the container would ever start as user 0, Kubernetes **refuses to start it** |
+| `allowPrivilegeEscalation: false` | The process can't gain more rights than it started with |
+| `capabilities.drop: [ALL]` | Removes every Linux capability, so even a hacked process can't do privileged things |
 
 | Level | Where | Applies to | Settings available |
 |---|---|---|---|
@@ -1084,7 +1141,7 @@ spec:
 
 > If both set the same field (e.g. `runAsUser`), the **container level wins**.
 
-> ⚠️ **Why `nginx-unprivileged` and not `nginx:latest`?** The normal `nginx` image expects to start as root: it listens on port **80** and writes to `/var/cache/nginx`. With `runAsUser: 1000` it crashes with `permission denied`. `nginxinc/nginx-unprivileged` is built to run as non-root on port **8080**. Real lesson: **the image must support non-root**; a Security Context can't fix an image that needs root.
+> ⚠️ **Why `nginx-unprivileged` and not `nginx:latest`?** The normal `nginx` image expects to start as root: it listens on port **80** and writes to `/var/cache/nginx`. With a non-root user it crashes with `permission denied`. `nginxinc/nginx-unprivileged` is built to run as non-root on port **8080**. Real lesson: **the image must support non-root**; a Security Context can't fix an image that needs root.
 
 ---
 
