@@ -13,7 +13,7 @@
 | **Part 3: Static Pods** | What a static Pod is, why the control plane (API server, etcd, scheduler, controller manager) runs as static Pods, `/etc/kubernetes/manifests`, mirror Pods, static Pod vs DaemonSet | How Pods run without the API server |
 | **Part 4: Lab** | Read the cluster CA and API server certificate, create a user with a client certificate (CSR API) + RBAC, PriorityClasses and preemption, a static Pod on a worker node | Do all three topics yourself on EKS |
 
-> **Before this:** [Day 30 - RBAC](../day-30-rbac/README.md) (certificates give the **user/group**, RBAC gives the **permissions**) · [Day 32 - API server](../day-32-api-server-cluster-security-supply-chain/README.md) (authentication is step 1 of every request)
+> **Before this:** [Day 30 - RBAC](../day-30-rbac/README.md) (certificates give the **user/group**, RBAC gives the **permissions**) · [Day 32 - API server](../day-32-api-server-cluster-security-supply-chain/README.md) (authentication is step 1 of every request) · **Next:** [Day 35 - Service Mesh with Istio](../day-35-service-mesh-istio/README.md)
 
 ## Table of Contents
 
