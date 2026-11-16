@@ -373,6 +373,68 @@ kubectl auth can-i delete pods -n prod --as=system:serviceaccount:prod:jenkins
 
 **Expected:** `no` ✅. Only create, get, list were given.
 
+### Verify: read the `--as` name carefully
+
+`kubectl auth can-i` asks Kubernetes "**can this identity do this?**". `--as` pretends to be that identity. A ServiceAccount's full name is:
+
+```
+system:serviceaccount:<namespace>:<serviceaccount-name>
+                         prod          jenkins
+```
+
+The namespace is **part of the name**. `prod:jenkins` and `kube-system:jenkins` are **two different identities**, even though both are called "jenkins".
+
+**Check 1: right action, wrong namespace in the name**
+
+```bash
+kubectl auth can-i list pods --as=system:serviceaccount:kube-system:jenkins -n prod
+```
+
+**Expected:** `no`. **Why:** our RoleBinding is for `prod:jenkins`, not `kube-system:jenkins` (that ServiceAccount doesn't even exist).
+
+**Check 2: create Pods as the right identity**
+
+```bash
+kubectl auth can-i create pods --as=system:serviceaccount:prod:jenkins -n prod
+```
+
+**Expected:** `yes` ✅. **Why:** `create` is in jenkinsrole.
+
+**Check 3: get Pods as the right identity**
+
+```bash
+kubectl auth can-i get pods --as=system:serviceaccount:prod:jenkins -n prod
+```
+
+**Expected:** `yes` ✅. **Why:** `get` is in jenkinsrole.
+
+**Check 4: delete ConfigMaps**
+
+```bash
+kubectl auth can-i delete cm --as=system:serviceaccount:default:jenkins -n prod
+```
+
+**Expected:** `no`. **Why, twice over:** `default:jenkins` is the wrong identity, **and** jenkinsrole has no ConfigMaps and no `delete` at all. Even as `prod:jenkins` the answer is `no`.
+
+| `--as` identity | Action in `prod` | Answer | Reason |
+|---|---|---|---|
+| `...:kube-system:jenkins` | list pods | ❌ no | Different identity, no binding |
+| `...:prod:jenkins` | create pods | ✅ yes | In the Role |
+| `...:prod:jenkins` | get pods | ✅ yes | In the Role |
+| `...:prod:jenkins` | list pods | ✅ yes | In the Role |
+| `...:prod:jenkins` | delete pods | ❌ no | `delete` not in the Role |
+| `...:default:jenkins` / `...:prod:jenkins` | delete cm | ❌ no | Wrong identity / ConfigMaps not in the Role |
+
+> **Lesson:** `no` can mean two things: **wrong identity** (typo in namespace or name) or **missing permission**. When a check says `no`, first confirm the `--as` name is exactly `system:serviceaccount:<ns>:<name>`.
+
+**See everything jenkins can do in prod:**
+
+```bash
+kubectl auth can-i --list --as=system:serviceaccount:prod:jenkins -n prod
+```
+
+**Expected:** a row `pods  []  []  [create get list]`, plus a few default discovery rows.
+
 ```
  ServiceAccount jenkins  ◄── RoleBinding jenkinsrolebinding ──►  Role jenkinsrole
  (who)                                                          (create/get/list pods in prod)
