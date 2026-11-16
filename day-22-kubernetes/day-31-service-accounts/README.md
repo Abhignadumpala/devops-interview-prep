@@ -141,6 +141,25 @@ But Kubernetes doesn't trust any Pod by default. So we:
 | Permissions | Almost none by default (only basic API discovery) |
 | Can you delete it? | It's recreated automatically |
 
+**Check it:** create any namespace, then list its ServiceAccounts:
+
+```bash
+kubectl create namespace test
+```
+
+```bash
+kubectl get sa -n test
+```
+
+**Expected:**
+
+```
+NAME      AGE
+default   5s
+```
+
+We never created it. Kubernetes adds `default` to **every** namespace (`default`, `kube-system`, `argocd`… all have one). `sa` is the short name for `serviceaccount`; without `-n` it shows the current namespace, and `kubectl get sa -A` shows all namespaces.
+
 **Why not just use `default`?**
 
 | Problem | What happens |
