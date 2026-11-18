@@ -1,4 +1,4 @@
-# Day 36 - Workload Identity: ServiceAccounts, EKS Pod Identity, IRSA and Kyverno
+# Day 36 - Pod Identity (Workload Identity) and Kyverno
 
 [← Kubernetes notes](../README.md)
 
@@ -21,7 +21,7 @@
 3. [The ServiceAccount: the Pod's identity](#3-the-serviceaccount-the-pods-identity)
 4. [Authentication vs authorization](#4-authentication-vs-authorization)
 5. [Temporary credentials: why short-lived wins](#5-temporary-credentials-why-short-lived-wins)
-6. [EKS Pod Identity (newer, simpler)](#6-eks-pod-identity-newer-simpler)
+6. [EKS Pod Identity (EKS workload identity)](#6-eks-pod-identity-eks-workload-identity)
 7. [IRSA: IAM Roles for Service Accounts (OIDC)](#7-irsa-iam-roles-for-service-accounts-oidc)
 8. [Pod Identity vs IRSA: which one?](#8-pod-identity-vs-irsa-which-one)
 9. [The node role trap](#9-the-node-role-trap)
@@ -88,6 +88,8 @@ A Pod sometimes needs to call outside services: S3, SQS, DynamoDB, Secrets Manag
                                       ▼
                          Pod calls S3 (only what the role's policy allows)
 ```
+
+> **EKS workload identity = Pod Identity.** On EKS, when people say "workload identity" they mean **EKS Pod Identity** (or its alternative, IRSA).
 
 | Platform | Name of the feature |
 |---|---|
@@ -233,7 +235,7 @@ The app code doesn't change: the **AWS SDK default credential chain** picks the 
 
 ---
 
-## 6. EKS Pod Identity (newer, simpler)
+## 6. EKS Pod Identity (EKS workload identity)
 
 **Definition:** **EKS Pod Identity** links a **ServiceAccount** (cluster + namespace + SA name) to an **IAM role** with an EKS API object called a **pod identity association**. A node agent hands the Pod temporary credentials for that role.
 
