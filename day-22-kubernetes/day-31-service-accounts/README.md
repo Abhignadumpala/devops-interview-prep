@@ -700,6 +700,8 @@ RBAC covers the **Kubernetes** API. When a Pod needs **AWS** (S3, Secrets Manage
          (Kubernetes identity)            (AWS identity, temporary credentials)
 ```
 
+> **Deep dive with labs:** [Day 36 - Workload identity](../day-36-workload-identity/README.md)
+
 > **Interview one-liner:** on EKS the ServiceAccount is the bridge to AWS: with Pod Identity or IRSA it maps to an IAM role, so the Pod gets temporary AWS credentials for that role only and no keys live in the image or Secrets.
 
 ---
