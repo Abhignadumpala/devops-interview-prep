@@ -136,6 +136,59 @@ spec:
 
 > **Interview one-liner:** a ServiceAccount is the Pod's identity; we use it whenever a Pod needs authentication and authorization, to the Kubernetes API through RBAC or to third-party tools like AWS through an IAM role.
 
+### The `default` ServiceAccount: does it get all permissions?
+
+**Definition:** every namespace automatically gets a ServiceAccount called **`default`**. If a Pod doesn't set `serviceAccountName`, Kubernetes gives it `default`.
+
+```bash
+kubectl get serviceaccount -n identity-lab
+```
+
+```
+NAME      SECRETS   AGE
+default   0         5m     ← created automatically with the namespace
+```
+
+**No, it does not get all permissions.** Out of the box it has almost nothing:
+
+| Area | Default ServiceAccount |
+|---|---|
+| Kubernetes API (list Pods, read Secrets, …) | ❌ Nothing. No Role or RoleBinding exists for it. It gets only the basic rights every logged-in identity has, like checking API discovery or asking "what can I do?" |
+| AWS | ❌ Nothing of its own. No Pod Identity association and no IRSA annotation |
+| Token | ⚠️ Still mounted into every Pod by default at `/var/run/secrets/kubernetes.io/serviceaccount/token` |
+
+Check it yourself:
+
+```bash
+kubectl auth can-i list pods -n identity-lab --as=system:serviceaccount:identity-lab:default
+```
+
+**Expected:** `no`
+
+**So why avoid it?** Because **every Pod in the namespace shares this one identity**:
+
+```
+ namespace shop
+ frontend  ─┐
+ cart      ─┼── all run as SA "default"
+ payment   ─┘
+```
+
+| Problem | What happens |
+|---|---|
+| **Someone gives it permissions** (a common mistake: a Helm chart or a quick fix binds a Role to `default`) | **Every** Pod in the namespace gets those permissions, not just the one app that needed them |
+| **Someone links it to an IAM role** (Pod Identity or IRSA on `default`) | `frontend` can now read the payment secrets in AWS too |
+| **No least privilege** | You can't give `cart` different permissions from `payment` |
+| **Poor audit trail** | Logs show `default`, so you can't tell which app made the call |
+| **Token mounted for no reason** | If a Pod is hacked, the attacker gets a valid token |
+
+It's harmless on day one, but it becomes dangerous as soon as anyone grants it something. **Best practice:**
+- Each app gets **its own ServiceAccount**, with only the permissions it needs.
+- Apps that never call the Kubernetes API set `automountServiceAccountToken: false`.
+- Kyverno can block or report Pods on `default` ([Lab E](#17-lab-e-kyverno-guardrails)).
+
+> **Interview one-liner:** the default ServiceAccount has almost no permissions out of the box, but every Pod in the namespace shares it. Any permission granted to it goes to all of those Pods, so each app should get its own ServiceAccount with least privilege.
+
 ---
 
 ## 4. Authentication vs authorization
@@ -988,28 +1041,31 @@ Both map a ServiceAccount to an IAM role and give temporary credentials. Pod Ide
 **Q6. Where does Kyverno fit with Pod Identity / IRSA?**
 They are two layers. Pod Identity / IRSA controls what an approved workload can do in AWS. Kyverno is an admission policy engine that controls which resources are allowed into the cluster and how they're configured, for example rejecting Pods with static AWS keys or Pods on the default ServiceAccount. Use both; neither replaces the other.
 
+**Q7. What is the default ServiceAccount? Does it get all permissions?**
+Every namespace automatically gets a ServiceAccount called `default`, and Pods without `serviceAccountName` use it. It has almost no permissions out of the box: no RBAC Roles and no AWS role. But every Pod in the namespace shares it. Any permission granted to it goes to all of those Pods, so each app should get its own ServiceAccount with least privilege, and apps that don't call the API should set `automountServiceAccountToken: false`.
+
 ### Other Questions
 
-**Q7. How does IRSA work under the hood?**
+**Q8. How does IRSA work under the hood?**
 The cluster has an OIDC issuer that signs projected ServiceAccount tokens. That issuer is registered as an identity provider in IAM. The EKS webhook injects `AWS_ROLE_ARN` and `AWS_WEB_IDENTITY_TOKEN_FILE`; the SDK sends the token to STS `AssumeRoleWithWebIdentity`, STS verifies the signature and the trust policy's `sub`/`aud` conditions and returns temporary credentials.
 
-**Q8. How does EKS Pod Identity work under the hood?**
+**Q9. How does EKS Pod Identity work under the hood?**
 The webhook injects `AWS_CONTAINER_CREDENTIALS_FULL_URI` (the agent at `169.254.170.23`) and a token file. The SDK calls the Pod Identity Agent on its node, which calls the EKS Auth API `AssumeRoleForPodIdentity`. EKS checks the association for that cluster, namespace and SA and returns credentials for the role.
 
-**Q9. A Pod is using the node's IAM role. Why is that bad and how do you fix it?**
+**Q10. A Pod is using the node's IAM role. Why is that bad and how do you fix it?**
 Every Pod on that node shares the same permissions, so there's no least privilege and a compromised Pod gets everything the node can do. Give each app its own Pod Identity / IRSA role, keep the node role minimal, and require IMDSv2 with hop limit 1 so Pods can't reach instance metadata.
 
-**Q10. You created the association but the Pod still has no AWS credentials. What do you check?**
+**Q11. You created the association but the Pod still has no AWS credentials. What do you check?**
 Was the Pod created before the association (restart it)? Do the namespace and SA name match exactly? Is the Pod Identity Agent DaemonSet running? Does the trust policy allow `pods.eks.amazonaws.com` with `sts:AssumeRole` and `sts:TagSession`? Is the SDK new enough? Is it a Fargate Pod (use IRSA)?
 
-**Q11. Credentials work but the call returns AccessDenied. What does that mean?**
+**Q12. Credentials work but the call returns AccessDenied. What does that mean?**
 Authentication succeeded and the Pod has the role; authorization failed. The role's IAM policy doesn't allow that action on that resource. Add the exact action and resource ARN, nothing wider.
 
-**Q12. How do Pods authenticate to HashiCorp Vault?**
+**Q13. How do Pods authenticate to HashiCorp Vault?**
 With the Kubernetes auth method: the Pod sends its ServiceAccount token to Vault, Vault validates it with the Kubernetes TokenReview API, and maps the SA name + namespace to a Vault role with a Vault policy.
 
-**Q13. Audit vs Enforce in Kyverno?**
+**Q14. Audit vs Enforce in Kyverno?**
 Audit lets the resource through and records the violation in a PolicyReport; Enforce rejects it at admission. Start with Audit to find existing violations, fix them, then switch to Enforce.
 
-**Q14. Which cluster add-ons need their own IAM role?**
+**Q15. Which cluster add-ons need their own IAM role?**
 Any controller that calls AWS: AWS Load Balancer Controller, EBS/EFS CSI drivers, Cluster Autoscaler or Karpenter, External Secrets Operator, ExternalDNS, the VPC CNI. Each gets its own ServiceAccount and IAM role with only the actions it needs.
