@@ -237,6 +237,12 @@ The app code doesn't change: the **AWS SDK default credential chain** picks the 
 
 **Definition:** **EKS Pod Identity** links a **ServiceAccount** (cluster + namespace + SA name) to an **IAM role** with an EKS API object called a **pod identity association**. A node agent hands the Pod temporary credentials for that role.
 
+**Purpose:** Pod Identity handles the communication between your Pod and **AWS services** (S3, Secrets Manager, DynamoDB, SQS…). Whenever your Pod wants to talk to an AWS service, you use Pod Identity to give it the right IAM role. The **alternative** to Pod Identity is **IRSA** (section 7).
+
+```
+ Pod (SA: uploader, ns: media) ──► Pod Identity ──► IAM role uploader-role ──► S3 / Secrets Manager / DynamoDB
+```
+
 **Pieces:**
 
 | Piece | What it does |
@@ -274,11 +280,22 @@ The app code doesn't change: the **AWS SDK default credential chain** picks the 
 ```
 
 **Good to know:**
-- No change to the ServiceAccount YAML; the mapping lives in EKS.
+- The association is **stored by EKS**; it is **not an annotation** on the Kubernetes ServiceAccount (that's IRSA). No change to the ServiceAccount YAML.
+- The namespace and ServiceAccount can be created **before or after** the association, but they must **exist before the workload (Pod) is launched**.
 - One role can be reused across **many clusters** without editing its trust policy.
 - Adds **session tags** (`eks-cluster-name`, `kubernetes-namespace`, `kubernetes-service-account`, …) for CloudTrail and attribute-based access (ABAC).
 - Pods created **before** the association must be **restarted** (the webhook only acts at creation).
 - Not for **Fargate** Pods; use IRSA there.
+
+**Where to see it in the console:** EKS → Clusters → your cluster → **Access** tab. It has three sections:
+
+| Section | What it holds |
+|---|---|
+| **IAM access entries** | Which IAM users/roles can use `kubectl` on the cluster (people and CI, not Pods) |
+| **Pod Identity associations** | Association ID, IAM role, namespace, ServiceAccount (Pods → AWS) |
+| **OIDC identity providers** | External OIDC login for users (for example Okta). IRSA's IAM OIDC provider is a different thing and is set up in IAM |
+
+The **Authentication mode** shown there (for example *EKS API and ConfigMap*) decides how **people** log in to the cluster: access entries, the older `aws-auth` ConfigMap, or both.
 
 > **Interview one-liner:** EKS Pod Identity = install the agent add-on, create a role that trusts `pods.eks.amazonaws.com`, and associate it with namespace + ServiceAccount; Pods get temporary credentials with no annotation and no OIDC setup.
 
@@ -551,6 +568,8 @@ kubectl create serviceaccount s3-reader -n identity-lab
 aws eks create-pod-identity-association --cluster-name $CLUSTER --namespace identity-lab --service-account s3-reader --role-arn arn:aws:iam::$ACCOUNT_ID:role/s3-reader-role --region $REGION
 ```
 
+**Or in the console:** EKS → Clusters → your cluster → **Access** → **Pod Identity associations** → **Create** → pick IAM role `s3-reader-role` → namespace `identity-lab` → ServiceAccount `s3-reader` → **Create**.
+
 **Step 8: Check it**
 
 ```bash
@@ -562,8 +581,16 @@ aws eks list-pod-identity-associations --cluster-name $CLUSTER --region $REGION
 **Step 9: Run a Pod with that SA**
 
 ```bash
-kubectl run pi-app -n identity-lab --image=amazon/aws-cli --overrides='{"spec":{"serviceAccountName":"s3-reader"}}' --command -- sleep 3600
+kubectl run pi-app -n identity-lab --image=amazon/aws-cli --restart=Never --overrides='{"spec":{"serviceAccountName":"s3-reader"}}' --command -- sleep 3600
 ```
+
+| Flag | Why |
+|---|---|
+| `--restart=Never` | Creates a plain Pod for testing (no restarts) |
+| `--overrides='{"spec":{"serviceAccountName":"s3-reader"}}'` | `kubectl run` has no `--serviceaccount` flag, so we set the SA through an override |
+| `--command -- sleep 3600` | Keeps the Pod alive for 1 hour so we can `exec` into it (the image's default command is `aws`, which exits at once) |
+
+> **Production note:** don't use a floating `latest` (or untagged) image. Pin a reviewed version or an immutable digest (`image@sha256:…`) from a trusted registry.
 
 **Step 10: See what the webhook injected**
 
@@ -1038,34 +1065,37 @@ Authentication proves who the Pod is: its ServiceAccount token, exchanged for an
 **Q5. EKS Pod Identity vs IRSA?**
 Both map a ServiceAccount to an IAM role and give temporary credentials. Pod Identity uses a node agent add-on, a generic trust policy (`pods.eks.amazonaws.com`) and an association in the EKS API, so roles are reusable across clusters and get session tags. IRSA uses the cluster's OIDC provider, a per-cluster trust policy with a `sub` condition and an annotation on the SA; it's needed for Fargate and non-EKS clusters.
 
-**Q6. Where does Kyverno fit with Pod Identity / IRSA?**
+**Q6. What is the purpose of EKS Pod Identity? Is it an annotation on the ServiceAccount?**
+Its purpose is communication between Pods and AWS services: when a Pod wants to call S3, Secrets Manager or DynamoDB, Pod Identity gives it the right IAM role with temporary credentials. The alternative is IRSA. No, it's not an annotation: the association (cluster + namespace + ServiceAccount → IAM role) is stored in EKS. The namespace and ServiceAccount can be created before or after it, but must exist before the Pod starts.
+
+**Q7. Where does Kyverno fit with Pod Identity / IRSA?**
 They are two layers. Pod Identity / IRSA controls what an approved workload can do in AWS. Kyverno is an admission policy engine that controls which resources are allowed into the cluster and how they're configured, for example rejecting Pods with static AWS keys or Pods on the default ServiceAccount. Use both; neither replaces the other.
 
-**Q7. What is the default ServiceAccount? Does it get all permissions?**
+**Q8. What is the default ServiceAccount? Does it get all permissions?**
 Every namespace automatically gets a ServiceAccount called `default`, and Pods without `serviceAccountName` use it. It has almost no permissions out of the box: no RBAC Roles and no AWS role. But every Pod in the namespace shares it. Any permission granted to it goes to all of those Pods, so each app should get its own ServiceAccount with least privilege, and apps that don't call the API should set `automountServiceAccountToken: false`.
 
 ### Other Questions
 
-**Q8. How does IRSA work under the hood?**
+**Q9. How does IRSA work under the hood?**
 The cluster has an OIDC issuer that signs projected ServiceAccount tokens. That issuer is registered as an identity provider in IAM. The EKS webhook injects `AWS_ROLE_ARN` and `AWS_WEB_IDENTITY_TOKEN_FILE`; the SDK sends the token to STS `AssumeRoleWithWebIdentity`, STS verifies the signature and the trust policy's `sub`/`aud` conditions and returns temporary credentials.
 
-**Q9. How does EKS Pod Identity work under the hood?**
+**Q10. How does EKS Pod Identity work under the hood?**
 The webhook injects `AWS_CONTAINER_CREDENTIALS_FULL_URI` (the agent at `169.254.170.23`) and a token file. The SDK calls the Pod Identity Agent on its node, which calls the EKS Auth API `AssumeRoleForPodIdentity`. EKS checks the association for that cluster, namespace and SA and returns credentials for the role.
 
-**Q10. A Pod is using the node's IAM role. Why is that bad and how do you fix it?**
+**Q11. A Pod is using the node's IAM role. Why is that bad and how do you fix it?**
 Every Pod on that node shares the same permissions, so there's no least privilege and a compromised Pod gets everything the node can do. Give each app its own Pod Identity / IRSA role, keep the node role minimal, and require IMDSv2 with hop limit 1 so Pods can't reach instance metadata.
 
-**Q11. You created the association but the Pod still has no AWS credentials. What do you check?**
+**Q12. You created the association but the Pod still has no AWS credentials. What do you check?**
 Was the Pod created before the association (restart it)? Do the namespace and SA name match exactly? Is the Pod Identity Agent DaemonSet running? Does the trust policy allow `pods.eks.amazonaws.com` with `sts:AssumeRole` and `sts:TagSession`? Is the SDK new enough? Is it a Fargate Pod (use IRSA)?
 
-**Q12. Credentials work but the call returns AccessDenied. What does that mean?**
+**Q13. Credentials work but the call returns AccessDenied. What does that mean?**
 Authentication succeeded and the Pod has the role; authorization failed. The role's IAM policy doesn't allow that action on that resource. Add the exact action and resource ARN, nothing wider.
 
-**Q13. How do Pods authenticate to HashiCorp Vault?**
+**Q14. How do Pods authenticate to HashiCorp Vault?**
 With the Kubernetes auth method: the Pod sends its ServiceAccount token to Vault, Vault validates it with the Kubernetes TokenReview API, and maps the SA name + namespace to a Vault role with a Vault policy.
 
-**Q14. Audit vs Enforce in Kyverno?**
+**Q15. Audit vs Enforce in Kyverno?**
 Audit lets the resource through and records the violation in a PolicyReport; Enforce rejects it at admission. Start with Audit to find existing violations, fix them, then switch to Enforce.
 
-**Q15. Which cluster add-ons need their own IAM role?**
+**Q16. Which cluster add-ons need their own IAM role?**
 Any controller that calls AWS: AWS Load Balancer Controller, EBS/EFS CSI drivers, Cluster Autoscaler or Karpenter, External Secrets Operator, ExternalDNS, the VPC CNI. Each gets its own ServiceAccount and IAM role with only the actions it needs.
