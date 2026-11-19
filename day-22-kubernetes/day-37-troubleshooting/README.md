@@ -139,20 +139,32 @@ kubectl get pod <pod> -o jsonpath='{.status.containerStatuses[0].lastState.termi
 
 ### The cases (same status, different causes)
 
-| # | Case | How it looks | Fix |
-|---|---|---|---|
-| 1 | **Application error / bug** | Exit 1, stack trace in `logs --previous` | Fix the code, roll back the image |
-| 2 | **Missing or wrong env var / config** | Exit 1, e.g. MariaDB: `Database is uninitialized and password option is not specified. You need to specify one of MARIADB_ROOT_PASSWORD…` | Add the env var (from a Secret) |
-| 3 | **Dependency not reachable** (DB, API, DNS) | Logs: `connection refused` / `timeout` / `unknown host`, app exits | Fix the dependency, Service name or NetworkPolicy; add retries / init container |
-| 4 | **Wrong command or args** | Exit 127 (`not found`) or 126 (`permission denied`) | Fix `command:` / `args:` |
-| 5 | **Process exits immediately** (nothing long-running) | Exit 0, e.g. `busybox` with no command | Give it a long-running process; use a Job for one-off tasks |
-| 6 | **OOMKilled** (memory limit too low or a leak) | Exit 137, `Last State: Reason: OOMKilled` | Raise the limit or fix the leak (section 6) |
-| 7 | **Liveness probe failing** | Events: `Liveness probe failed`, container killed and restarted | Fix the probe path/port, raise `initialDelaySeconds`, add a startup probe |
-| 8 | **Permissions / security context** | `permission denied`, `read-only file system` after setting non-root / readOnlyRootFilesystem | Fix file ownership, mount an `emptyDir` for writable paths |
-| 9 | **Missing file / volume content** | `No such file or directory` for a config file | Check the ConfigMap/volume mount path and keys |
-| 10 | **Port already in use** (multi-container Pod) | `address already in use` | Containers in a Pod share the network; use different ports |
-| 11 | **Wrong CPU architecture** | `exec format error` | Use an image built for the node's arch (amd64 / arm64) |
-| 12 | **Init container failing** | `Init:CrashLoopBackOff` | `kubectl logs <pod> -c <init-name>` |
+**The rule:** CrashLoopBackOff happens only when the container **starts, then exits**, and the Pod's `restartPolicy` is `Always` (Deployments, ReplicaSets, `kubectl run`) or `OnFailure` with a failing exit. If the container **never starts**, you get a **different** status.
+
+| # | Case | CrashLoopBackOff? | How it looks | Fix |
+|---|---|---|---|---|
+| 1 | **Application error / bug** | ✅ Yes | Exit 1, stack trace in `logs --previous` | Fix the code, roll back the image |
+| 2 | **Missing or wrong env var / config** | ✅ Yes | Exit 1, e.g. MariaDB: `Database is uninitialized and password option is not specified. You need to specify one of MARIADB_ROOT_PASSWORD…` | Add the env var (from a Secret) |
+| 3 | **Dependency not reachable** (DB, API, DNS) | ⚠️ Only if the app **exits** on it | Logs: `connection refused` / `timeout` / `unknown host`. If the app keeps running and retries, it stays `Running` (maybe `0/1` not Ready) | Fix the dependency, Service name or NetworkPolicy; add retries / init container |
+| 4 | **Wrong command or args** | ✅ Yes | Binary missing: `RunContainerError` → CrashLoopBackOff, `Reason: StartError`, exit 128. Via a shell (`sh -c`): exit 127 (`not found`) or 126 (`permission denied`) | Fix `command:` / `args:` |
+| 5 | **Process exits immediately** (nothing long-running) | ✅ Yes, with `restartPolicy: Always` | Exit 0, status flips `Completed` → CrashLoopBackOff, e.g. `busybox` with no command. With `Never` / `OnFailure` it just stays `Completed` | Give it a long-running process; use a Job for one-off tasks |
+| 6 | **OOMKilled** (limit too low or a leak) | ✅ Yes | Exit 137, `Last State: Reason: OOMKilled`, status flips `OOMKilled` → CrashLoopBackOff | Raise the limit or fix the leak (section 6) |
+| 7 | **Liveness probe failing** | ✅ Yes, after a few restarts | Events: `Liveness probe failed … will be restarted`, RESTARTS goes up. (A failing **readiness** probe does **not** restart: `Running 0/1`) | Fix the probe path/port, add a startup probe or raise `initialDelaySeconds` |
+| 8 | **Permissions / security context** | ✅ Yes, if the app exits on the error | `permission denied`, `read-only file system` after non-root / `readOnlyRootFilesystem` | Fix file ownership, mount an `emptyDir` for writable paths |
+| 9 | **Missing file / volume content** | ⚠️ Depends | ConfigMap **exists** but the file/key the app needs isn't in it → app exits → ✅ CrashLoopBackOff. ConfigMap/Secret **missing entirely** → ❌ `CreateContainerConfigError` (env) or stuck `ContainerCreating` with `FailedMount` (volume) | Check the ConfigMap keys and mount path |
+| 10 | **Port already in use** (multi-container Pod) | ✅ Yes, for the container that loses | `address already in use` | Containers in a Pod share the network; use different ports |
+| 11 | **Wrong CPU architecture** | ✅ Yes | `exec format error` | Use an image built for the node's arch (amd64 / arm64) |
+| 12 | **Init container failing** | ⚠️ **`Init:CrashLoopBackOff`** (a different status) | The main container never starts | `kubectl logs <pod> -c <init-name>` |
+
+**These look similar but are NOT CrashLoopBackOff** (the container never started or isn't restarted):
+
+| Problem | Status you see instead |
+|---|---|
+| Image can't be pulled | `ErrImagePull` / `ImagePullBackOff` |
+| ConfigMap / Secret / key missing (env) | `CreateContainerConfigError` |
+| ConfigMap / Secret / PVC missing (volume) | `ContainerCreating` (FailedMount) |
+| Can't be scheduled | `Pending` |
+| Readiness probe failing | `Running` but `0/1` READY |
 
 ### How to troubleshoot
 
@@ -1274,7 +1286,7 @@ kubectl config set-context --current --namespace=default
 ### ⭐ Very Important
 
 **Q1. What is CrashLoopBackOff, and in how many cases do we get it?**
-The container keeps starting and crashing, and the kubelet waits longer before each restart (10s, 20s, 40s… up to 5 minutes). It's a symptom, not the cause. Common cases: application error (exit 1), missing or wrong env var/config (e.g. MariaDB without a root password), dependency like a DB not reachable, wrong command (exit 127/126), the process exits immediately (exit 0), OOMKilled (exit 137), a failing liveness probe, permission/read-only filesystem errors, a missing config file, port conflicts in a multi-container Pod, wrong CPU architecture, and failing init containers.
+The container keeps starting and crashing, and the kubelet waits longer before each restart (10s, 20s, 40s… up to 5 minutes). It's a symptom, not the cause. It only happens when the container starts and then exits, with restartPolicy Always (or OnFailure). Common cases: application error (exit 1), missing or wrong env var/config (e.g. MariaDB without a root password), a dependency like a DB not reachable (if the app exits on it), wrong command (StartError / exit 127/126), the process exits immediately (exit 0), OOMKilled (exit 137), a failing liveness probe, permission/read-only filesystem errors, a config file missing from an existing ConfigMap, port conflicts in a multi-container Pod and wrong CPU architecture. A failing init container shows Init:CrashLoopBackOff. Not CrashLoopBackOff: image pull errors, a missing ConfigMap/Secret (CreateContainerConfigError), Pending, and failing readiness probes (Running 0/1).
 
 **Q2. How do you troubleshoot CrashLoopBackOff?**
 `kubectl describe pod` for Last State, reason, exit code and events; `kubectl logs <pod> --previous` for the crashed container's output; `kubectl get events --sort-by=.lastTimestamp`. If it crashes too fast, `kubectl debug --copy-to` with a shell. Then fix the cause: env/config, command, memory limit, probe or the code.
