@@ -196,7 +196,7 @@
 |---|---|---|---|
 | `dms-vpc-role` | `dms.amazonaws.com` | `AmazonDMSVPCManagementRole` | Lets DMS create the replication instance's network interfaces in your VPC. **Must** have exactly this name |
 | `dms-cloudwatch-logs-role` | `dms.amazonaws.com` | `AmazonDMSCloudWatchLogsRole` | Lets DMS write task logs to CloudWatch |
-| `DMS-S3-FullAccess-Role` (any name) | AWS service: **DMS** (or DMS Fleet Advisor) | `AmazonS3FullAccess` (lab) | Lets DMS **write assessment data** to your S3 bucket |
+| `dms-s3-fullaccess-role` (any name) | AWS service: **DMS** (or DMS Fleet Advisor) | `AmazonS3FullAccess` (lab) | Lets DMS **write assessment data** to your S3 bucket |
 
 **S3 bucket:** used by **Discover & Assess**. DMS assesses the databases **before** you migrate (unsupported data types, missing primary keys, binlog settings, risks, recommendations) and stores the **assessment data** in an S3 bucket in the **same region as your RDS and DMS**, for example `scalar-discover-assess-one` in `us-east-1`.
 
@@ -496,16 +496,39 @@ Check **Estimated monthly costs** at the bottom, then **Create database**.
 
 ### 5b. IAM role for S3 access (lets DMS write to S3)
 
+**Definition:** an IAM role is a set of permissions that an AWS **service** (here DMS) can temporarily use. The **trusted entity** says *who* may use the role (DMS), and the **permissions policy** says *what* it may do (write to S3).
+
 **IAM console → Roles → Create role:**
 
-| Setting | Value | Why |
-|---|---|---|
-| Trusted entity type | **AWS service** | A service (not a user) will use the role |
-| Service / use case | **DMS** (or *DMS Fleet Advisor*) | Only DMS can assume it |
-| Permissions | `AmazonS3FullAccess` | Write the assessment data (lab; least privilege in production, see Part 1 §8) |
-| Role name | `DMS-S3-FullAccess-Role` | |
+| # | Click / field | Value | Why |
+|---|---|---|---|
+| 1 | Trusted entity type | **AWS service** | A service (not a user) will use the role |
+| 2 | Service or use case | **DMS** → Next | Only DMS can assume this role |
+| 3 | Permissions policies | Search and tick **`AmazonS3FullAccess`** → Next | DMS can write the assessment data to S3 (lab only; production: only your bucket, see Part 1 §8) |
+| 4 | Role name | **`dms-s3-fullaccess-role`** | |
+| 5 | Review | Trusted entities shows `dms.amazonaws.com` | Confirms only DMS can use it |
+| 6 | | **Create role** | |
 
-**Create role.** You choose this bucket and role in DMS when you run the assessment (Step 8).
+**Expected:** IAM → Roles shows `dms-s3-fullaccess-role` with policy `AmazonS3FullAccess`. You choose this bucket and role in DMS when you run the assessment (Step 8).
+
+<details>
+<summary>Same role from the CLI (CloudShell or laptop)</summary>
+
+```bash
+aws iam create-role --role-name dms-s3-fullaccess-role --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"dms.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+```
+
+```bash
+aws iam attach-role-policy --role-name dms-s3-fullaccess-role --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+```
+
+| Part | Meaning |
+|---|---|
+| `"Principal":{"Service":"dms.amazonaws.com"}` | Trusted entity: the DMS service |
+| `"Action":"sts:AssumeRole"` | DMS may take on (assume) this role |
+| `arn:aws:iam::aws:policy/AmazonS3FullAccess` | The AWS-managed S3 full-access policy |
+
+</details>
 
 ### 5c. Check the DMS VPC role
 
@@ -593,7 +616,7 @@ aws iam attach-role-policy --role-name dms-vpc-role --policy-arn arn:aws:iam::aw
 | Data validation | **Turn on** | DMS compares source and target rows after the copy |
 | Task logs | Turn on CloudWatch logs | See errors |
 | Table mappings → Selection rule | Schema: `classicmodels`, Table: `%`, Action: **Include** | Copy every table in `classicmodels` |
-| Premigration assessment | Turn on → S3 bucket and `DMS-S3-FullAccess-Role` from Step 5 | Assessment data (risks, recommendations) saved to S3 **before** the copy starts |
+| Premigration assessment | Turn on → S3 bucket and `dms-s3-fullaccess-role` from Step 5 | Assessment data (risks, recommendations) saved to S3 **before** the copy starts |
 | Start task | **Automatically on create** | |
 
 **Create task.**
@@ -649,7 +672,7 @@ Delete in this order (dependencies first) 💰:
 | 3 | Replication instance `dms-lab-instance` | DMS → Provisioned instances |
 | 4 | Aurora: delete the **writer instance** first, then the **cluster** (no final snapshot) | RDS → Databases |
 | 5 | EC2 `mariadb-source` → Terminate | EC2 |
-| 6 | Empty, then delete the S3 bucket; delete `DMS-S3-FullAccess-Role` | S3 / IAM |
+| 6 | Empty, then delete the S3 bucket; delete `dms-s3-fullaccess-role` | S3 / IAM |
 | 7 | Security groups `mariadb-sg`, `aurora-sg` | EC2 → Security Groups |
 
 > Keep `dms-vpc-role`: it's free and DMS needs it next time.
@@ -664,7 +687,7 @@ Delete in this order (dependencies first) 💰:
 | `The IAM Role arn:aws:iam::<account>:role/dms-vpc-role is not configured properly` | The role is missing or has the wrong name/policy | Create `dms-vpc-role` with `AmazonDMSVPCManagementRole` (5c) |
 | Task fails at CDC: binlog error | Binlog off or not `ROW` | Binlog settings in 2f, restart MariaDB |
 | Full load done, but updates/deletes not applied | Table has no primary key | Add a primary key on the source |
-| Assessment fails: can't write to the S3 bucket | Bucket is in a **different region** than RDS/DMS, or the role lacks S3 permission | Create the bucket in the same region (e.g. `us-east-1`); check `DMS-S3-FullAccess-Role` |
+| Assessment fails: can't write to the S3 bucket | Bucket is in a **different region** than RDS/DMS, or the role lacks S3 permission | Create the bucket in the same region (e.g. `us-east-1`); check `dms-s3-fullaccess-role` |
 | Validation shows mismatches | Rows changed during the check, or type differences | Re-validate; check the table in **Table statistics** |
 
 ---
