@@ -22,7 +22,7 @@
 5. [DMS building blocks](#5-dms-building-blocks)
 6. [Migration types: full load and CDC](#6-migration-types-full-load-and-cdc)
 7. [What is Amazon Aurora?](#7-what-is-amazon-aurora)
-8. [IAM roles and the S3 bucket DMS needs](#8-iam-roles-and-the-s3-bucket-dms-needs)
+8. [IAM roles and the S3 bucket DMS needs](#8-iam-roles-and-the-s3-bucket-dms-needs) (+ IAM vs database permissions)
 
 **Part 2: Lab**
 
@@ -141,7 +141,7 @@
 | **Replication instance** | The **compute resource that does the actual migration**: a managed server that reads data from the source and writes it to the target (e.g. EC2 → RDS) | `dms-instance`, `dms.t3.medium` |
 | **Source endpoint** | Connection to the source: engine, host, port, user, password | MariaDB, EC2 private IP, `3306`, `dms_user` |
 | **Target endpoint** | Connection to the target | Aurora MySQL, cluster **writer** endpoint, `3306`, `admin` |
-| **Migration task** | Which tables to copy (table mappings) and the migration type | `classicmodels.%`, full load + CDC |
+| **Migration task** | Which tables to copy (**table mappings**) and the migration type. DMS copies **only the schemas/tables you select**, not everything on the server | `classicmodels.%`, full load + CDC |
 | **Subnet group** | Which subnets the replication instance can use | Default VPC subnets |
 
 > 💡 **Newer option:** for MySQL/MariaDB/PostgreSQL → same engine, DMS also has **Homogeneous data migrations** (uses the database's own native tools, serverless, no replication instance to size). The classic replication instance shown here works for every engine pair, so it's the one to learn first.
@@ -206,6 +206,26 @@
 
 > 🔒 `AmazonS3FullAccess` is fine for a lab. In production, give the role access to **only that bucket** (`s3:PutObject`, `s3:GetObject`, `s3:ListBucket` on `arn:aws:s3:::<bucket>` and `<bucket>/*`).
 
+### IAM permissions vs database permissions
+
+**Definition:** **IAM permissions** decide what an identity may do **with AWS services** (create network interfaces, write to S3, write logs). **Database permissions** (`GRANT`) decide what a **database login** may do **inside the database** (read tables, read the binlog). DMS needs **both**, and they are completely separate.
+
+| | IAM permissions | Database permissions |
+|---|---|---|
+| Lives in | AWS IAM | Inside MariaDB / Aurora (`mysql.user`) |
+| Given to | A **role** DMS assumes: `dms-vpc-role`, `dms-cloudwatch-logs-role`, `dms-s3-fullaccess-role` | A **DB user**: `dms_user` (source), `admin` (target) |
+| Created with | IAM console / `aws iam` | SQL: `CREATE USER` + `GRANT` |
+| Controls | AWS API calls: ENIs in the VPC, CloudWatch logs, S3 writes | `SELECT` on tables, `REPLICATION` (binlog) |
+| How DMS uses it | Assumes the role automatically | Logs in with **user name + password** typed in the endpoint |
+
+```
+ DMS ──(IAM role)──► AWS services: VPC network interfaces, CloudWatch, S3
+ DMS ──(dms_user + password)──► MariaDB: SELECT tables, read binlog
+ DMS ──(admin + password)──► Aurora: create tables, insert rows
+```
+
+> So `GRANT SELECT, REPLICATION ... TO 'dms_user'` is **not** IAM: it's a MariaDB permission. IAM can't let anyone read MariaDB tables, and a MariaDB grant can't let anyone call AWS.
+
 ---
 
 # Part 2: Lab
@@ -262,7 +282,7 @@
 |---|---|---|---|
 | MySQL/Aurora | 3306 | `172.31.0.0/16` | DMS writes to Aurora, and you check the data from the EC2 |
 
-> Your default VPC CIDR: **VPC console → Your VPCs → IPv4 CIDR**. In production, allow only the replication instance's security group, not the whole VPC.
+> Your default VPC CIDR: **VPC console → Your VPCs → IPv4 CIDR**. Some demos open 3306 to `0.0.0.0/0` (anyone on the internet): avoid that. In production, allow only the replication instance's security group.
 
 ## 11. Step 2: Source, MariaDB on Ubuntu EC2
 
@@ -343,15 +363,21 @@ server_id         = 1
 log_bin           = /var/log/mysql/mysql-bin.log
 binlog_format     = ROW
 binlog_row_image  = FULL
-```
+binlog_expire_logs_seconds = 86400
 
-> The file already has `expire_logs_days = 10` (binlogs kept 10 days): leave it.
+# Longer timeouts so DMS isn't disconnected during big transfers
+wait_timeout      = 300
+net_write_timeout = 300
+```
 
 | Line | Meaning |
 |---|---|
 | `bind-address = 0.0.0.0` | Listen on all network interfaces (the security group still limits who connects) |
 | `server_id`, `log_bin` | Turn on the binary log |
 | `binlog_format = ROW`, `binlog_row_image = FULL` | Log full changed rows: what DMS CDC needs |
+| `binlog_expire_logs_seconds = 86400` | Keep binlogs 1 day (86400 s), long enough for DMS to read them |
+| `wait_timeout = 300` | Keep an idle connection open 300 s before closing it |
+| `net_write_timeout = 300` | Wait up to 300 s while sending data to a slow reader: prevents DMS disconnects during a large full load |
 
 Restart to apply:
 
@@ -367,7 +393,19 @@ sudo ss -tlnp | grep 3306
 
 **Expected:** `0.0.0.0:3306`.
 
-### 2g. Create the migration user
+Check the new timeouts (in `sudo mysql -u root -p`):
+
+```sql
+SHOW VARIABLES LIKE 'wait_timeout';
+```
+
+```sql
+SHOW VARIABLES LIKE 'net_write_timeout';
+```
+
+**Expected:** `300` for both.
+
+### 2g. Create the migration user (database permissions, not IAM)
 
 Log in as root:
 
@@ -382,7 +420,11 @@ CREATE USER 'dms_user'@'%' IDENTIFIED BY '<your-password>';
 ```
 
 ```sql
-GRANT SELECT, REPLICATION CLIENT, REPLICATION SLAVE ON *.* TO 'dms_user'@'%';
+GRANT REPLICATION CLIENT, REPLICATION SLAVE ON *.* TO 'dms_user'@'%';
+```
+
+```sql
+GRANT SELECT ON classicmodels.* TO 'dms_user'@'%';
 ```
 
 ```sql
@@ -392,8 +434,25 @@ FLUSH PRIVILEGES;
 | Part | Meaning |
 |---|---|
 | `'dms_user'@'%'` | User `dms_user` that may connect from any host (`%`); the security group limits it to the VPC |
-| `SELECT` | Read the tables (full load) |
-| `REPLICATION CLIENT, REPLICATION SLAVE` | Read the binlog (CDC) |
+| `REPLICATION CLIENT, REPLICATION SLAVE ON *.*` | **Replicate:** read the binary log (CDC). These are global privileges, so they must be `*.*` |
+| `SELECT ON classicmodels.*` | **Read:** only the database we migrate (full load). Least privilege: not `*.*`, and never `ALL PRIVILEGES` |
+| `FLUSH PRIVILEGES` | Reload the permission tables so the change applies now |
+
+> These are **MariaDB permissions** stored in the database, **not IAM**. DMS logs in with this user name and password (Step 7). See [IAM vs database permissions](#iam-permissions-vs-database-permissions).
+
+Verify the user:
+
+```sql
+SELECT user, host FROM mysql.user WHERE user = 'dms_user';
+```
+
+**Expected:** `dms_user | %`.
+
+```sql
+SHOW GRANTS FOR 'dms_user'@'%';
+```
+
+**Expected:** the `REPLICATION` grant on `*.*` and `SELECT` on `classicmodels.*`.
 
 Check that the binlog is on:
 
@@ -537,6 +596,8 @@ aws iam attach-role-policy --role-name dms-s3-fullaccess-role --policy-arn arn:a
 
 ### 5c. Check the DMS VPC role
 
+DMS needs `dms-vpc-role` (run the replication instance in your VPC) and `dms-cloudwatch-logs-role` (send logs to CloudWatch). If they don't exist, the **Create replication instance** page shows a blue note, and DMS **creates both automatically** when you click Create. You only need the commands below if that fails.
+
 **IAM console → Roles → search `dms-vpc-role`.**
 
 - ✅ Exists with policy `AmazonDMSVPCManagementRole` → go to Step 6.
@@ -562,16 +623,18 @@ aws iam attach-role-policy --role-name dms-vpc-role --policy-arn arn:aws:iam::aw
 
 **Definition:** the replication instance is the **compute resource that performs the actual data migration**: a server managed by AWS that reads from the source and writes to the target. It runs inside your VPC, so it must be in the **same VPC** as the source EC2 and the target RDS.
 
-**DMS console → Replication instances (Provisioned instances) → Create replication instance:**
+**DMS console → Migrate or replicate → Provisioned instances → Create replication instance:**
+
+> **Provisioned vs Serverless:** *Provisioned* = you pick the instance size and pay while it runs (what we use). *Serverless* = DMS sizes the capacity for you. Under *Supported path*, choosing source **MariaDB** lists **Amazon Aurora MySQL** as a target.
 
 | Setting | Lab value | Meaning |
 |---|---|---|
 | Name | `dms-instance` | A unique name for your instance |
 | Instance class | `dms.t3.medium` | Cost-effective compute for a lab |
-| Engine version | Default | DMS engine version (keep the default) |
+| Engine version | Default (e.g. `3.5.4`) | DMS engine version (keep the default) |
 | High availability | **No** → Dev or test workload (Single-AZ) | Not needed for a lab |
 | Multi-AZ | Unchecked | Single AZ = lower cost |
-| Allocated storage | Default | Space for logs and cached changes |
+| Allocated storage | `50` GiB (default) | For log files and cached transactions while tasks run |
 | VPC | **Same VPC as the source EC2 and target RDS** (default VPC) | DMS must reach both databases privately |
 | Replication subnet group | Default / pre-created group | Subnets in that VPC where the instance runs |
 | Publicly accessible | **No** | Not needed: both databases are in the same VPC. (Some demos use Yes for easy troubleshooting) |
@@ -755,6 +818,7 @@ Delete in this order (dependencies first) 💰:
 - **Offline** (full load, app stopped) vs **online** (full load + CDC, app running, minutes of downtime).
 - **DMS** = replication instance + source endpoint + target endpoint + task.
 - **CDC** reads the **binlog** (`ROW` format) and applies every change.
+- **IAM permissions** (roles) = what DMS may do in AWS; **database permissions** (`GRANT` to `dms_user`) = what DMS may do inside MariaDB. Separate things.
 - **Aurora** = cluster with a writer + readers, storage 6 copies in 3 AZs; connect to the **writer endpoint**.
 - DMS = **Discover & Assess → Convert / Move to managed → Migrate or Replicate**. One-liner: move or replicate your DB to AWS with minimal downtime.
 - Discover & Assess needs an **S3 bucket** (same region) + an **IAM role** trusting DMS to write to it; DMS also needs **`dms-vpc-role`** (exact name).
@@ -814,6 +878,9 @@ Discover & Assess, Convert / Move to managed, and Migrate or Replicate. Discover
 
 **Q9. Aurora vs RDS MySQL?**
 Both are managed MySQL. Aurora has shared cluster storage replicated 6 times across 3 AZs, faster failover (usually ~30 s) and low-lag readers sharing that storage; RDS MySQL uses an EBS volume per instance and costs less. Choose Aurora for high availability and read scaling, RDS MySQL for smaller, cost-sensitive workloads.
+
+**Q11. Are the permissions you give the DMS user IAM permissions?**
+No. `dms_user` is a database user inside MariaDB, and `GRANT REPLICATION CLIENT, REPLICATION SLAVE` and `GRANT SELECT` are database privileges stored in the database. DMS logs in with that user name and password from the source endpoint. IAM roles are separate: they let DMS use AWS services (VPC network interfaces, CloudWatch logs, S3).
 
 **Q10. How do you verify a migration succeeded?**
 Turn on DMS data validation (row-by-row comparison), compare row counts and checksums of key tables, check the task's table statistics for errors, and run the application's smoke tests against the new database before cutover is final.
