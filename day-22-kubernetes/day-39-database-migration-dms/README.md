@@ -879,11 +879,11 @@ Discover & Assess, Convert / Move to managed, and Migrate or Replicate. Discover
 **Q9. Aurora vs RDS MySQL?**
 Both are managed MySQL. Aurora has shared cluster storage replicated 6 times across 3 AZs, faster failover (usually ~30 s) and low-lag readers sharing that storage; RDS MySQL uses an EBS volume per instance and costs less. Choose Aurora for high availability and read scaling, RDS MySQL for smaller, cost-sensitive workloads.
 
-**Q11. Are the permissions you give the DMS user IAM permissions?**
-No. `dms_user` is a database user inside MariaDB, and `GRANT REPLICATION CLIENT, REPLICATION SLAVE` and `GRANT SELECT` are database privileges stored in the database. DMS logs in with that user name and password from the source endpoint. IAM roles are separate: they let DMS use AWS services (VPC network interfaces, CloudWatch logs, S3).
-
 **Q10. How do you verify a migration succeeded?**
 Turn on DMS data validation (row-by-row comparison), compare row counts and checksums of key tables, check the task's table statistics for errors, and run the application's smoke tests against the new database before cutover is final.
+
+**Q11. Are the permissions you give the DMS user IAM permissions?**
+No. `dms_user` is a database user inside MariaDB, and `GRANT REPLICATION CLIENT, REPLICATION SLAVE` and `GRANT SELECT` are database privileges stored in the database. DMS logs in with that user name and password from the source endpoint. IAM roles are separate: they let DMS use AWS services (VPC network interfaces, CloudWatch logs, S3).
 
 ---
 
