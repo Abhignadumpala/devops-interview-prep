@@ -198,7 +198,7 @@
 | `dms-cloudwatch-logs-role` | `dms.amazonaws.com` | `AmazonDMSCloudWatchLogsRole` | Lets DMS write task logs to CloudWatch |
 | `DMS-S3-FullAccess-Role` (any name) | AWS service: **DMS** (or DMS Fleet Advisor) | `AmazonS3FullAccess` (lab) | Lets DMS **write assessment data** to your S3 bucket |
 
-**S3 bucket:** used by **Discover & Assess**. DMS assesses the databases **before** you migrate (unsupported data types, missing primary keys, binlog settings, risks, recommendations) and stores the **assessment data** in an S3 bucket in the **same region**, for example `scalar-discover-assess-one` in `us-east-1`.
+**S3 bucket:** used by **Discover & Assess**. DMS assesses the databases **before** you migrate (unsupported data types, missing primary keys, binlog settings, risks, recommendations) and stores the **assessment data** in an S3 bucket in the **same region as your RDS and DMS**, for example `scalar-discover-assess-one` in `us-east-1`.
 
 > 🔒 `AmazonS3FullAccess` is fine for a lab. In production, give the role access to **only that bucket** (`s3:PutObject`, `s3:GetObject`, `s3:ListBucket` on `arn:aws:s3:::<bucket>` and `<bucket>/*`).
 
@@ -485,12 +485,14 @@ Check **Estimated monthly costs** at the bottom, then **Create database**.
 | Setting | Value |
 |---|---|
 | Bucket type | General purpose |
-| Region | **Same as DMS**: `us-east-1` (N. Virginia) |
+| Region | **Same region as your RDS/Aurora and DMS**: `us-east-1` (N. Virginia) |
 | Bucket name | `scalar-discover-assess-<unique>` (names are global, add something unique) |
 | Block all public access | ✅ On |
 | Encryption | SSE-S3 (default) |
 
 **Create bucket.**
+
+> ⚠️ **Create the bucket in the region where your RDS is.** Our Aurora and DMS are in `us-east-1`, so the bucket is in `us-east-1` too. DMS writes the assessment data only to a bucket in its **own region**: a bucket in another region (e.g. `ap-south-1`) won't work.
 
 ### 5b. IAM role for S3 access (lets DMS write to S3)
 
@@ -662,6 +664,7 @@ Delete in this order (dependencies first) 💰:
 | `The IAM Role arn:aws:iam::<account>:role/dms-vpc-role is not configured properly` | The role is missing or has the wrong name/policy | Create `dms-vpc-role` with `AmazonDMSVPCManagementRole` (5c) |
 | Task fails at CDC: binlog error | Binlog off or not `ROW` | Binlog settings in 2f, restart MariaDB |
 | Full load done, but updates/deletes not applied | Table has no primary key | Add a primary key on the source |
+| Assessment fails: can't write to the S3 bucket | Bucket is in a **different region** than RDS/DMS, or the role lacks S3 permission | Create the bucket in the same region (e.g. `us-east-1`); check `DMS-S3-FullAccess-Role` |
 | Validation shows mismatches | Rows changed during the check, or type differences | Re-validate; check the table in **Table statistics** |
 
 ---
