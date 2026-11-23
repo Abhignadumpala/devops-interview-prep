@@ -113,6 +113,21 @@
    source endpoint     └─────────────────────────────────┘        target endpoint
 ```
 
+> **One word:** MIGRATE. **One-liner:** move or replicate your database to AWS with minimal downtime.
+
+**The 3 DMS capabilities:**
+
+| Capability | What it does | Example |
+|---|---|---|
+| **Discover & Assess** | Scans your databases, finds risks and gives recommendations before you migrate. Stores the assessment data in **S3** | Which DBs do we have? What will break? |
+| **Convert / Move to managed** | Moves a self-managed database to an AWS managed one; converts the schema when the engines differ (**DMS Schema Conversion**) | MariaDB on EC2 → Aurora MySQL; Oracle → PostgreSQL |
+| **Migrate or Replicate** | One-time migration (full load) or continuous replication (CDC) | Our lab: full load + CDC |
+
+```
+ Discover & Assess  ──►  Convert / Move to managed  ──►  Migrate or Replicate
+ (what do we have?)      (where should it go?)            (copy + keep in sync)
+```
+
 ## 5. DMS building blocks
 
 **Definition:** a DMS migration is made of 4 pieces: a **replication instance** (the worker machine), two **endpoints** (connection details for source and target), and a **task** (what to copy and how).
@@ -181,9 +196,11 @@
 |---|---|---|---|
 | `dms-vpc-role` | `dms.amazonaws.com` | `AmazonDMSVPCManagementRole` | Lets DMS create the replication instance's network interfaces in your VPC. **Must** have exactly this name |
 | `dms-cloudwatch-logs-role` | `dms.amazonaws.com` | `AmazonDMSCloudWatchLogsRole` | Lets DMS write task logs to CloudWatch |
-| Assessment role (any name) | `dms.amazonaws.com` | S3 write to your bucket | Lets DMS save the **premigration assessment** report to S3 |
+| `DMS-S3-FullAccess-Role` (any name) | AWS service: **DMS** (or DMS Fleet Advisor) | `AmazonS3FullAccess` (lab) | Lets DMS **write assessment data** to your S3 bucket |
 
-**S3 bucket:** a **premigration assessment** checks the source and target **before** you start (unsupported data types, missing primary keys, binlog settings…) and saves the report in an S3 bucket, for example `db-bucketmigration-00`.
+**S3 bucket:** used by **Discover & Assess**. DMS assesses the databases **before** you migrate (unsupported data types, missing primary keys, binlog settings, risks, recommendations) and stores the **assessment data** in an S3 bucket in the **same region**, for example `scalar-discover-assess-one` in `us-east-1`.
+
+> 🔒 `AmazonS3FullAccess` is fine for a lab. In production, give the role access to **only that bucket** (`s3:PutObject`, `s3:GetObject`, `s3:ListBucket` on `arn:aws:s3:::<bucket>` and `<bucket>/*`).
 
 ---
 
@@ -203,7 +220,7 @@
  │  │ classicmodels    │     │ task: full load + CDC │     │ :3306            │ │
  │  │ sg: mariadb-sg   │     └───────────────────────┘     │ sg: aurora-sg    │ │
  │  └──────────────────┘                                   └──────────────────┘ │
- │                                  S3: db-bucketmigration-00 (assessment report)│
+ │                                  S3: discover-assess bucket (assessment data)  │
  └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -213,7 +230,7 @@
 | 2 | Source: MariaDB on Ubuntu EC2 | EC2 + SSH |
 | 3 | Sample data | MariaDB |
 | 4 | Target: Aurora MySQL | RDS console |
-| 5 | S3 bucket + IAM roles | S3 / IAM console |
+| 5 | S3 bucket + IAM roles (Discover & Assess) | S3 / IAM console |
 | 6 | Replication instance | DMS console |
 | 7 | Source + target endpoints | DMS console |
 | 8 | Migration task | DMS console |
@@ -459,11 +476,36 @@ Check **Estimated monthly costs** at the bottom, then **Create database**.
 
 ## 14. Step 5: S3 bucket and IAM roles
 
-### 5a. S3 bucket (for the premigration assessment report)
+**Why:** DMS **Discover & Assess** needs an S3 bucket to store the assessment data, and an IAM role so DMS is allowed to write to it.
 
-**S3 console → Create bucket:** General purpose, name `db-bucketmigration-<unique>` (must be globally unique), **Block all public access: on**, encryption **SSE-S3**, **Create bucket**.
+### 5a. S3 bucket (stores the assessment data)
 
-### 5b. Check the DMS VPC role
+**S3 console → Create bucket:**
+
+| Setting | Value |
+|---|---|
+| Bucket type | General purpose |
+| Region | **Same as DMS**: `us-east-1` (N. Virginia) |
+| Bucket name | `scalar-discover-assess-<unique>` (names are global, add something unique) |
+| Block all public access | ✅ On |
+| Encryption | SSE-S3 (default) |
+
+**Create bucket.**
+
+### 5b. IAM role for S3 access (lets DMS write to S3)
+
+**IAM console → Roles → Create role:**
+
+| Setting | Value | Why |
+|---|---|---|
+| Trusted entity type | **AWS service** | A service (not a user) will use the role |
+| Service / use case | **DMS** (or *DMS Fleet Advisor*) | Only DMS can assume it |
+| Permissions | `AmazonS3FullAccess` | Write the assessment data (lab; least privilege in production, see Part 1 §8) |
+| Role name | `DMS-S3-FullAccess-Role` | |
+
+**Create role.** You choose this bucket and role in DMS when you run the assessment (Step 8).
+
+### 5c. Check the DMS VPC role
 
 **IAM console → Roles → search `dms-vpc-role`.**
 
@@ -549,7 +591,7 @@ aws iam attach-role-policy --role-name dms-vpc-role --policy-arn arn:aws:iam::aw
 | Data validation | **Turn on** | DMS compares source and target rows after the copy |
 | Task logs | Turn on CloudWatch logs | See errors |
 | Table mappings → Selection rule | Schema: `classicmodels`, Table: `%`, Action: **Include** | Copy every table in `classicmodels` |
-| Premigration assessment | Optional: turn on, choose the S3 bucket from Step 5 | Report of problems **before** starting |
+| Premigration assessment | Turn on → S3 bucket and `DMS-S3-FullAccess-Role` from Step 5 | Assessment data (risks, recommendations) saved to S3 **before** the copy starts |
 | Start task | **Automatically on create** | |
 
 **Create task.**
@@ -605,7 +647,7 @@ Delete in this order (dependencies first) 💰:
 | 3 | Replication instance `dms-lab-instance` | DMS → Provisioned instances |
 | 4 | Aurora: delete the **writer instance** first, then the **cluster** (no final snapshot) | RDS → Databases |
 | 5 | EC2 `mariadb-source` → Terminate | EC2 |
-| 6 | Empty, then delete the S3 bucket | S3 |
+| 6 | Empty, then delete the S3 bucket; delete `DMS-S3-FullAccess-Role` | S3 / IAM |
 | 7 | Security groups `mariadb-sg`, `aurora-sg` | EC2 → Security Groups |
 
 > Keep `dms-vpc-role`: it's free and DMS needs it next time.
@@ -617,7 +659,7 @@ Delete in this order (dependencies first) 💰:
 | Source endpoint test: `Can't connect to MySQL server` / timeout | MariaDB listens on `127.0.0.1` only, or `mariadb-sg` doesn't allow 3306 from the VPC | `bind-address = 0.0.0.0` + restart (2f); add the 3306 rule (Step 1) |
 | Source test: `Access denied for user` | Wrong password, or the user only allows `localhost` | Create the user as `'dms_user'@'%'` (2g) |
 | Target endpoint test: timeout | `aurora-sg` missing 3306 from the VPC, or Aurora in another VPC | Fix the rule; keep everything in the same VPC |
-| `The IAM Role arn:aws:iam::<account>:role/dms-vpc-role is not configured properly` | The role is missing or has the wrong name/policy | Create `dms-vpc-role` with `AmazonDMSVPCManagementRole` (5b) |
+| `The IAM Role arn:aws:iam::<account>:role/dms-vpc-role is not configured properly` | The role is missing or has the wrong name/policy | Create `dms-vpc-role` with `AmazonDMSVPCManagementRole` (5c) |
 | Task fails at CDC: binlog error | Binlog off or not `ROW` | Binlog settings in 2f, restart MariaDB |
 | Full load done, but updates/deletes not applied | Table has no primary key | Add a primary key on the source |
 | Validation shows mismatches | Rows changed during the check, or type differences | Re-validate; check the table in **Table statistics** |
@@ -666,7 +708,8 @@ Delete in this order (dependencies first) 💰:
 - **DMS** = replication instance + source endpoint + target endpoint + task.
 - **CDC** reads the **binlog** (`ROW` format) and applies every change.
 - **Aurora** = cluster with a writer + readers, storage 6 copies in 3 AZs; connect to the **writer endpoint**.
-- DMS needs **`dms-vpc-role`** (exact name); S3 stores the premigration assessment.
+- DMS = **Discover & Assess → Convert / Move to managed → Migrate or Replicate**. One-liner: move or replicate your DB to AWS with minimal downtime.
+- Discover & Assess needs an **S3 bucket** (same region) + an **IAM role** trusting DMS to write to it; DMS also needs **`dms-vpc-role`** (exact name).
 
 **Lab**
 - Security groups first (3306 from the VPC) → MariaDB with `bind-address 0.0.0.0` + binlog + `dms_user` → sample data → Aurora → replication instance → endpoints (test!) → task (full load + CDC) → verify + CDC test → clean up.
@@ -718,8 +761,8 @@ Check network first: same VPC or routing, security groups allowing 3306 from the
 **Q7. Why does DMS need primary keys?**
 To apply CDC updates and deletes it must find the exact row on the target. Without a primary key or unique index, updates and deletes can't be matched reliably, and validation also needs a key to compare rows.
 
-**Q8. What is a premigration assessment?**
-A check DMS runs before the task starts: unsupported data types, missing primary keys, wrong binlog settings, LOB issues, and more. The report is saved in an S3 bucket, so you fix problems before the migration instead of during it.
+**Q8. What are the DMS capabilities, and what is Discover & Assess?**
+Discover & Assess, Convert / Move to managed, and Migrate or Replicate. Discover & Assess checks the databases before migrating (unsupported data types, missing primary keys, binlog settings, risks) and gives recommendations; it stores the assessment data in an S3 bucket in the same region, written by an IAM role that trusts DMS. You fix problems before the migration instead of during it.
 
 **Q9. Aurora vs RDS MySQL?**
 Both are managed MySQL. Aurora has shared cluster storage replicated 6 times across 3 AZs, faster failover (usually ~30 s) and low-lag readers sharing that storage; RDS MySQL uses an EBS volume per instance and costs less. Choose Aurora for high availability and read scaling, RDS MySQL for smaller, cost-sensitive workloads.
