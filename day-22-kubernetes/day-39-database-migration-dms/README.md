@@ -82,8 +82,9 @@
 
 | | Homogeneous | Heterogeneous |
 |---|---|---|
-| Example | MariaDB → Aurora MySQL, MySQL → RDS MySQL | Oracle → Aurora PostgreSQL, SQL Server → MySQL |
-| Schema conversion | Not needed | Needed: **DMS Schema Conversion** (or the AWS SCT tool) converts tables, views, procedures |
+| One-liner | Same database engine: easy migration | Different engines: need schema conversion |
+| Example | MySQL → MySQL, Oracle → Oracle, MariaDB → Aurora MySQL | Oracle → PostgreSQL, SQL Server → MySQL |
+| Schema conversion | ✅ Not required | ❗ Required: **AWS SCT** (Schema Conversion Tool) or **DMS Schema Conversion** converts tables, views, procedures |
 | Difficulty | Easy | Harder: test the converted code |
 | Our lab | ✅ this one | — |
 
@@ -111,7 +112,10 @@
  │ (EC2)        │ read │  │   full load + CDC)       │   │write │                │
  └──────────────┘      │  └──────────────────────────┘   │      └────────────────┘
    source endpoint     └─────────────────────────────────┘        target endpoint
+      port 3306  - - - - - - - - - - -  SAME VPC  - - - - - - - - - - -  port 3306
 ```
+
+> All three (source, replication instance, target) sit in the **same VPC**, and DMS talks to both databases on **3306**.
 
 > **One word:** MIGRATE. **One-liner:** move or replicate your database to AWS with minimal downtime.
 
@@ -134,7 +138,7 @@
 
 | Piece | What it is | In our lab |
 |---|---|---|
-| **Replication instance** | A managed EC2 machine (inside your VPC) that runs the migration | `dms-lab-instance`, `dms.t3.medium` |
+| **Replication instance** | The **compute resource that does the actual migration**: a managed server that reads data from the source and writes it to the target (e.g. EC2 → RDS) | `dms-instance`, `dms.t3.medium` |
 | **Source endpoint** | Connection to the source: engine, host, port, user, password | MariaDB, EC2 private IP, `3306`, `dms_user` |
 | **Target endpoint** | Connection to the target | Aurora MySQL, cluster **writer** endpoint, `3306`, `admin` |
 | **Migration task** | Which tables to copy (table mappings) and the migration type | `classicmodels.%`, full load + CDC |
@@ -506,6 +510,7 @@ Check **Estimated monthly costs** at the bottom, then **Create database**.
 | 2 | Service or use case | **DMS** → Next | Only DMS can assume this role |
 | 3 | Permissions policies | Search and tick **`AmazonS3FullAccess`** → Next | DMS can write the assessment data to S3 (lab only; production: only your bucket, see Part 1 §8) |
 | 4 | Role name | **`dms-s3-fullaccess-role`** | |
+| | Description | Keep the default: *Allows Database Migration Service to call AWS services on your behalf* | |
 | 5 | Review | Trusted entities shows `dms.amazonaws.com` | Confirms only DMS can use it |
 | 6 | | **Create role** | |
 
@@ -555,20 +560,37 @@ aws iam attach-role-policy --role-name dms-vpc-role --policy-arn arn:aws:iam::aw
 
 ## 15. Step 6: DMS replication instance
 
-**DMS console → Provisioned instances → Create replication instance:**
+**Definition:** the replication instance is the **compute resource that performs the actual data migration**: a server managed by AWS that reads from the source and writes to the target. It runs inside your VPC, so it must be in the **same VPC** as the source EC2 and the target RDS.
 
-| Setting | Value | Why |
+**DMS console → Replication instances (Provisioned instances) → Create replication instance:**
+
+| Setting | Lab value | Meaning |
 |---|---|---|
-| Name | `dms-lab-instance` | |
-| Instance class | `dms.t3.medium` | Enough for a small lab |
-| Engine version | Default (latest) | |
-| High availability | **Dev or test workload (Single-AZ)** | Cheaper; production uses Multi-AZ |
-| Allocated storage | Default (50 GB) | Stores logs and cached changes |
-| VPC | **Default VPC** | Same as source and target |
-| Replication subnet group | Default (created automatically) | |
-| Publicly accessible | **Off** | Everything is private in the VPC |
+| Name | `dms-instance` | A unique name for your instance |
+| Instance class | `dms.t3.medium` | Cost-effective compute for a lab |
+| Engine version | Default | DMS engine version (keep the default) |
+| High availability | **No** → Dev or test workload (Single-AZ) | Not needed for a lab |
+| Multi-AZ | Unchecked | Single AZ = lower cost |
+| Allocated storage | Default | Space for logs and cached changes |
+| VPC | **Same VPC as the source EC2 and target RDS** (default VPC) | DMS must reach both databases privately |
+| Replication subnet group | Default / pre-created group | Subnets in that VPC where the instance runs |
+| Publicly accessible | **No** | Not needed: both databases are in the same VPC. (Some demos use Yes for easy troubleshooting) |
+| Availability zone | No preference | Let AWS choose |
+| VPC security groups | Default (or your own) | Must be allowed by `mariadb-sg` and `aurora-sg` on 3306 (they allow the VPC CIDR) |
+| KMS key | `(default) aws/dms` | Encrypts the instance's storage |
+| Maintenance window | No preference | |
+| Tags | Optional | Cost and resource tracking |
+| Kerberos authentication | Not needed | Only for Kerberos-based databases |
 
-**Create.** **Expected:** status **Available** after ~5–10 minutes.
+**Create replication instance.** **Expected:** status **Available** after ~5–10 minutes.
+
+**Lab vs production:**
+
+| | Lab | Production |
+|---|---|---|
+| Publicly accessible | No (Yes only for easy troubleshooting) | **No** |
+| High availability / Multi-AZ | No | **Yes**: the migration survives an AZ failure |
+| Instance class | `dms.t3.medium` | Sized for the data volume (e.g. `dms.r5.large`+) |
 
 ## 16. Step 7: Source and target endpoints
 
@@ -597,7 +619,7 @@ aws iam attach-role-policy --role-name dms-vpc-role --policy-arn arn:aws:iam::aw
 | Port | `3306` |
 | User name / password | `admin` / your Aurora password |
 
-**Test both:** on each endpoint, **Test endpoint connection** → choose `dms-lab-instance` → **Run test**.
+**Test both:** on each endpoint, **Test endpoint connection** → choose `dms-instance` → **Run test**.
 
 **Expected:** Status **successful** for both. Failed? See [Troubleshooting](#20-troubleshooting).
 
@@ -608,7 +630,7 @@ aws iam attach-role-policy --role-name dms-vpc-role --policy-arn arn:aws:iam::aw
 | Setting | Value | Why |
 |---|---|---|
 | Task identifier | `mariadb-to-aurora` | |
-| Replication instance | `dms-lab-instance` | |
+| Replication instance | `dms-instance` | |
 | Source / target endpoint | `mariadb-source` / `aurora-target` | |
 | Migration type | **Migrate existing data and replicate ongoing changes** | Full load + CDC (online migration) |
 | Target table preparation mode | **Do nothing** or **Drop tables on target** | Target is empty, either works |
@@ -669,7 +691,7 @@ Delete in this order (dependencies first) 💰:
 |---|---|---|
 | 1 | Stop, then delete the task `mariadb-to-aurora` | DMS → Database migration tasks |
 | 2 | Endpoints `mariadb-source`, `aurora-target` | DMS → Endpoints |
-| 3 | Replication instance `dms-lab-instance` | DMS → Provisioned instances |
+| 3 | Replication instance `dms-instance` | DMS → Provisioned instances |
 | 4 | Aurora: delete the **writer instance** first, then the **cluster** (no final snapshot) | RDS → Databases |
 | 5 | EC2 `mariadb-source` → Terminate | EC2 |
 | 6 | Empty, then delete the S3 bucket; delete `dms-s3-fullaccess-role` | S3 / IAM |
