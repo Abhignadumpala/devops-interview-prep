@@ -1,7 +1,5 @@
 # Day 39 - Database Migration with AWS DMS (MariaDB on EC2 → Amazon Aurora MySQL)
 
-[← Kubernetes notes](../README.md)
-
 > **In short:** a **database migration** moves data from one database (the **source**) to another (the **target**) without losing anything, usually from self-managed servers to a managed cloud database. **AWS DMS** (Database Migration Service) does this for you: a **replication instance** reads from the **source endpoint** and writes to the **target endpoint**, following a **migration task**. It can copy everything once (**full load**) and then keep copying new changes (**CDC**) until you switch the app over (**cutover**). In this lab we migrate a **MariaDB** database on an **Ubuntu EC2** to **Amazon Aurora MySQL**.
 
 ## About this topic
@@ -884,7 +882,3 @@ Turn on DMS data validation (row-by-row comparison), compare row counts and chec
 
 **Q11. Are the permissions you give the DMS user IAM permissions?**
 No. `dms_user` is a database user inside MariaDB, and `GRANT REPLICATION CLIENT, REPLICATION SLAVE` and `GRANT SELECT` are database privileges stored in the database. DMS logs in with that user name and password from the source endpoint. IAM roles are separate: they let DMS use AWS services (VPC network interfaces, CloudWatch logs, S3).
-
----
-
-[← Kubernetes notes](../README.md)
