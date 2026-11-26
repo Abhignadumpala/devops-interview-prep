@@ -40,7 +40,7 @@
 **Part 3: Next**
 
 21. [Deploy to AKS template](#21-deploy-to-aks-template)
-22. [Azure Pipelines vs GitHub Actions vs Jenkins](#22-azure-pipelines-vs-github-actions-vs-jenkins)
+22. [Azure Pipelines vs GitHub Actions vs Jenkins](#22-azure-pipelines-vs-github-actions-vs-jenkins) (+ same pipeline side by side)
 
 **Wrap-up**
 
@@ -742,6 +742,98 @@ Azure DevOps itself is free for this lab. If you don't need it: **Project settin
 | Best fit | Teams on Azure / Microsoft stack, need Boards + Repos + Test Plans | Code on GitHub | Full control, on-prem |
 
 > **Interview one-liner:** "All three run YAML/code pipelines on agents; Azure Pipelines adds stages, built-in tasks, service connections and environments, and fits best when the team is already on Azure and Azure DevOps."
+
+### Same pipeline side by side: Azure Pipelines vs GitHub Actions
+
+**Definition:** Azure Pipelines and GitHub Actions are both YAML CI/CD with the same idea (trigger → jobs → steps on a hosted machine); mostly only the keywords change. Below is the **same job** in both: build the image and push it to ACR on every push to `main`.
+
+**Azure Pipelines (`azure-pipelines.yml`)**
+
+```yaml
+trigger:
+- main
+
+variables:
+  containerRegistry: 'myacr12345.azurecr.io'
+  imageRepository: 'azure-devops-demo'
+  tag: '$(Build.BuildId)'
+
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: Docker@2
+      inputs:
+        command: buildAndPush
+        repository: $(imageRepository)
+        dockerfile: 'Dockerfile'
+        containerRegistry: $(dockerRegistryServiceConnection)
+        tags: $(tag)
+```
+
+**GitHub Actions (`.github/workflows/acr.yml`)**
+
+```yaml
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: myacr12345.azurecr.io
+  IMAGE: azure-devops-demo
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: az acr login --name myacr12345
+      - run: docker build -t $REGISTRY/$IMAGE:${{ github.run_number }} .
+      - run: docker push $REGISTRY/$IMAGE:${{ github.run_number }}
+```
+
+| Azure Pipelines | GitHub Actions | Meaning |
+|---|---|---|
+| `trigger: - main` | `on: push: branches: [main]` | Run on every push to main |
+| **Run pipeline** button | `workflow_dispatch` + **Run workflow** button | Manual run |
+| `variables:` | `env:` | Values reused in the file |
+| `$(Build.BuildId)` | `${{ github.run_number }}` | Unique number per run (image tag) |
+| `stages:` → `stage:` | (none; use `needs:` between jobs) | Big phases |
+| `jobs:` → `job:` | `jobs:` → `build:` | Work on one machine |
+| `pool: vmImage: ubuntu-latest` | `runs-on: ubuntu-latest` | Hosted machine (agent / runner) |
+| `steps:` | `steps:` | Same |
+| `task: Docker@2` | `uses: some/action@v2` | Built-in plugin |
+| Checkout is automatic | `actions/checkout@v4` must be written | Get the code |
+| **Service connection** (Project settings) | **Secrets** + OIDC (`azure/login`) | Login to Azure/ACR, no password in YAML |
+| `Docker@2 buildAndPush` (1 step) | login + build + push (3 steps) | Build and push the image |
+
+**How runs start (the Runs page):**
+
+| Run label in Azure | Started by | GitHub Actions equivalent |
+|---|---|---|
+| **Individual CI** | A push to the trigger branch | Run triggered by `push` |
+| **Manually run by …** | The **Run pipeline** button | `workflow_dispatch` run |
+| **Updated azure-pipelines.yml** | Editing the YAML is a commit, so it triggers by itself | Editing the workflow file also triggers a run |
+
+**The 3 real differences:**
+1. **Stages:** Azure has an extra level (stage → job → step); GitHub has jobs → steps.
+2. **Service connections:** Azure stores the ACR login in Project settings, and the wizard creates it; in GitHub you set up secrets / OIDC yourself.
+3. **Templates do more:** one `Docker@2` step = login + build + push, and the wizard writes the whole file; in GitHub you usually write those steps or combine actions.
+
+> **Interview one-liner:** "Azure Pipelines and GitHub Actions are both YAML CI/CD: trigger ≈ on, pool ≈ runs-on, task ≈ action, service connection ≈ secrets/OIDC. Azure adds stages and wizard templates; GitHub needs an explicit checkout step."
+
 
 ---
 
