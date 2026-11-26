@@ -30,7 +30,7 @@
 12. [Step 3: Create the Azure DevOps organization and project](#12-step-3-create-the-azure-devops-organization-and-project)
 13. [Step 4: Import the GitHub repo into Azure Repos](#13-step-4-import-the-github-repo-into-azure-repos)
 14. [Step 5: Create the pipeline from the Docker template](#14-step-5-create-the-pipeline-from-the-docker-template)
-15. [Step 6: Understand the generated azure-pipelines.yml](#15-step-6-understand-the-generated-azure-pipelinesyml)
+15. [Step 6: Understand the generated azure-pipelines.yml](#15-step-6-understand-the-generated-azure-pipelinesyml) (+ who decides what: template vs Dockerfile)
 16. [Step 7: Check the run](#16-step-7-check-the-run)
 17. [Step 8: Verify the image in ACR](#17-step-8-verify-the-image-in-acr)
 18. [Step 9: Test the automatic trigger](#18-step-9-test-the-automatic-trigger)
@@ -558,6 +558,39 @@ stages:
 | `stage: Build` → `job: Build` | One stage with one job |
 | `task: Docker@2`, `command: buildAndPush` | Built-in task: build + push in one step |
 
+### Who decides what: template vs Dockerfile
+
+**Definition:** the template does **not** read your code to decide how to build it. It writes `azure-pipelines.yml` **once** (when you create the pipeline) from the options you pick. On every push, the `Docker@2` task runs `docker build` with **your Dockerfile**, and the Dockerfile decides how the app is built.
+
+| Piece | Who writes it | What it decides |
+|---|---|---|
+| **Dockerfile** (in the repo) | You / the developer | **How** the app is built (Node, Java, Python, nginx…) |
+| **azure-pipelines.yml** | The template, **once**, at pipeline creation | **When** to build (`trigger`), **where** (`ubuntu-latest`), **where to push** (ACR) |
+| **Docker@2 task** | Built in | Runs `docker build` + `docker push` |
+
+```
+ developer pushes new code (any change)
+        │
+        ▼
+ same azure-pipelines.yml runs (trigger: main)
+        │
+        ▼
+ Docker@2: docker build -f Dockerfile .   ◄── Dockerfile decides HOW to build the new code
+        │
+        ▼
+ docker push myacr12345.azurecr.io/azure-devops-demo:<BuildId>   ◄── new tag every run
+```
+
+So **whatever code comes from Git is built and pushed automatically**, as long as:
+1. The repo has a **Dockerfile** (the template doesn't create one; without it the build fails).
+2. It's at the path in `dockerfilePath` (`$(Build.SourcesDirectory)/Dockerfile` = repo root).
+3. The push is to a branch listed in `trigger`.
+
+- **The wizard only suggests:** it scans the repo to recommend templates (Dockerfile → Docker, `package.json` → Node.js, `pom.xml` → Maven), but you pick one.
+- **Example:** a Node.js app's Dockerfile runs `npm install` / `npm run build`; the pipeline doesn't know it's Node. Swap in a Java app with a Java Dockerfile and the same YAML still works.
+
+> **Interview one-liner:** "The template generates the YAML once from the options you pick; on every push Docker@2 builds whatever is in the repo using its Dockerfile and pushes a new tag to ACR. The Dockerfile defines how to build, the pipeline defines when and where."
+
 ---
 
 ## 16. Step 7: Check the run
@@ -756,6 +789,9 @@ The Docker@2 task uses a Docker Registry service connection backed by an Entra i
 
 **Q7. How do you tag images in the pipeline and why not `latest`?**
 With a unique value like `$(Build.BuildId)` or the Git commit SHA. Unique tags make every build traceable and rollbacks easy; `latest` is overwritten and you can't tell which code is running.
+
+**Q7b. Does the pipeline template understand your code and build it?**
+No. The template writes the YAML once from the options you choose. The build steps come from the repo's Dockerfile: Docker@2 runs `docker build` with it on every push. Without a Dockerfile the build fails.
 
 **Q8. What does "No hosted parallelism has been purchased or granted" mean?**
 The organization has no Microsoft-hosted parallel job yet. New organizations must request the free grant (or buy a parallel job), or use a self-hosted agent.
