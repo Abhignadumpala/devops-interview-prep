@@ -100,7 +100,7 @@
 
 ## 4. What is AWS DMS?
 
-**Definition:** AWS Database Migration Service (DMS) is a managed AWS service that copies data from a source database to a target database. It supports most engines (MySQL, MariaDB, PostgreSQL, Oracle, SQL Server, MongoDB, S3…), and the source stays fully usable during the migration. You only pay for the replication instance while it runs.
+**Definition:** AWS Database Migration Service (DMS) is a managed AWS service that copies data from a source database to a target database. It supports most engines (MySQL, MariaDB, PostgreSQL, Oracle, SQL Server, MongoDB, S3…), and the source stays fully usable during the migration. The replication instance is billed per hour from creation until you delete it (it can't be stopped).
 
 ```
                        ┌──────────── AWS DMS ────────────┐
@@ -147,6 +147,56 @@
 ## 6. Migration types: full load and CDC
 
 **Definition:** **full load** copies all existing rows from the source tables to the target once. **CDC (Change Data Capture)** reads the source's change log (for MySQL/MariaDB: the **binary log, binlog**) and applies every new `INSERT`, `UPDATE` and `DELETE` to the target, so the target stays in sync while the app keeps writing to the source.
+
+### What is CDC?
+
+**CDC = Change Data Capture.** After the first full copy, DMS keeps watching the source database and sends only the **changes** (every new INSERT, UPDATE, DELETE) to the target, so Aurora stays the same as MariaDB while the app keeps running.
+
+- **Full load** copies all existing rows once (e.g. 10,000 customers).
+- **CDC** then copies only what changes after that, within seconds (e.g. 1 new customer at 10:05, 1 updated order at 10:07).
+- **How it knows what changed:** MariaDB writes every change into its **binlog**. DMS reads the binlog and replays each change on Aurora. That's why the lab turns on `log_bin` with `binlog_format = ROW`.
+
+**Analogy:** moving house. Full load = moving all the furniture on day 1. CDC = mail forwarding: every new letter that arrives at the old address goes on to the new one, until you tell everyone your new address (cutover).
+
+```
+ App ──writes──► MariaDB (source)
+                   │ every change saved in the binlog
+                   ▼
+                 DMS reads the binlog (CDC)
+                   │ INSERT / UPDATE / DELETE, within seconds
+                   ▼
+                 Aurora (target) ── stays the same as the source
+```
+
+| | Full load | CDC |
+|---|---|---|
+| What it copies | All existing data | Only new changes |
+| How often | Once | All the time, until cutover |
+| Reads from | The tables | The binlog |
+| Source down during it? | No | No |
+
+### How long does DMS run? (not a daily job)
+
+DMS is for a **migration window**, not a daily sync, so you don't schedule it with cron or Lambda.
+
+| Migration type | How long it runs | Then |
+|---|---|---|
+| **Full load only** | Once: copy everything, done | Delete the replication instance |
+| **Full load + CDC** (this lab) | **All the time** from start until cutover (days or weeks) | Cutover, then delete DMS |
+
+```
+ Day 1            Day 2 … Day 14 (CDC running all the time)       Day 14
+ full load ──► every new INSERT/UPDATE copied within seconds ──► cutover ──► delete DMS
+```
+
+- **Why not run it "only when new data comes"?** CDC must keep reading the binlog to stay seconds behind. A stopped task can resume only if MariaDB still has those binlog files; once they expire, you need a new full load.
+- **Stopping saves almost nothing:** the replication instance is billed per hour until you **delete** it (it can't be stopped).
+- **Repeating copy job** (e.g. nightly copy to S3 for reports) = a different use case: EventBridge Scheduler + Lambda calling `StartReplicationTask`, DMS Serverless, or AWS Glue.
+- **Permanent sync** between two databases = use native replication (e.g. Aurora MySQL as a binlog replica), not DMS.
+
+> **Interview one-liner:** "CDC (Change Data Capture) reads the source's transaction log (binlog in MySQL/MariaDB) and replays each change on the target. Full load runs once; CDC runs all the time until cutover, then you delete the replication instance."
+
+### Console options
 
 | Console option | Means | Use when |
 |---|---|---|
