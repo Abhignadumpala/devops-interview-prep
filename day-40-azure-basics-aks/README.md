@@ -22,7 +22,7 @@
 6. [Subscriptions](#6-subscriptions)
 7. [Resource groups](#7-resource-groups)
 8. [Resources and Azure Resource Manager (ARM)](#8-resources-and-azure-resource-manager-arm)
-9. [Identities and Azure RBAC](#9-identities-and-azure-rbac)
+9. [Identities and Azure RBAC](#9-identities-and-azure-rbac) (+ AWS access key vs Azure service principal)
 10. [Governance: tags, Azure Policy, resource locks](#10-governance-tags-azure-policy-resource-locks)
 11. [Azure vs AWS: service names](#11-azure-vs-aws-service-names)
 
@@ -318,6 +318,51 @@
 | **Group** | A set of users | `devops-team` |
 | **Service principal** | An identity for an app or tool (has a client ID + secret or certificate) | GitHub Actions / Jenkins deploying to Azure |
 | **Managed identity** | A service principal that Azure creates and rotates for you, no secret to store | AKS cluster, a VM reading Key Vault |
+
+### AWS access key + secret → Azure service principal
+
+**Definition:** a **subscription is not a credential**: it's like an AWS account (where resources live and who pays). The Azure version of an AWS **access key ID + secret access key** is a **service principal** with a **client ID + client secret**. A script or pipeline uses it to log in, and its RBAC role decides what it can do.
+
+| What you need | AWS | Azure |
+|---|---|---|
+| Where resources live / who pays | AWS account (12-digit ID) | **Subscription** (subscription ID, a GUID) |
+| Organization's login directory | IAM / Identity Center | **Tenant** (tenant ID) |
+| Login for a script or pipeline | IAM user → access key ID + secret access key | **Service principal** → client ID + client secret |
+| Permissions for that login | IAM policy | **RBAC role** (e.g. Contributor) on a scope |
+| Login for a person at the terminal | `aws configure` / `aws sso login` | `az login` (browser) |
+| No-secret identity for a server | IAM role (instance profile) | **Managed identity** |
+
+**AWS needs 2 values to log in, Azure usually needs 4:**
+
+```
+ AWS:    AWS_ACCESS_KEY_ID      +  AWS_SECRET_ACCESS_KEY      (+ region)
+
+ Azure:  ARM_CLIENT_ID          ← service principal's "username" (appId)
+         ARM_CLIENT_SECRET      ← service principal's "password"
+         ARM_TENANT_ID          ← which directory to log in to
+         ARM_SUBSCRIPTION_ID    ← which subscription to create resources in (not a secret)
+```
+
+**Create a service principal** (like creating an IAM user + access key):
+
+```bash
+az ad sp create-for-rbac --name sp-terraform --role Contributor --scopes /subscriptions/<subscription-id>
+```
+
+**Expected:** JSON with `appId` (client ID), `password` (client secret) and `tenant`. Azure shows the password **only once**, like an AWS secret key, so save it in a secret store right away.
+
+**Log in with it:**
+
+```bash
+az login --service-principal -u <appId> -p <password> --tenant <tenant-id>
+```
+
+| | Lab / quick start | Production |
+|---|---|---|
+| Pipeline login | Service principal + client secret | ✅ **OIDC federated credential** (GitHub Actions, no secret stored), like an AWS IAM role with OIDC |
+| Azure VM / AKS / Function login | Service principal secret in a config file ❌ | ✅ **Managed identity** |
+
+> **Interview one-liner:** "A subscription is like an AWS account, not a credential. The Azure version of an access key/secret is a service principal's client ID + client secret, used with the tenant ID and subscription ID. In production use managed identities or OIDC federation instead of secrets."
 
 ### Built-in roles (what)
 
@@ -1290,6 +1335,9 @@ Both can manage all resources; only Owner can assign roles to others. Contributo
 
 **Q8. Service principal vs managed identity?**
 Both are app identities in Entra ID. A service principal needs a secret or certificate that you store and rotate. A managed identity is created and rotated by Azure and is tied to an Azure resource (VM, AKS, Function), so there is no secret to manage.
+
+**Q8b. Is a subscription the Azure version of AWS access keys?**
+No. A subscription is like an AWS account. The Azure version of an access key + secret is a service principal's client ID + client secret. Logging in also needs the tenant ID, and the subscription ID picks where resources are created (e.g. `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID` for Terraform).
 
 **Q9. What is the MC_ resource group in AKS?**
 The node resource group AKS creates (`MC_<rg>_<cluster>_<region>`). It holds the VM Scale Sets, load balancer, public IPs, disks, NSG and route table. It's managed by AKS; don't change it by hand. It's deleted with the cluster.
